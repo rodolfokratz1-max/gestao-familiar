@@ -1,12 +1,20 @@
 import { supabase } from './supabase'
 
+// Retorna o último dia do mês
+function ultimoDiaMes(ano, mes) {
+  return new Date(ano, mes, 0).getDate() // mes sem -1 pois getDate(0) pega o último do mês anterior
+}
+
 // Calcula o mês de referência da fatura baseado na data da compra e dia de fechamento
 export function mesReferencia(dataCompra, diaFechamento) {
   const d = new Date(dataCompra + 'T12:00:00')
   const diaFecha = Number(diaFechamento || 1)
-  // Se comprou antes ou no dia de fechamento → fatura do mês atual
-  // Se comprou depois do fechamento → fatura do próximo mês
-  if (d.getDate() <= diaFecha) {
+  // Ajusta o dia de fechamento para o último dia do mês se necessário
+  // Ex: fecha dia 31, mas fevereiro tem 28 → usa 28 como referência
+  const ultimoDia = ultimoDiaMes(d.getFullYear(), d.getMonth() + 1)
+  const diaFechaEfetivo = Math.min(diaFecha, ultimoDia)
+
+  if (d.getDate() <= diaFechaEfetivo) {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
   } else {
     const prox = new Date(d.getFullYear(), d.getMonth() + 1, 1)
@@ -18,7 +26,10 @@ export function mesReferencia(dataCompra, diaFechamento) {
 export function dataVencimento(mesRef, diaVencimento) {
   const [ano, mes] = mesRef.split('-').map(Number)
   // Vencimento é no mês seguinte ao de referência
-  const d = new Date(ano, mes, Number(diaVencimento || 10))
+  // Ajusta para o último dia do mês se necessário (ex: dia 31 em fevereiro → dia 28)
+  const ultimoDia = ultimoDiaMes(ano, mes + 1)
+  const diaEfetivo = Math.min(Number(diaVencimento || 10), ultimoDia)
+  const d = new Date(ano, mes, diaEfetivo)
   return d.toISOString().split('T')[0]
 }
 
