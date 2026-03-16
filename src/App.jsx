@@ -16,7 +16,10 @@ import Cartoes from './pages/Cartoes'
 import Usuarios from './pages/Usuarios'
 import Empresa from './pages/Empresa'
 import Recorrencias from './pages/Recorrencias'
-import { LayoutDashboard, Users, Package, TrendingUp, TrendingDown, Wallet, ShoppingCart, Wrench, CreditCard, HandCoins, Menu, X, Landmark, BarChart2, LogOut, User, Shield, ClipboardList, Building2, Repeat2 } from 'lucide-react'
+import PlanoContas from './pages/PlanoContas'
+import Movimentacoes from './pages/Movimentacoes'
+import FluxoCaixa from './pages/FluxoCaixa'
+import { LayoutDashboard, Users, Package, TrendingUp, TrendingDown, Wallet, ShoppingCart, Wrench, CreditCard, HandCoins, Menu, X, Landmark, BarChart2, LogOut, User, Shield, ClipboardList, Building2, Repeat2, ListTree, ArrowLeftRight, BarChart } from 'lucide-react'
 
 const nav = [
   { group: 'Visão Geral', items: [
@@ -27,6 +30,7 @@ const nav = [
     { id: 'pessoas', label: 'Clientes / Fornecedores', icon: Users },
     { id: 'produtos', label: 'Produtos / Serviços', icon: Package },
     { id: 'contas', label: 'Contas / Carteiras', icon: Landmark },
+    { id: 'plano_contas', label: 'Plano de Contas', icon: ListTree },
   ]},
   { group: 'Financeiro', items: [
     { id: 'receitas', label: 'Receitas', icon: TrendingUp },
@@ -35,6 +39,8 @@ const nav = [
     { id: 'contas_receber', label: 'A Receber', icon: HandCoins },
     { id: 'contas_pagar', label: 'A Pagar', icon: CreditCard },
     { id: 'recorrencias', label: 'Recorrências', icon: Repeat2 },
+    { id: 'movimentacoes', label: 'Movimentações', icon: ArrowLeftRight },
+    { id: 'fluxo_caixa', label: 'Fluxo de Caixa', icon: BarChart },
   ]},
   { group: 'Sistema', items: [
     { id: 'empresa', label: 'Dados da Empresa', icon: Building2 },
@@ -53,6 +59,7 @@ const titles = {
   receitas:'Receitas', despesas:'Despesas', caixa:'Caixa',
   contas_receber:'Contas a Receber', contas_pagar:'Contas a Pagar', recorrencias:'Recorrências',
   cartoes:'Cartões de Crédito', compras:'Compras', os:'Ordens de Serviço', empresa:'Dados da Empresa', usuarios:'Gerenciar Usuários',
+  plano_contas:'Plano de Contas', movimentacoes:'Movimentações', fluxo_caixa:'Fluxo de Caixa',
 }
 
 function PageContent({ page, onNavigate }) {
@@ -70,6 +77,9 @@ function PageContent({ page, onNavigate }) {
   if (page === 'compras') return <Compras />
   if (page === 'os') return <OrdemServico />
   if (page === 'recorrencias') return <Recorrencias />
+  if (page === 'plano_contas') return <PlanoContas />
+  if (page === 'movimentacoes') return <Movimentacoes />
+  if (page === 'fluxo_caixa') return <FluxoCaixa />
   if (page === 'empresa') return <Empresa />
   if (page === 'usuarios') return <Usuarios />
   return null
