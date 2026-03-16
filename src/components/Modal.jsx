@@ -2,7 +2,7 @@ import { X } from 'lucide-react'
 
 export default function Modal({ title, onClose, onSave, children, size = '' }) {
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+    <div className="modal-overlay">
       <div className={`modal ${size}`}>
         <div className="modal-header">
           <span className="modal-title">{title}</span>
