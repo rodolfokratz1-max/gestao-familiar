@@ -19,7 +19,8 @@ import Recorrencias from './pages/Recorrencias'
 import PlanoContas from './pages/PlanoContas'
 import Movimentacoes from './pages/Movimentacoes'
 import FluxoCaixa from './pages/FluxoCaixa'
-import { LayoutDashboard, Users, Package, TrendingUp, TrendingDown, Wallet, ShoppingCart, Wrench, CreditCard, HandCoins, Menu, X, Landmark, BarChart2, LogOut, User, Shield, ClipboardList, Building2, Repeat2, ListTree, ArrowLeftRight, BarChart } from 'lucide-react'
+import CentroCusto from './pages/CentroCusto'
+import { LayoutDashboard, Users, Package, TrendingUp, TrendingDown, Wallet, ShoppingCart, Wrench, CreditCard, HandCoins, Menu, X, Landmark, BarChart2, LogOut, User, Shield, ClipboardList, Building2, Repeat2, ListTree, ArrowLeftRight, BarChart, Target } from 'lucide-react'
 
 const nav = [
   { group: 'Visão Geral', items: [
@@ -31,6 +32,7 @@ const nav = [
     { id: 'produtos', label: 'Produtos / Serviços', icon: Package },
     { id: 'contas', label: 'Contas / Carteiras', icon: Landmark },
     { id: 'plano_contas', label: 'Plano de Contas', icon: ListTree },
+    { id: 'centro_custo', label: 'Centros de Custo', icon: Target },
   ]},
   { group: 'Financeiro', items: [
     { id: 'receitas', label: 'Receitas', icon: TrendingUp },
@@ -59,7 +61,7 @@ const titles = {
   receitas:'Receitas', despesas:'Despesas', caixa:'Caixa',
   contas_receber:'Contas a Receber', contas_pagar:'Contas a Pagar', recorrencias:'Recorrências',
   cartoes:'Cartões de Crédito', compras:'Compras', os:'Ordens de Serviço', empresa:'Dados da Empresa', usuarios:'Gerenciar Usuários',
-  plano_contas:'Plano de Contas', movimentacoes:'Movimentações', fluxo_caixa:'Fluxo de Caixa',
+  plano_contas:'Plano de Contas', movimentacoes:'Movimentações', fluxo_caixa:'Fluxo de Caixa', centro_custo:'Centros de Custo',
 }
 
 function PageContent({ page, onNavigate }) {
@@ -80,6 +82,7 @@ function PageContent({ page, onNavigate }) {
   if (page === 'plano_contas') return <PlanoContas />
   if (page === 'movimentacoes') return <Movimentacoes />
   if (page === 'fluxo_caixa') return <FluxoCaixa />
+  if (page === 'centro_custo') return <CentroCusto />
   if (page === 'empresa') return <Empresa />
   if (page === 'usuarios') return <Usuarios />
   return null

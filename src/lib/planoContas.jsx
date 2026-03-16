@@ -55,3 +55,19 @@ export function SelectCategoria({ value, onChange, tipo = '', placeholder = 'Sel
     </select>
   )
 }
+
+// ── Centro de Custo ────────────────────────────────────────
+import { supabase as _supabase } from './supabase'
+
+export function SelectCentroCusto({ value, onChange, style = {} }) {
+  const [centros, setCentros] = useState([])
+  useEffect(() => {
+    _supabase.from('centros_custo').select('id,nome').eq('ativo',true).order('nome').then(({data}) => setCentros(data||[]))
+  }, [])
+  return (
+    <select className="form-select" value={value||''} onChange={e => onChange(e.target.value)} style={style}>
+      <option value="">Sem centro de custo</option>
+      {centros.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+    </select>
+  )
+}

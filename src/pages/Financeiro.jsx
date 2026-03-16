@@ -5,7 +5,7 @@ import { useToast } from '../contexts/ToastContext'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { Plus, Search, Pencil, Trash2, Power, CheckCircle } from 'lucide-react'
-import { SelectCategoria } from '../lib/planoContas'
+import { SelectCategoria, SelectCentroCusto } from '../lib/planoContas'
 
 const fmt = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
 const today = () => new Date().toISOString().split('T')[0]
@@ -15,13 +15,13 @@ const configs = {
     table: 'receitas', newLabel: 'Nova Receita',
     pagoField: 'recebido', pagoLabel: 'Recebido',
     caixaTipo: 'entrada', caixaCategoria: 'Receita',
-    empty: { data: today(), descricao: '', categoria: '', valor: '', conta_id: '', recebido: false, obs: '', ativo: true },
+    empty: { data: today(), descricao: '', categoria: '', valor: '', conta_id: '', centro_custo_id: '', recebido: false, obs: '', ativo: true },
   },
   despesas: {
     table: 'despesas', newLabel: 'Nova Despesa',
     pagoField: 'pago', pagoLabel: 'Pago',
     caixaTipo: 'saida', caixaCategoria: 'Despesa',
-    empty: { data: today(), descricao: '', categoria: '', valor: '', conta_id: '', pago: false, obs: '', ativo: true },
+    empty: { data: today(), descricao: '', categoria: '', valor: '', conta_id: '', centro_custo_id: '', pago: false, obs: '', ativo: true },
   },
 }
 
@@ -230,6 +230,10 @@ export default function Financeiro({ module }) {
               <label className="form-label">Categoria</label>
               <SelectCategoria value={form.categoria} onChange={v => f('categoria', v)}
                 tipo={module === 'receitas' ? 'receita' : 'despesa'} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Centro de Custo</label>
+              <SelectCentroCusto value={form.centro_custo_id} onChange={v => f('centro_custo_id', v)} />
             </div>
             <div className="form-group">
               <label className="form-label">Conta / Carteira</label>

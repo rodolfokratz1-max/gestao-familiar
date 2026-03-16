@@ -1,345 +1,320 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import { TrendingUp, TrendingDown, DollarSign, ShoppingCart, Clock, Wrench, CreditCard, X, Users, ChevronRight, AlertCircle } from 'lucide-react'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
+import { TrendingUp, TrendingDown, Wallet, HandCoins, CreditCard, AlertCircle, ChevronRight, Target, BarChart2, RefreshCw } from 'lucide-react'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell, Legend, LineChart, Line, Area, AreaChart } from 'recharts'
 
-const fmt = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
+const fmt = v => 'R$ ' + Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2})
+const fmtK = v => { const n=Number(v||0); return Math.abs(n)>=1000 ? 'R$'+(n/1000).toFixed(0)+'k' : 'R$'+n.toFixed(0) }
 const today = () => new Date().toISOString().split('T')[0]
+const CORES = ['#4f8ef7','#34d399','#f87171','#fbbf24','#a78bfa','#fb923c','#38bdf8','#f472b6']
 
 export default function Dashboard({ onNavigate }) {
-  const [stats, setStats] = useState({ receitas: 0, despesas: 0, apagar: 0, areceber: 0, compras: 0, manutencoes: 0 })
-  const [chartData, setChartData] = useState([])
-  const [cartoes, setCartoes] = useState([])
-  const [faturas, setFaturas] = useState([])
-  const [membros, setMembros] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [modalCartoes, setModalCartoes] = useState(false)
+  const [loading, setLoading]     = useState(true)
+  const [stats, setStats]         = useState({})
+  const [chart6m, setChart6m]     = useState([])
+  const [catDespesa, setCatDespesa] = useState([])
+  const [catReceita, setCatReceita] = useState([])
+  const [centros, setCentros]     = useState([])
+  const [cartoes, setCartoes]     = useState([])
+  const [faturas, setFaturas]     = useState([])
+  const [vencendoHoje, setVencendoHoje]   = useState({ pagar:0, receber:0 })
+  const [vencendo7d, setVencendo7d]       = useState({ pagar:0, receber:0 })
 
-  useEffect(() => { loadStats() }, [])
+  useEffect(() => { load() }, [])
 
-  async function loadStats() {
-    try {
-      const [rec, des, pag, rcb, cmp, man, cart, fat, mem] = await Promise.allSettled([
-        supabase.from('receitas').select('valor').eq('ativo', true),
-        supabase.from('despesas').select('valor').eq('ativo', true),
-        supabase.from('contas_pagar').select('valor').eq('pago', false).eq('ativo', true),
-        supabase.from('contas_receber').select('valor').eq('recebido', false).eq('ativo', true),
-        supabase.from('compras').select('valor_total').eq('ativo', true),
-        supabase.from('manutencoes').select('custo').eq('ativo', true).eq('status', 'pendente'),
-        supabase.from('cartoes').select('*').eq('ativo', true).order('nome'),
-        supabase.from('faturas_cartao').select('*').order('mes_ref', { ascending: false }),
-        supabase.from('pessoas').select('id,nome').eq('tipo', 'membro').eq('ativo', true).order('nome'),
-      ])
+  async function load() {
+    setLoading(true)
+    const mesAtual = new Date()
+    const ano = mesAtual.getFullYear()
+    const mes = String(mesAtual.getMonth()+1).padStart(2,'0')
+    const ini = `${ano}-${mes}-01`
+    const fim = `${ano}-${mes}-${new Date(ano, mesAtual.getMonth()+1, 0).getDate()}`
+    const td  = today()
+    const d7  = new Date(); d7.setDate(d7.getDate()+7); const d7s = d7.toISOString().split('T')[0]
 
-      const val = r => r?.value || { data: [] }
-      const sum = (r, key = 'valor') => (val(r).data || []).reduce((s, x) => s + Number(x[key] || 0), 0)
-      setStats({
-        receitas: sum(rec), despesas: sum(des),
-        apagar: sum(pag), areceber: sum(rcb),
-        compras: sum(cmp, 'valor_total'), manutencoes: sum(man, 'custo'),
-      })
-      setCartoes(val(cart).data || [])
-      setFaturas(val(fat).data || [])
-      setMembros(val(mem).data || [])
+    const [caixa, apagar, areceber, cartR, fatR, ccR] = await Promise.allSettled([
+      supabase.from('caixa').select('tipo,valor,data,categoria').gte('data',`${ano}-01-01`).lte('data',`${ano}-12-31`),
+      supabase.from('contas_pagar').select('valor,vencimento').eq('pago',false).eq('ativo',true),
+      supabase.from('contas_receber').select('valor,vencimento').eq('recebido',false).eq('ativo',true),
+      supabase.from('cartoes').select('*').eq('ativo',true).order('nome'),
+      supabase.from('faturas_cartao').select('*').order('mes_ref',{ascending:false}),
+      supabase.from('centros_custo').select('id,nome').eq('ativo',true).order('nome'),
+    ])
 
-      // Últimos 6 meses
-      const months = []
-      for (let i = 5; i >= 0; i--) {
-        const d = new Date(); d.setMonth(d.getMonth() - i)
-        const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0')
-        const label = d.toLocaleString('pt-BR', { month: 'short' })
-        const ultimoDia = new Date(y, Number(m), 0).getDate()
-        const [r2, d2] = await Promise.allSettled([
-          supabase.from('receitas').select('valor').gte('data', `${y}-${m}-01`).lte('data', `${y}-${m}-${ultimoDia}`),
-          supabase.from('despesas').select('valor').gte('data', `${y}-${m}-01`).lte('data', `${y}-${m}-${ultimoDia}`),
-        ])
-        months.push({ name: label, Receitas: sum(r2), Despesas: sum(d2) })
-      }
-      setChartData(months)
-    } catch (e) {
-      console.error(e)
-    } finally {
-      setLoading(false)
+    const caixaData = caixa?.value?.data || []
+    const apagarData = apagar?.value?.data || []
+    const areceberData = areceber?.value?.data || []
+
+    // Stats do mês atual
+    const entMes = caixaData.filter(r => r.tipo==='entrada' && r.data>=ini && r.data<=fim).reduce((s,r)=>s+Number(r.valor),0)
+    const saiMes = caixaData.filter(r => r.tipo==='saida' && r.data>=ini && r.data<=fim).reduce((s,r)=>s+Number(r.valor),0)
+    const totalApagar = apagarData.reduce((s,r)=>s+Number(r.valor),0)
+    const totalAreceber = areceberData.reduce((s,r)=>s+Number(r.valor),0)
+
+    setStats({ entMes, saiMes, resultado: entMes-saiMes, totalApagar, totalAreceber })
+
+    // Vencendo hoje e em 7 dias
+    setVencendoHoje({
+      pagar: apagarData.filter(r=>r.vencimento===td).reduce((s,r)=>s+Number(r.valor),0),
+      receber: areceberData.filter(r=>r.vencimento===td).reduce((s,r)=>s+Number(r.valor),0),
+    })
+    setVencendo7d({
+      pagar: apagarData.filter(r=>r.vencimento>td&&r.vencimento<=d7s).reduce((s,r)=>s+Number(r.valor),0),
+      receber: areceberData.filter(r=>r.vencimento>td&&r.vencimento<=d7s).reduce((s,r)=>s+Number(r.valor),0),
+    })
+
+    // Gráfico 6 meses
+    const months = []
+    for (let i=5; i>=0; i--) {
+      const d = new Date(); d.setMonth(d.getMonth()-i)
+      const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0')
+      const label = d.toLocaleString('pt-BR',{month:'short'})
+      const ult = new Date(y,d.getMonth()+1,0).getDate()
+      const iM=`${y}-${m}-01`, fM=`${y}-${m}-${ult}`
+      const ent = caixaData.filter(r=>r.tipo==='entrada'&&r.data>=iM&&r.data<=fM).reduce((s,r)=>s+Number(r.valor),0)
+      const sai = caixaData.filter(r=>r.tipo==='saida'&&r.data>=iM&&r.data<=fM).reduce((s,r)=>s+Number(r.valor),0)
+      months.push({ name:label, Receita:ent, Despesa:sai, Resultado:ent-sai })
     }
+    setChart6m(months)
+
+    // Categorias por despesa (mês atual)
+    const catMap = {}
+    caixaData.filter(r=>r.tipo==='saida'&&r.data>=ini&&r.data<=fim&&r.categoria).forEach(r=>{
+      catMap[r.categoria] = (catMap[r.categoria]||0)+Number(r.valor)
+    })
+    setCatDespesa(Object.entries(catMap).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([name,value])=>({name,value})))
+
+    // Categorias por receita (mês atual)
+    const catMapR = {}
+    caixaData.filter(r=>r.tipo==='entrada'&&r.data>=ini&&r.data<=fim&&r.categoria).forEach(r=>{
+      catMapR[r.categoria] = (catMapR[r.categoria]||0)+Number(r.valor)
+    })
+    setCatReceita(Object.entries(catMapR).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([name,value])=>({name,value})))
+
+    // Centros de custo
+    const ccList = ccR?.value?.data || []
+    const ccResumo = await Promise.all(ccList.map(async cc => {
+      const [rec, des] = await Promise.all([
+        supabase.from('receitas').select('valor').eq('centro_custo_id',cc.id).eq('ativo',true),
+        supabase.from('despesas').select('valor').eq('centro_custo_id',cc.id).eq('ativo',true),
+      ])
+      const r = (rec.data||[]).reduce((s,x)=>s+Number(x.valor),0)
+      const d = (des.data||[]).reduce((s,x)=>s+Number(x.valor),0)
+      return { ...cc, receita:r, despesa:d, resultado:r-d }
+    }))
+    setCentros(ccResumo)
+
+    setCartoes(cartR?.value?.data||[])
+    setFaturas(fatR?.value?.data||[])
+    setLoading(false)
   }
 
-  const saldo = stats.receitas - stats.despesas
+  const CustomTooltip = ({active,payload,label}) => {
+    if (!active||!payload?.length) return null
+    return (
+      <div style={{background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:10,padding:'10px 14px',fontSize:12}}>
+        <div style={{fontWeight:700,marginBottom:6}}>{label}</div>
+        {payload.map(p=>(
+          <div key={p.name} style={{display:'flex',justifyContent:'space-between',gap:16,marginBottom:2,color:p.name==='Receita'?'var(--green)':p.name==='Despesa'?'var(--red)':'var(--accent)'}}>
+            <span>{p.name}</span><span style={{fontWeight:700}}>{fmt(p.value)}</span>
+          </div>
+        ))}
+      </div>
+    )
+  }
 
-  // Total de faturas abertas (não pagas)
-  const totalFaturasAbertas = faturas
-    .filter(f => !f.pago)
-    .reduce((s, f) => s + Number(f.total || 0), 0)
+  const cartoesComFatura = cartoes.map(c => ({
+    ...c,
+    faturaAberta: faturas.find(f=>f.cartao_id===c.id&&!f.pago)
+  }))
 
-  // Agrupa cartões por membro
-  const cartoesComDados = cartoes.map(c => {
-    const faturasCartao = faturas.filter(f => f.cartao_id === c.id)
-    const faturaAberta = faturasCartao.find(f => !f.pago)
-    const mesAtual = new Date()
-    const mesRef = `${mesAtual.getFullYear()}-${String(mesAtual.getMonth()+1).padStart(2,'0')}`
-    return { ...c, faturaAberta, mesRef, totalFaturas: faturasCartao.length }
-  })
-
-  const cartoesporMembro = membros.map(m => ({
-    ...m,
-    cartoes: cartoesComDados.filter(c => c.titular_id === m.id)
-  })).filter(m => m.cartoes.length > 0)
-
-  // Cartões sem membro vinculado
-  const cartoesSemMembro = cartoesComDados.filter(c => !c.titular_id)
-
-  if (loading) return <div className="loading"><div className="spinner" /><span>Carregando...</span></div>
+  if (loading) return <div className="loading"><div className="spinner"/><span>Carregando...</span></div>
 
   return (
     <div>
-      {/* Stats */}
-      <div className="stats-grid">
-        <div className="stat-card green">
-          <div className="stat-label">Total Receitas</div>
-          <div className="stat-value green">{fmt(stats.receitas)}</div>
-          <div className="stat-sub">Registradas no sistema</div>
-        </div>
-        <div className="stat-card red">
-          <div className="stat-label">Total Despesas</div>
-          <div className="stat-value red">{fmt(stats.despesas)}</div>
-          <div className="stat-sub">Registradas no sistema</div>
-        </div>
-        <div className="stat-card blue">
-          <div className="stat-label">Saldo</div>
-          <div className={`stat-value ${saldo >= 0 ? 'green' : 'red'}`}>{fmt(saldo)}</div>
-          <div className="stat-sub">Receitas - Despesas</div>
-        </div>
-        <div className="stat-card yellow">
-          <div className="stat-label">A Receber</div>
-          <div className="stat-value yellow">{fmt(stats.areceber)}</div>
-          <div className="stat-sub">Pendente de recebimento</div>
-        </div>
-        <div className="stat-card red">
-          <div className="stat-label">A Pagar</div>
-          <div className="stat-value red">{fmt(stats.apagar)}</div>
-          <div className="stat-sub">Pendente de pagamento</div>
-        </div>
-        <div className="stat-card purple">
-          <div className="stat-label">Manutenções Pendentes</div>
-          <div className="stat-value purple">{fmt(stats.manutencoes)}</div>
-          <div className="stat-sub">Custo estimado</div>
-        </div>
-      </div>
-
-      {/* Card Cartões */}
-      {cartoes.length > 0 && (
-        <div className="card" style={{ marginBottom: 16 }}>
-          <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <CreditCard size={16} color="var(--accent)" /> Cartões de Crédito
-            </span>
-            <button className="btn btn-secondary btn-sm" onClick={() => setModalCartoes(true)}
-              style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              Ver todos <ChevronRight size={13} />
-            </button>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12, marginTop: 4 }}>
-            {cartoesComDados.slice(0, 4).map(c => {
-              const perc = Math.min(100, (Number(c.faturaAberta?.total || 0) / Number(c.limite || 1)) * 100)
-              return (
-                <div key={c.id} style={{ background: 'var(--bg3)', borderRadius: 10, padding: '12px 14px', border: '1px solid var(--border)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-                    <div>
-                      <div style={{ fontWeight: 700, fontSize: 13 }}>{c.nome}</div>
-                      <div style={{ fontSize: 11, color: 'var(--text2)' }}>{c.titular_nome || 'Sem titular'} · {c.bandeira}</div>
-                    </div>
-                    {c.faturaAberta && <AlertCircle size={14} color="var(--red)" />}
-                  </div>
-                  {c.faturaAberta ? (
-                    <>
-                      <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 4 }}>Fatura fechada</div>
-                      <div style={{ fontWeight: 700, color: 'var(--red)', fontSize: 15 }}>{fmt(c.faturaAberta.total)}</div>
-                      <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 2 }}>
-                        Vence {c.faturaAberta.vencimento?.split('-').reverse().join('/')}
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 4 }}>Fatura em aberto</div>
-                      <div style={{ fontWeight: 700, color: 'var(--green)', fontSize: 15 }}>Em dia</div>
-                      <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 2 }}>Fecha dia {c.dia_fechamento}</div>
-                    </>
-                  )}
-                  <div style={{ marginTop: 8, background: 'var(--bg2)', borderRadius: 3, height: 4, overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${perc}%`, borderRadius: 3, background: perc > 80 ? 'var(--red)' : perc > 50 ? 'var(--yellow)' : 'var(--accent)', transition: 'width .3s' }} />
-                  </div>
-                  <div style={{ fontSize: 10, color: 'var(--text2)', marginTop: 3, textAlign: 'right' }}>
-                    Limite {fmt(c.limite)}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-
-          {totalFaturasAbertas > 0 && (
-            <div style={{ marginTop: 12, padding: '10px 14px', background: 'rgba(248,113,113,.08)', border: '1px solid rgba(248,113,113,.2)', borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 13, color: 'var(--text2)' }}>Total de faturas a pagar</span>
-              <span style={{ fontWeight: 700, color: 'var(--red)', fontSize: 15 }}>{fmt(totalFaturasAbertas)}</span>
+      {/* Alertas do dia */}
+      {(vencendoHoje.pagar > 0 || vencendoHoje.receber > 0) && (
+        <div style={{marginBottom:14,display:'flex',gap:10,flexWrap:'wrap'}}>
+          {vencendoHoje.pagar > 0 && (
+            <div style={{flex:1,minWidth:220,background:'rgba(248,113,113,.1)',border:'1px solid rgba(248,113,113,.3)',borderRadius:10,padding:'10px 14px',display:'flex',alignItems:'center',gap:10,cursor:'pointer'}} onClick={()=>onNavigate('contas_pagar')}>
+              <AlertCircle size={16} color="var(--red)"/>
+              <div><div style={{fontWeight:700,fontSize:13,color:'var(--red)'}}>⚠ Vence hoje — A Pagar</div><div style={{fontSize:12,color:'var(--text2)'}}>{fmt(vencendoHoje.pagar)}</div></div>
+            </div>
+          )}
+          {vencendoHoje.receber > 0 && (
+            <div style={{flex:1,minWidth:220,background:'rgba(52,211,153,.08)',border:'1px solid rgba(52,211,153,.2)',borderRadius:10,padding:'10px 14px',display:'flex',alignItems:'center',gap:10,cursor:'pointer'}} onClick={()=>onNavigate('contas_receber')}>
+              <AlertCircle size={16} color="var(--green)"/>
+              <div><div style={{fontWeight:700,fontSize:13,color:'var(--green)'}}>💰 Vence hoje — A Receber</div><div style={{fontSize:12,color:'var(--text2)'}}>{fmt(vencendoHoje.receber)}</div></div>
             </div>
           )}
         </div>
       )}
 
-      {/* Gráfico */}
-      <div className="card">
-        <div className="card-header">
-          <span className="card-title">Receitas vs Despesas — Últimos 6 meses</span>
+      {/* Stats principais */}
+      <div className="stats-grid" style={{marginBottom:16}}>
+        <div className="stat-card green" style={{cursor:'pointer'}} onClick={()=>onNavigate('receitas')}>
+          <div className="stat-label">Entradas (mês)</div>
+          <div className="stat-value green text-mono">{fmt(stats.entMes)}</div>
+          <div className="stat-sub">Caixa do mês atual</div>
         </div>
-        <ResponsiveContainer width="100%" height={240}>
-          <BarChart data={chartData} barCategoryGap="30%">
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-            <XAxis dataKey="name" tick={{ fill: 'var(--text2)', fontSize: 12 }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fill: 'var(--text2)', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => 'R$' + (v >= 1000 ? (v / 1000).toFixed(0) + 'k' : v)} />
-            <Tooltip
-              contentStyle={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 13 }}
-              formatter={v => fmt(v)}
-              labelStyle={{ color: 'var(--text)', fontWeight: 600 }}
-            />
-            <Bar dataKey="Receitas" fill="var(--green)" radius={[4, 4, 0, 0]} />
-            <Bar dataKey="Despesas" fill="var(--red)" radius={[4, 4, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
+        <div className="stat-card red" style={{cursor:'pointer'}} onClick={()=>onNavigate('despesas')}>
+          <div className="stat-label">Saídas (mês)</div>
+          <div className="stat-value red text-mono">{fmt(stats.saiMes)}</div>
+          <div className="stat-sub">Caixa do mês atual</div>
+        </div>
+        <div className={`stat-card ${stats.resultado>=0?'green':'red'}`}>
+          <div className="stat-label">Resultado (mês)</div>
+          <div className={`stat-value text-mono ${stats.resultado>=0?'green':'red'}`}>{fmt(stats.resultado)}</div>
+          <div className="stat-sub">Entradas - Saídas</div>
+        </div>
+        <div className="stat-card yellow" style={{cursor:'pointer'}} onClick={()=>onNavigate('contas_receber')}>
+          <div className="stat-label">A Receber</div>
+          <div className="stat-value yellow text-mono">{fmt(stats.totalAreceber)}</div>
+          {vencendo7d.receber>0 && <div className="stat-sub" style={{color:'var(--yellow)'}}>+{fmt(vencendo7d.receber)} nos próx. 7d</div>}
+        </div>
+        <div className="stat-card red" style={{cursor:'pointer'}} onClick={()=>onNavigate('contas_pagar')}>
+          <div className="stat-label">A Pagar</div>
+          <div className="stat-value red text-mono">{fmt(stats.totalApagar)}</div>
+          {vencendo7d.pagar>0 && <div className="stat-sub" style={{color:'var(--red)'}}>+{fmt(vencendo7d.pagar)} nos próx. 7d</div>}
+        </div>
       </div>
 
-      {/* Modal Cartões por Membro */}
-      {modalCartoes && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-          <div style={{ background: 'var(--bg2)', borderRadius: 16, width: '100%', maxWidth: 760, maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', border: '1px solid var(--border)' }}>
+      {/* Gráficos linha 1 */}
+      <div className="dash-grid" style={{marginBottom:16}}>
+        {/* Barras 6 meses */}
+        <div className="card">
+          <div className="card-header"><span className="card-title">Receita × Despesa — 6 meses</span></div>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={chart6m} barGap={3}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false}/>
+              <XAxis dataKey="name" tick={{fill:'var(--text3)',fontSize:11}} axisLine={false} tickLine={false}/>
+              <YAxis tickFormatter={fmtK} tick={{fill:'var(--text3)',fontSize:10}} axisLine={false} tickLine={false} width={48}/>
+              <Tooltip content={<CustomTooltip/>} cursor={{fill:'rgba(255,255,255,.04)'}}/>
+              <Bar dataKey="Receita" fill="var(--green)" radius={[3,3,0,0]} opacity={.85}/>
+              <Bar dataKey="Despesa" fill="var(--red)" radius={[3,3,0,0]} opacity={.85}/>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
 
-            {/* Header modal */}
-            <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <CreditCard size={20} color="var(--accent)" />
-                <span style={{ fontWeight: 700, fontSize: 17 }}>Cartões por Membro</span>
+        {/* Pizza despesas por categoria */}
+        <div className="card">
+          <div className="card-header"><span className="card-title">Despesas por categoria (mês)</span></div>
+          {catDespesa.length === 0
+            ? <div style={{color:'var(--text3)',fontSize:13,padding:'20px 0',textAlign:'center'}}>Sem lançamentos categorizados este mês</div>
+            : <ResponsiveContainer width="100%" height={200}>
+                <PieChart>
+                  <Pie data={catDespesa} cx="40%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={2} dataKey="value">
+                    {catDespesa.map((_,i)=><Cell key={i} fill={CORES[i%CORES.length]}/>)}
+                  </Pie>
+                  <Tooltip formatter={v=>fmt(v)}/>
+                  <Legend iconType="circle" iconSize={8} wrapperStyle={{fontSize:11}}/>
+                </PieChart>
+              </ResponsiveContainer>
+          }
+        </div>
+      </div>
+
+      {/* Centros de custo */}
+      {centros.length > 0 && (
+        <div className="card" style={{marginBottom:16}}>
+          <div className="card-header">
+            <span className="card-title">📊 Desempenho por Centro de Custo</span>
+            <button className="btn btn-sm btn-secondary" onClick={()=>onNavigate('centro_custo')}>Gerenciar <ChevronRight size={12}/></button>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:12}}>
+            {centros.map(cc=>(
+              <div key={cc.id} style={{background:'var(--bg3)',borderRadius:10,padding:'12px 14px',border:'1px solid var(--border)'}}>
+                <div style={{fontWeight:700,fontSize:13,marginBottom:8}}>{cc.nome}</div>
+                <div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:3}}>
+                  <span style={{color:'var(--text2)'}}>Receita</span>
+                  <span style={{color:'var(--green)',fontWeight:600,fontFamily:'var(--mono)'}}>{fmt(cc.receita)}</span>
+                </div>
+                <div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:6}}>
+                  <span style={{color:'var(--text2)'}}>Despesa</span>
+                  <span style={{color:'var(--red)',fontWeight:600,fontFamily:'var(--mono)'}}>{fmt(cc.despesa)}</span>
+                </div>
+                <div style={{height:1,background:'var(--border)',marginBottom:6}}/>
+                <div style={{display:'flex',justifyContent:'space-between',fontSize:13}}>
+                  <span style={{fontWeight:700}}>Resultado</span>
+                  <span style={{fontWeight:800,color:cc.resultado>=0?'var(--green)':'var(--red)',fontFamily:'var(--mono)'}}>{fmt(cc.resultado)}</span>
+                </div>
               </div>
-              <button className="icon-btn" onClick={() => setModalCartoes(false)}><X size={18} /></button>
-            </div>
-
-            <div style={{ overflowY: 'auto', padding: '20px 24px', flex: 1 }}>
-
-              {/* Por membro */}
-              {cartoesporMembro.map(m => (
-                <div key={m.id} style={{ marginBottom: 24 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                    <div style={{ background: 'var(--accent)', borderRadius: '50%', width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 14 }}>
-                      {m.nome.charAt(0).toUpperCase()}
-                    </div>
-                    <span style={{ fontWeight: 700, fontSize: 15 }}>{m.nome}</span>
-                    <span className="badge badge-gray">{m.cartoes.length} cartão{m.cartoes.length > 1 ? 'ões' : ''}</span>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
-                    {m.cartoes.map(c => <CartaoCard key={c.id} c={c} onNavigate={() => { setModalCartoes(false); onNavigate('cartoes') }} />)}
-                  </div>
-                </div>
-              ))}
-
-              {/* Sem membro */}
-              {cartoesSemMembro.length > 0 && (
-                <div style={{ marginBottom: 24 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                    <div style={{ background: 'var(--bg3)', borderRadius: '50%', width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <Users size={16} color="var(--text2)" />
-                    </div>
-                    <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--text2)' }}>Sem titular</span>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
-                    {cartoesSemMembro.map(c => <CartaoCard key={c.id} c={c} onNavigate={() => { setModalCartoes(false); onNavigate('cartoes') }} />)}
-                  </div>
-                </div>
-              )}
-
-              {cartoes.length === 0 && (
-                <div className="empty-state"><CreditCard size={40} /><p>Nenhum cartão cadastrado</p></div>
-              )}
-
-              {/* Resumo total */}
-              {totalFaturasAbertas > 0 && (
-                <div style={{ padding: '14px 18px', background: 'rgba(248,113,113,.08)', border: '1px solid rgba(248,113,113,.25)', borderRadius: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: 14 }}>Total de Faturas em Aberto</div>
-                    <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2 }}>{faturas.filter(f => !f.pago).length} fatura(s) pendente(s)</div>
-                  </div>
-                  <div style={{ fontWeight: 700, color: 'var(--red)', fontSize: 20 }}>{fmt(totalFaturasAbertas)}</div>
-                </div>
-              )}
-            </div>
-
-            <div style={{ padding: '14px 24px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-              <button className="btn btn-secondary" onClick={() => setModalCartoes(false)}>Fechar</button>
-              <button className="btn btn-primary" onClick={() => { setModalCartoes(false); onNavigate('cartoes') }}>
-                <CreditCard size={14} /> Gerenciar Cartões
-              </button>
-            </div>
+            ))}
           </div>
         </div>
       )}
-    </div>
-  )
-}
 
-function CartaoCard({ c, onNavigate }) {
-  const perc = Math.min(100, (Number(c.faturaAberta?.total || 0) / Number(c.limite || 1)) * 100)
-  return (
-    <div style={{ background: 'var(--bg3)', borderRadius: 12, padding: '14px 16px', border: '1px solid var(--border)', position: 'relative', overflow: 'hidden' }}>
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: 'linear-gradient(90deg, var(--accent), var(--accent2))' }} />
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-        <div>
-          <div style={{ fontWeight: 700, fontSize: 14 }}>{c.nome}</div>
-          <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 2 }}>{c.bandeira || 'Bandeira não informada'}</div>
-        </div>
-        <CreditCard size={20} color="var(--accent)" />
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10, fontSize: 12 }}>
-        <div style={{ background: 'var(--bg2)', borderRadius: 6, padding: '6px 10px' }}>
-          <div style={{ color: 'var(--text2)', marginBottom: 2 }}>Limite</div>
-          <div style={{ fontWeight: 700, color: 'var(--green)' }}>{c.limite ? `R$ ${Number(c.limite).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '—'}</div>
-        </div>
-        <div style={{ background: 'var(--bg2)', borderRadius: 6, padding: '6px 10px' }}>
-          <div style={{ color: 'var(--text2)', marginBottom: 2 }}>Fecha / Vence</div>
-          <div style={{ fontWeight: 700 }}>dia {c.dia_fechamento || '—'} / {c.dia_vencimento || '—'}</div>
-        </div>
-      </div>
-
-      {c.faturaAberta ? (
-        <div style={{ background: 'rgba(248,113,113,.1)', border: '1px solid rgba(248,113,113,.25)', borderRadius: 8, padding: '8px 12px', marginBottom: 10 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <div style={{ fontSize: 11, color: 'var(--text2)' }}>Fatura fechada</div>
-              <div style={{ fontWeight: 700, color: 'var(--red)', fontSize: 16 }}>
-                R$ {Number(c.faturaAberta.total).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-              </div>
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 11, color: 'var(--text2)' }}>Vencimento</div>
-              <div style={{ fontWeight: 600, fontSize: 13 }}>{c.faturaAberta.vencimento?.split('-').reverse().join('/')}</div>
-            </div>
+      {/* Cartões */}
+      {cartoes.length > 0 && (
+        <div className="card" style={{marginBottom:16}}>
+          <div className="card-header">
+            <span className="card-title"><CreditCard size={14} color="var(--accent)"/> Cartões de Crédito</span>
+            <button className="btn btn-sm btn-secondary" onClick={()=>onNavigate('cartoes')}>Ver todos <ChevronRight size={12}/></button>
           </div>
-        </div>
-      ) : (
-        <div style={{ background: 'rgba(52,211,153,.1)', border: '1px solid rgba(52,211,153,.2)', borderRadius: 8, padding: '8px 12px', marginBottom: 10 }}>
-          <div style={{ fontSize: 11, color: 'var(--text2)' }}>Situação</div>
-          <div style={{ fontWeight: 700, color: 'var(--green)' }}>✓ Sem fatura pendente</div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:10}}>
+            {cartoesComFatura.map(c=>{
+              const perc = Math.min(100,(Number(c.faturaAberta?.total||0)/Number(c.limite||1))*100)
+              return (
+                <div key={c.id} style={{background:'var(--bg3)',borderRadius:10,padding:'12px 14px',border:'1px solid var(--border)'}}>
+                  <div style={{fontWeight:700,fontSize:13,marginBottom:4}}>{c.nome}</div>
+                  <div style={{fontSize:11,color:'var(--text2)',marginBottom:8}}>{c.bandeira}</div>
+                  {c.faturaAberta
+                    ? <div style={{fontWeight:700,color:'var(--red)',fontSize:14}}>{fmt(c.faturaAberta.total)}</div>
+                    : <div style={{fontWeight:600,color:'var(--green)',fontSize:13}}>✓ Em dia</div>}
+                  <div style={{marginTop:8,background:'var(--bg2)',borderRadius:3,height:3,overflow:'hidden'}}>
+                    <div style={{height:'100%',width:`${perc}%`,background:perc>80?'var(--red)':perc>50?'var(--yellow)':'var(--accent)',borderRadius:3}}/>
+                  </div>
+                  <div style={{fontSize:10,color:'var(--text3)',marginTop:2,textAlign:'right'}}>Limite {fmt(c.limite)}</div>
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
 
-      <div style={{ marginBottom: 6 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text2)', marginBottom: 4 }}>
-          <span>Uso do limite</span><span>{perc.toFixed(0)}%</span>
+      {/* Top 5 categorias receita/despesa */}
+      {(catReceita.length > 0 || catDespesa.length > 0) && (
+        <div className="dash-grid">
+          {catReceita.length > 0 && (
+            <div className="card">
+              <div className="card-header"><span className="card-title">🏆 Top receitas por categoria</span></div>
+              {catReceita.map((c,i)=>{
+                const max = catReceita[0].value
+                return (
+                  <div key={c.name} style={{marginBottom:8}}>
+                    <div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:3}}>
+                      <span>{c.name}</span>
+                      <span style={{fontWeight:700,color:'var(--green)',fontFamily:'var(--mono)'}}>{fmt(c.value)}</span>
+                    </div>
+                    <div style={{height:5,borderRadius:3,background:'var(--bg3)',overflow:'hidden'}}>
+                      <div style={{height:'100%',width:`${(c.value/max)*100}%`,background:CORES[i%CORES.length],borderRadius:3}}/>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+          {catDespesa.length > 0 && (
+            <div className="card">
+              <div className="card-header"><span className="card-title">📉 Top despesas por categoria</span></div>
+              {catDespesa.map((c,i)=>{
+                const max = catDespesa[0].value
+                return (
+                  <div key={c.name} style={{marginBottom:8}}>
+                    <div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:3}}>
+                      <span>{c.name}</span>
+                      <span style={{fontWeight:700,color:'var(--red)',fontFamily:'var(--mono)'}}>{fmt(c.value)}</span>
+                    </div>
+                    <div style={{height:5,borderRadius:3,background:'var(--bg3)',overflow:'hidden'}}>
+                      <div style={{height:'100%',width:`${(c.value/max)*100}%`,background:'var(--red)',opacity:.7+i*.05,borderRadius:3}}/>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
-        <div style={{ background: 'var(--bg2)', borderRadius: 3, height: 5, overflow: 'hidden' }}>
-          <div style={{ height: '100%', width: `${perc}%`, borderRadius: 3, background: perc > 80 ? 'var(--red)' : perc > 50 ? 'var(--yellow)' : 'var(--green)', transition: 'width .3s' }} />
-        </div>
-      </div>
-
-      <button className="btn btn-secondary btn-sm" style={{ width: '100%', marginTop: 8, fontSize: 12 }} onClick={onNavigate}>
-        Ver lançamentos <ChevronRight size={12} />
-      </button>
+      )}
     </div>
   )
 }

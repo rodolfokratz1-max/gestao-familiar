@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useToast } from '../contexts/ToastContext'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
-import { Plus, Search, Pencil, Trash2, Power, ShoppingCart, CheckCircle } from 'lucide-react'
+import { Plus, Search, Pencil, Trash2, Power, ShoppingCart, CheckCircle, Package } from 'lucide-react'
 
 const fmt = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
 const today = () => new Date().toISOString().split('T')[0]
@@ -15,6 +15,9 @@ export default function Compras() {
   const [fornecedores, setFornecedores] = useState([])
   const [contas, setContas] = useState([])
   const [loading, setLoading] = useState(true)
+  const [produtos, setProdutos] = useState([])
+  const [itensCompra, setItensCompra] = useState([]) // [{produto_id,nome,qtd,valor_unit}]
+  const [addProd, setAddProd] = useState({ produto_id:'', qtd:1, valor_unit:'' })
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [modal, setModal] = useState(false)
@@ -26,6 +29,7 @@ export default function Compras() {
     load()
     supabase.from('pessoas').select('id, nome').in('tipo', ['fornecedor', 'ambos']).eq('ativo', true).then(({ data }) => setFornecedores(data || []))
     supabase.from('contas').select('id,nome').eq('ativo', true).order('nome').then(({ data }) => setContas(data || []))
+    supabase.from('produtos').select('id,nome,preco_custo,estoque,unidade').eq('tipo','produto').eq('ativo',true).order('nome').then(({data}) => setProdutos(data||[]))
   }, [])
 
   async function load() {
@@ -45,8 +49,8 @@ export default function Compras() {
 
   const total = filtered.reduce((s, r) => s + Number(r.valor_total || 0), 0)
 
-  function openNew() { setForm(EMPTY); setEditing(null); setModal(true) }
-  function openEdit(r) { setForm({ ...r }); setEditing(r.id); setModal(true) }
+  function openNew() { setForm(EMPTY); setItensCompra([]); setEditing(null); setModal(true) }
+  function openEdit(r) { setForm({ ...r }); setItensCompra(r.itens_compra||[]); setEditing(r.id); setModal(true) }
 
   async function save() {
     if (!form.descricao?.trim()) return toast('Descrição obrigatória', 'error')
@@ -56,17 +60,22 @@ export default function Compras() {
     const eraP = anterior?.status === 'pago'
     const agora = form.status === 'pago'
 
+    const payload = { ...form, itens_compra: itensCompra.length ? itensCompra : null }
+    // Recalcula valor total dos itens se houver
+    if (itensCompra.length) {
+      payload.valor_total = itensCompra.reduce((s,i)=>s+Number(i.qtd)*Number(i.valor_unit),0).toFixed(2)
+    }
     let savedId = editing
     let error
     if (editing) {
-      ;({ error } = await supabase.from('compras').update(form).eq('id', editing))
+      ;({ error } = await supabase.from('compras').update(payload).eq('id', editing))
     } else {
-      const { data: novo, error: e } = await supabase.from('compras').insert(form).select().single()
+      const { data: novo, error: e } = await supabase.from('compras').insert(payload).select().single()
       error = e; if (novo) savedId = novo.id
     }
     if (error) { toast(error.message, 'error'); return }
 
-    if (!eraP && agora) await lancarCaixaCompra({ ...form, id: savedId })
+    if (!eraP && agora) await lancarCaixaCompra({ ...form, itens_compra: itensCompra, id: savedId, valor_total: payload.valor_total })
     if (eraP && !agora) await removerCaixaCompra(editing)
 
     toast('Salvo!', 'success'); setModal(false); load()
@@ -83,6 +92,14 @@ export default function Compras() {
     if (r.conta_id) {
       const { data: ct } = await supabase.from('contas').select('saldo_atual').eq('id', r.conta_id).single()
       if (ct) await supabase.from('contas').update({ saldo_atual: Number(ct.saldo_atual || 0) - Number(r.valor_total) }).eq('id', r.conta_id)
+    }
+    // Atualiza estoque dos produtos vinculados
+    if (r.itens_compra?.length) {
+      for (const item of r.itens_compra) {
+        if (!item.produto_id) continue
+        const { data: prod } = await supabase.from('produtos').select('estoque').eq('id', item.produto_id).single()
+        if (prod) await supabase.from('produtos').update({ estoque: Number(prod.estoque||0) + Number(item.qtd||0) }).eq('id', item.produto_id)
+      }
     }
   }
 
@@ -169,15 +186,18 @@ export default function Compras() {
       </div>
 
       {modal && (
-        <Modal title={editing ? 'Editar Compra' : 'Nova Compra'} onClose={() => setModal(false)} onSave={save}>
+        <Modal title={editing ? 'Editar Compra' : 'Nova Compra'} onClose={() => setModal(false)} onSave={save} size="modal-lg">
           <div className="form-grid form-grid-2">
             <div className="form-group">
               <label className="form-label">Data *</label>
               <input className="form-input" type="date" value={form.data} onChange={e => f('data', e.target.value)} />
             </div>
             <div className="form-group">
-              <label className="form-label">Valor Total *</label>
-              <input className="form-input" type="number" step="0.01" value={form.valor_total} onChange={e => f('valor_total', e.target.value)} placeholder="0,00" />
+              <label className="form-label">Valor Total {itensCompra.length > 0 ? '(calculado pelos itens)' : '*'}</label>
+              <input className="form-input" type="number" step="0.01"
+                value={itensCompra.length > 0 ? itensCompra.reduce((s,i)=>s+Number(i.qtd)*Number(i.valor_unit),0).toFixed(2) : form.valor_total}
+                onChange={e => f('valor_total', e.target.value)}
+                readOnly={itensCompra.length > 0} style={itensCompra.length > 0 ? {opacity:.7} : {}} placeholder="0,00" />
             </div>
             <div className="form-group" style={{ gridColumn: '1/-1' }}>
               <label className="form-label">Descrição *</label>
@@ -217,6 +237,75 @@ export default function Compras() {
               <label className="form-label">Observações</label>
               <textarea className="form-textarea" value={form.obs} onChange={e => f('obs', e.target.value)} />
             </div>
+
+            {/* Itens vinculados ao estoque */}
+            {produtos.length > 0 && (
+              <div style={{ gridColumn:'1/-1' }}>
+                <div style={{ height:1, background:'var(--border)', margin:'4px 0 12px' }} />
+                <div style={{ fontWeight:700, fontSize:13, marginBottom:10, display:'flex', alignItems:'center', gap:8 }}>
+                  <Package size={14} color="var(--accent)"/> Itens (atualiza estoque ao pagar)
+                </div>
+                {/* Adicionar item */}
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 80px 100px auto', gap:8, marginBottom:10, alignItems:'flex-end' }}>
+                  <div className="form-group" style={{ marginBottom:0 }}>
+                    <label className="form-label">Produto</label>
+                    <select className="form-select" value={addProd.produto_id} onChange={e => {
+                      const p = produtos.find(x=>x.id===e.target.value)
+                      setAddProd(prev=>({...prev, produto_id:e.target.value, valor_unit: p?.preco_custo||''}))
+                    }}>
+                      <option value="">Selecionar...</option>
+                      {produtos.map(p=><option key={p.id} value={p.id}>{p.nome} (est: {p.estoque||0} {p.unidade})</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group" style={{ marginBottom:0 }}>
+                    <label className="form-label">Qtd</label>
+                    <input className="form-input" type="number" min={0.01} step="0.01" value={addProd.qtd} onChange={e=>setAddProd(p=>({...p,qtd:e.target.value}))} />
+                  </div>
+                  <div className="form-group" style={{ marginBottom:0 }}>
+                    <label className="form-label">Vlr Unit.</label>
+                    <input className="form-input" type="number" step="0.01" value={addProd.valor_unit} onChange={e=>setAddProd(p=>({...p,valor_unit:e.target.value}))} placeholder="0,00"/>
+                  </div>
+                  <button className="btn btn-primary btn-sm" style={{ marginTop:18 }} onClick={() => {
+                    if (!addProd.produto_id || !addProd.qtd || !addProd.valor_unit) return
+                    const prod = produtos.find(x=>x.id===addProd.produto_id)
+                    setItensCompra(prev=>[...prev,{ produto_id:addProd.produto_id, nome:prod?.nome||'', qtd:Number(addProd.qtd), valor_unit:Number(addProd.valor_unit) }])
+                    setAddProd({ produto_id:'', qtd:1, valor_unit:'' })
+                  }}><Plus size={13}/></button>
+                </div>
+                {/* Lista de itens */}
+                {itensCompra.length > 0 && (
+                  <div style={{ border:'1px solid var(--border)', borderRadius:8, overflow:'hidden' }}>
+                    <table style={{ width:'100%', borderCollapse:'collapse' }}>
+                      <thead><tr style={{ background:'var(--bg3)' }}>
+                        <th style={{ padding:'7px 10px', fontSize:10, textAlign:'left', color:'var(--text3)', fontWeight:700, textTransform:'uppercase' }}>Produto</th>
+                        <th style={{ padding:'7px 10px', fontSize:10, textAlign:'center', color:'var(--text3)', fontWeight:700, textTransform:'uppercase' }}>Qtd</th>
+                        <th style={{ padding:'7px 10px', fontSize:10, textAlign:'right', color:'var(--text3)', fontWeight:700, textTransform:'uppercase' }}>Unit.</th>
+                        <th style={{ padding:'7px 10px', fontSize:10, textAlign:'right', color:'var(--text3)', fontWeight:700, textTransform:'uppercase' }}>Total</th>
+                        <th style={{ width:30 }}/>
+                      </tr></thead>
+                      <tbody>
+                        {itensCompra.map((item,i)=>(
+                          <tr key={i} style={{ borderTop:'1px solid var(--border)' }}>
+                            <td style={{ padding:'7px 10px', fontSize:13 }}>{item.nome}</td>
+                            <td style={{ padding:'7px 10px', fontSize:13, textAlign:'center' }}>{item.qtd}</td>
+                            <td style={{ padding:'7px 10px', fontSize:13, textAlign:'right', fontFamily:'var(--mono)' }}>{fmt(item.valor_unit)}</td>
+                            <td style={{ padding:'7px 10px', fontSize:13, textAlign:'right', fontFamily:'var(--mono)', fontWeight:700 }}>{fmt(item.qtd*item.valor_unit)}</td>
+                            <td style={{ padding:'4px' }}><button className="icon-btn del" onClick={()=>setItensCompra(prev=>prev.filter((_,j)=>j!==i))}><Trash2 size={12}/></button></td>
+                          </tr>
+                        ))}
+                        <tr style={{ borderTop:'2px solid var(--border2)', background:'var(--bg3)' }}>
+                          <td colSpan={3} style={{ padding:'8px 10px', fontSize:13, fontWeight:700, textAlign:'right' }}>Total</td>
+                          <td style={{ padding:'8px 10px', fontSize:14, fontWeight:900, fontFamily:'var(--mono)', color:'var(--accent)', textAlign:'right' }}>
+                            {fmt(itensCompra.reduce((s,i)=>s+i.qtd*i.valor_unit,0))}
+                          </td>
+                          <td/>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </Modal>
       )}
