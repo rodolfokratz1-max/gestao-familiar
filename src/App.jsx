@@ -20,7 +20,8 @@ import PlanoContas from './pages/PlanoContas'
 import Movimentacoes from './pages/Movimentacoes'
 import FluxoCaixa from './pages/FluxoCaixa'
 import CentroCusto from './pages/CentroCusto'
-import { LayoutDashboard, Users, Package, TrendingUp, TrendingDown, Wallet, ShoppingCart, Wrench, CreditCard, HandCoins, Menu, X, Landmark, BarChart2, LogOut, User, Shield, ClipboardList, Building2, Repeat2, ListTree, ArrowLeftRight, BarChart, Target } from 'lucide-react'
+import EntradaEstoque from './pages/EntradaEstoque'
+import { LayoutDashboard, Users, Package, TrendingUp, TrendingDown, Wallet, ShoppingCart, Wrench, CreditCard, HandCoins, Menu, X, Landmark, BarChart2, LogOut, User, Shield, ClipboardList, Building2, Repeat2, ListTree, ArrowLeftRight, BarChart, Target, PackagePlus } from 'lucide-react'
 
 const nav = [
   { group: 'Visão Geral', items: [
@@ -52,6 +53,7 @@ const nav = [
     { id: 'cartoes', label: 'Cartões', icon: CreditCard },
     { id: 'compras', label: 'Compras', icon: ShoppingCart },
     { id: 'os', label: 'Ordens de Serviço', icon: ClipboardList },
+    { id: 'entrada_estoque', label: 'Entrada de Estoque', icon: PackagePlus },
   ]},
 ]
 
@@ -83,6 +85,7 @@ function PageContent({ page, onNavigate }) {
   if (page === 'movimentacoes') return <Movimentacoes />
   if (page === 'fluxo_caixa') return <FluxoCaixa />
   if (page === 'centro_custo') return <CentroCusto />
+  if (page === 'entrada_estoque') return <EntradaEstoque />
   if (page === 'empresa') return <Empresa />
   if (page === 'usuarios') return <Usuarios />
   return null
