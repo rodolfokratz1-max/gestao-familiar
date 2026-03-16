@@ -39,6 +39,7 @@ export default function EntradaEstoque() {
   const [historico, setHistorico] = useState([])
   const [loadingHist, setLoadingHist] = useState(false)
   const [notaDetalhe, setNotaDetalhe] = useState(null)
+  const [revertendo, setRevertendo] = useState(null)
 
   useEffect(() => { loadAuxiliar() }, [])
   useEffect(() => { if (aba === 'historico') loadHistorico() }, [aba])
@@ -57,6 +58,33 @@ export default function EntradaEstoque() {
     const { data } = await supabase.from('entradas_estoque').select('*').order('created_at',{ascending:false}).limit(50)
     setHistorico(data||[])
     setLoadingHist(false)
+  }
+
+  async function reverterNota(entrada) {
+    setRevertendo(null)
+    setProcessando(true)
+    try {
+      // 1. Reverte estoque de cada item
+      for (const item of (entrada.itens||[]).filter(i=>i.produto_id)) {
+        const { data:prod } = await supabase.from('produtos').select('estoque').eq('id',item.produto_id).single()
+        if (prod) {
+          const novoEst = Math.max(0, Number(prod.estoque||0) - Number(item.qtd||0))
+          await supabase.from('produtos').update({ estoque: novoEst }).eq('id', item.produto_id)
+        }
+      }
+      // 2. Remove contas a pagar geradas por esta entrada
+      await supabase.from('contas_pagar').delete().eq('origem_id', entrada.id).eq('origem_tabela','entradas_estoque')
+      // 3. Remove compra gerada
+      await supabase.from('compras').delete().eq('origem_id', entrada.id).eq('origem_tabela','entradas_estoque')
+      // 4. Remove a entrada do histórico
+      await supabase.from('entradas_estoque').delete().eq('id', entrada.id)
+      toast('✅ Nota revertida! Estoque, compras e contas a pagar foram desfeitos.', 'success')
+      loadHistorico()
+    } catch(err) {
+      toast('Erro ao reverter: '+err.message, 'error')
+    } finally {
+      setProcessando(false)
+    }
   }
 
   // ── IMPORTAR XML ──────────────────────────────────────
@@ -79,13 +107,28 @@ export default function EntradaEstoque() {
         const descricao = det.querySelector('xProd')?.textContent || ''
         const codigo    = det.querySelector('cProd')?.textContent || ''
         const qtd       = Number(det.querySelector('qCom')?.textContent || 1)
-        const vUnit     = Number(det.querySelector('vUnCom')?.textContent || 0)
+        const vUnCom    = Number(det.querySelector('vUnCom')?.textContent || 0) // preço de tabela
+        const vProd     = Number(det.querySelector('vProd')?.textContent || 0)  // valor total real do item
+        const vDesc     = Number(det.querySelector('vDesc')?.textContent || 0)  // desconto do item
+        // Usa vProd (já considera descontos por item) dividido pela qtd
+        // Se vProd for 0 (raro), cai no vUnCom
+        const vUnit = vProd > 0 && qtd > 0 ? (vProd - vDesc) / qtd : vUnCom
         const prodMatch = produtos.find(p => p.codigo === codigo || p.nome?.toLowerCase() === descricao.toLowerCase())
-        return { descricao, codigo_nf:codigo, qtd, valor_unit:vUnit, produto_id:prodMatch?.id||'', produto_nome:prodMatch?.nome||'' }
+        return { descricao, codigo_nf:codigo, qtd, valor_unit:Number(vUnit.toFixed(4)), produto_id:prodMatch?.id||'', produto_nome:prodMatch?.nome||'' }
       })
+      // Calcula desconto global da NF (vDescTotal) e distribui proporcionalmente se houver
+      const vNF    = Number(xml.querySelector('vNF')?.textContent || 0)
+      const vTotProd = itensXML.reduce((s,i)=>s+i.qtd*i.valor_unit,0)
+      const diffTotal = vNF > 0 && Math.abs(vNF - vTotProd) > 0.05
+      if (diffTotal && vTotProd > 0) {
+        // Aplica fator de ajuste proporcional para bater com o total real da NF
+        const fator = vNF / vTotProd
+        itensXML.forEach(i => { i.valor_unit = Number((i.valor_unit * fator).toFixed(4)) })
+      }
       setItens(itensXML)
       const vinc = itensXML.filter(i=>i.produto_id).length
-      toast(`✅ XML importado! ${itensXML.length} itens. ${vinc} vinculados automaticamente.`, 'success')
+      const totalCalc = itensXML.reduce((s,i)=>s+i.qtd*i.valor_unit,0)
+      toast(`✅ XML importado! ${itensXML.length} itens · Total: R$ ${totalCalc.toLocaleString('pt-BR',{minimumFractionDigits:2})} · ${vinc} vinculados automaticamente.`, 'success')
     } catch(err) {
       toast('Erro ao ler XML. Verifique se é uma NF-e válida.','error')
     }
@@ -264,7 +307,12 @@ export default function EntradaEstoque() {
                         <td><span className="badge badge-blue" style={{fontSize:10}}>{(h.itens||[]).length} itens</span></td>
                         <td className="text-mono font-bold" style={{textAlign:'right'}}>{fmt(h.total)}</td>
                         <td>{h.gerou_financeiro?<span className="badge badge-green" style={{fontSize:10}}>✓ Conta a pagar</span>:<span className="badge badge-gray" style={{fontSize:10}}>Só estoque</span>}</td>
-                        <td><button className="icon-btn" title="Ver detalhes" onClick={()=>setNotaDetalhe(h)}><Eye size={14}/></button></td>
+                        <td>
+                          <div className="action-btns">
+                            <button className="icon-btn" title="Ver detalhes" onClick={()=>setNotaDetalhe(h)}><Eye size={14}/></button>
+                            <button className="icon-btn del" title="Reverter nota" onClick={()=>setRevertendo(h)}><Trash2 size={14}/></button>
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
