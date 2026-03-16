@@ -4,6 +4,7 @@ import { useToast } from '../contexts/ToastContext'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { Plus, Search, Pencil, Trash2, Power, CheckCircle, CreditCard, ChevronDown, ChevronUp } from 'lucide-react'
+import { SelectCategoria } from '../lib/planoContas'
 
 const fmt = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
 const today = () => new Date().toISOString().split('T')[0]
@@ -32,7 +33,7 @@ const sanitize = (obj) => {
 }
 
 const emptyForm = () => ({
-  data_emissao: today(), descricao: '', valor: '', vencimento: '',
+  data_emissao: today(), descricao: '', categoria: '', valor: '', vencimento: '',
   pessoa_id: '', pessoa_nome: '', responsavel_id: '', responsavel_nome: '', forma_pgto: '', conta_id: '',
   parcelado: false, num_parcelas: 2,
   obs: '', ativo: true,
@@ -307,6 +308,11 @@ export default function FinanceiroContas({ module }) {
             <div className="form-group">
               <label className="form-label">Valor *</label>
               <input className="form-input" type="number" step="0.01" value={form.valor} onChange={e => f('valor', e.target.value)} placeholder="0,00" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Categoria</label>
+              <SelectCategoria value={form.categoria || ''} onChange={v => f('categoria', v)}
+                tipo={module === 'contas_receber' ? 'receita' : 'despesa'} />
             </div>
             <div className="form-group">
               <label className="form-label">Forma de Pagamento</label>

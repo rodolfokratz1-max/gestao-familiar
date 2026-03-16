@@ -5,6 +5,7 @@ import { useToast } from '../contexts/ToastContext'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { Plus, Search, Pencil, Trash2, Power, CheckCircle } from 'lucide-react'
+import { SelectCategoria } from '../lib/planoContas'
 
 const fmt = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
 const today = () => new Date().toISOString().split('T')[0]
@@ -227,7 +228,8 @@ export default function Financeiro({ module }) {
             </div>
             <div className="form-group">
               <label className="form-label">Categoria</label>
-              <input className="form-input" value={form.categoria} onChange={e => f('categoria', e.target.value)} placeholder="Ex: Alimentação, Salário..." />
+              <SelectCategoria value={form.categoria} onChange={v => f('categoria', v)}
+                tipo={module === 'receitas' ? 'receita' : 'despesa'} />
             </div>
             <div className="form-group">
               <label className="form-label">Conta / Carteira</label>

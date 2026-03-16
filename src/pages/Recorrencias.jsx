@@ -4,6 +4,7 @@ import { useToast } from '../contexts/ToastContext'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { Plus, Search, Pencil, Trash2, Power, RefreshCw, Clock, CheckCircle, AlertCircle } from 'lucide-react'
+import { SelectCategoria } from '../lib/planoContas'
 
 const fmt = v => 'R$ ' + Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2})
 const today = () => new Date().toISOString().split('T')[0]
@@ -324,9 +325,8 @@ export default function Recorrencias() {
             </div>
             <div className="form-group">
               <label className="form-label">Categoria</label>
-              <select className="form-select" value={form.categoria} onChange={e => f('categoria', e.target.value)}>
-                {CATEGORIAS.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
+              <SelectCategoria value={form.categoria} onChange={v => f('categoria', v)}
+                tipo={form.tipo === 'receber' ? 'receita' : 'despesa'} />
             </div>
             <div className="form-group">
               <label className="form-label">Conta / Carteira</label>
