@@ -143,6 +143,33 @@ export default function EntradaEstoque() {
     setItens(prev => prev.map((it,i) => i===idx ? {...it, produto_id:'', produto_nome:'', confirmado:false} : it))
   }
 
+  async function criarProdutoDoItem(idx) {
+    const item = itens[idx]
+    if (!item.descricao?.trim()) return toast('Preencha a descrição do item antes de criar o produto', 'error')
+    // Gera código sequencial simples
+    const { data: last } = await supabase.from('produtos').select('codigo').order('created_at', { ascending: false }).limit(1).single()
+    const lastNum = parseInt((last?.codigo || 'PROD-000').replace(/\D/g,'')) || 0
+    const codigo = 'PROD-' + String(lastNum + 1).padStart(3, '0')
+    const { data: novo, error } = await supabase.from('produtos').insert({
+      codigo,
+      nome: item.descricao,
+      tipo: 'produto',
+      preco_custo: Number(item.valor_unit) || 0,
+      estoque: 0, // será atualizado ao confirmar
+      estoque_min: 0,
+      unidade: 'un',
+      ativo: true,
+    }).select().single()
+    if (error) { toast('Erro ao criar produto: ' + error.message, 'error'); return }
+    // Vincula ao item
+    setItens(prev => prev.map((it,i) => i===idx ? {
+      ...it, produto_id: novo.id, produto_nome: novo.nome, confirmado: true
+    } : it))
+    // Adiciona à lista local de produtos
+    setProdutos(prev => [...prev, novo])
+    toast(`✅ Produto "${novo.nome}" criado com código ${codigo}!`, 'success')
+  }
+
   // ── TOTAIS ────────────────────────────────────────────
   const totalNota = itens.reduce((s,i) => s + Number(i.qtd)*Number(i.valor_unit), 0)
   const itensVinculados = itens.filter(i => i.produto_id).length
@@ -151,12 +178,30 @@ export default function EntradaEstoque() {
   // ── CONFIRMAR ENTRADA ─────────────────────────────────
   async function confirmarEntrada() {
     if (itens.length === 0) return toast('Adicione pelo menos um item', 'error')
-    const itensPagar = itens.filter(i => i.produto_id)
-    if (itensPagar.length === 0) return toast('Vincule pelo menos um item a um produto', 'error')
     setConfirmandoEntrada(false)
     setProcessando(true)
 
     try {
+      // 0. Cria produtos automaticamente para itens sem vínculo
+      const itensAtualizados = [...itens]
+      for (let idx = 0; idx < itensAtualizados.length; idx++) {
+        const item = itensAtualizados[idx]
+        if (!item.produto_id && item.descricao?.trim()) {
+          const { data: last } = await supabase.from('produtos').select('codigo').order('created_at', { ascending: false }).limit(1).single()
+          const lastNum = parseInt((last?.codigo || 'PROD-000').replace(/\D/g,'')) || 0
+          const codigo = 'PROD-' + String(lastNum + idx + 1).padStart(3, '0')
+          const { data: novo } = await supabase.from('produtos').insert({
+            codigo, nome: item.descricao, tipo: 'produto',
+            preco_custo: Number(item.valor_unit) || 0,
+            estoque: 0, estoque_min: 0, unidade: 'un', ativo: true,
+          }).select().single()
+          if (novo) {
+            itensAtualizados[idx] = { ...item, produto_id: novo.id, produto_nome: novo.nome }
+          }
+        }
+      }
+      setItens(itensAtualizados)
+
       // 1. Cria registro da entrada
       const { data: entrada, error: errEntrada } = await supabase
         .from('entradas_estoque').insert({
@@ -173,7 +218,7 @@ export default function EntradaEstoque() {
       if (errEntrada) throw errEntrada
 
       // 2. Atualiza estoque dos produtos vinculados
-      for (const item of itens.filter(i => i.produto_id)) {
+      for (const item of itensAtualizados.filter(i => i.produto_id)) {
         const { data: prod } = await supabase.from('produtos').select('estoque').eq('id', item.produto_id).single()
         const novoEstoque = Number(prod?.estoque || 0) + Number(item.qtd)
         await supabase.from('produtos').update({
@@ -210,7 +255,8 @@ export default function EntradaEstoque() {
         }
       }
 
-      toast(`✅ Entrada confirmada! Estoque de ${itensPagar.length} produto(s) atualizado.${financeiro.gerar ? ` ${financeiro.parcelas} parcela(s) gerada(s) em Contas a Pagar.` : ''}`, 'success')
+      const qtdAtualiz = itensAtualizados.filter(i => i.produto_id).length
+      toast(`✅ Entrada confirmada! Estoque de ${qtdAtualiz} produto(s) atualizado.${financeiro.gerar ? ` ${financeiro.parcelas} parcela(s) gerada(s) em Contas a Pagar.` : ''}`, 'success')
 
       // Reset
       setNota({ numero:'', fornecedor_id:'', fornecedor_nome:'', data_emissao:today(), chave_nfe:'', obs:'' })
@@ -364,7 +410,10 @@ export default function EntradaEstoque() {
                         <div className="form-group" style={{ gridColumn:'1/-1' }}>
                           <label className="form-label" style={{ display:'flex', alignItems:'center', gap:6 }}>
                             <Link size={11}/> Vincular ao produto do cadastro
-                            {vinculado && <span className="badge badge-green" style={{ fontSize:10 }}>✓ {item.produto_nome}</span>}
+                            {vinculado
+                              ? <span className="badge badge-green" style={{ fontSize:10 }}>✓ {item.produto_nome}</span>
+                              : <span style={{ color:'var(--yellow)', fontSize:10, fontWeight:600 }}>Sem vínculo — será criado automaticamente ao confirmar</span>
+                            }
                           </label>
                           {vinculado ? (
                             <button className="btn btn-sm btn-secondary" onClick={() => desvincular(idx)}>
@@ -394,6 +443,12 @@ export default function EntradaEstoque() {
                                   {produtosFiltrados(idx).length === 0 && (
                                     <div style={{ padding:'10px 12px', color:'var(--text3)', fontSize:12 }}>Nenhum produto encontrado</div>
                                   )}
+                                  <div style={{ padding:'8px 12px', cursor:'pointer', fontSize:12, color:'var(--accent)', fontWeight:700, borderTop:'1px solid var(--border)', display:'flex', alignItems:'center', gap:6 }}
+                                    onClick={() => { criarProdutoDoItem(idx); setBuscaProduto(prev=>({...prev,[idx]:undefined})) }}
+                                    onMouseEnter={e=>e.currentTarget.style.background='var(--bg3)'}
+                                    onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                                    <Plus size={12}/> Criar novo produto com este nome
+                                  </div>
                                 </div>
                               )}
                             </div>
@@ -502,7 +557,10 @@ export default function EntradaEstoque() {
 
       {confirmandoEntrada && (
         <ConfirmDialog
-          message={`Confirmar entrada de estoque?\n\n• ${itensVinculados} produto(s) terão estoque atualizado\n${itensSemVinculo > 0 ? `• ${itensSemVinculo} item(ns) sem vínculo serão ignorados no estoque\n` : ''}• Total da nota: ${fmt(totalNota)}\n${gerarFinanceiro ? `• ${financeiro.parcelas}x de ${fmt(totalNota/financeiro.parcelas)} será gerado em Contas a Pagar` : '• Sem lançamento financeiro'}`}
+          title="Confirmar Entrada de Estoque"
+          confirmLabel="✓ Confirmar Entrada"
+          confirmStyle="success"
+          message={`Ao confirmar:\n\n${itensVinculados > 0 ? `• ${itensVinculados} produto(s) vinculados terão estoque atualizado\n` : ''}${itensSemVinculo > 0 ? `• ${itensSemVinculo} item(ns) sem vínculo serão criados automaticamente no cadastro\n` : ''}• Total da nota: ${fmt(totalNota)}${gerarFinanceiro ? `\n• ${financeiro.parcelas}x de ${fmt(totalNota/financeiro.parcelas)} gerado em Contas a Pagar` : '\n• Sem lançamento financeiro'}`}
           onConfirm={confirmarEntrada}
           onCancel={() => setConfirmandoEntrada(false)}
         />
