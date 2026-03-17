@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { supabase } from '../lib/supabase'
+import { supabase } from './supabase'
 
 // Hook que carrega grupos e subcategorias do plano de contas
 export function usePlanoContas() {
@@ -57,12 +57,12 @@ export function SelectCategoria({ value, onChange, tipo = '', placeholder = 'Sel
 }
 
 // ── Centro de Custo ────────────────────────────────────────
-import { supabase as _supabase } from './supabase'
 
 export function SelectCentroCusto({ value, onChange, style = {} }) {
   const [centros, setCentros] = useState([])
   useEffect(() => {
-    _supabase.from('centros_custo').select('id,nome').eq('ativo',true).order('nome').then(({data}) => setCentros(data||[]))
+    supabase.from('centros_custo').select('id,nome').eq('ativo',true).order('nome')
+      .then(({data}) => setCentros(data||[]))
   }, [])
   return (
     <select className="form-select" value={value||''} onChange={e => onChange(e.target.value)} style={style}>
