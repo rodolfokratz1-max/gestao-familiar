@@ -155,21 +155,26 @@ export default function FinanceiroContas({ module }) {
     })
     if (e1) { toast(e1.message, 'error'); return }
 
-    // Lança no caixa SEMPRE (conta é obrigatória)
+    // Lança no caixa SEMPRE
     const tipo = cfg.table === 'contas_receber' ? 'entrada' : 'saida'
-    const { error: eCaixa } = await supabase.from('caixa').insert({
+    const caixaPayload = {
       data: pgtoForm.data,
       tipo,
       descricao: `${cfg.pagoLabel}: ${row.descricao}`,
       valor,
       categoria: pgtoForm.categoria || (cfg.table === 'contas_receber' ? 'Recebimento' : 'Pagamento'),
-      conta_id: pgtoForm.conta_id || null,
-      forma_pgto: pgtoForm.forma_pgto || null,
-      obs: pgtoForm.obs,
-      origem_id: row.id,
-      origem_tabela: cfg.table,
-    })
-    if (eCaixa) console.error('Erro ao lançar no caixa:', eCaixa)
+      obs: pgtoForm.obs || null,
+    }
+    // Adiciona campos opcionais apenas se existirem
+    if (pgtoForm.conta_id) caixaPayload.conta_id = pgtoForm.conta_id
+    if (row.id) caixaPayload.origem_id = row.id
+    if (cfg.table) caixaPayload.origem_tabela = cfg.table
+
+    const { error: eCaixa } = await supabase.from('caixa').insert(caixaPayload)
+    if (eCaixa) {
+      toast('Aviso: pagamento registrado mas erro ao lançar no Caixa: ' + eCaixa.message, 'error')
+      console.error('Erro caixa:', eCaixa)
+    }
 
     // Atualiza saldo da conta se selecionada
     if (pgtoForm.conta_id) {
