@@ -254,7 +254,7 @@ export default function Dashboard({ onNavigate }) {
                       <span style={{fontWeight:700,color:'var(--green)',fontFamily:'var(--mono)'}}>{fmt(c.value)}</span>
                     </div>
                     <div style={{height:5,borderRadius:3,background:'var(--bg3)',overflow:'hidden'}}>
-                      <div style={{height:'100%',width:`${(c.value/max)*100}%`,background:CORES[i%CORES.length],borderRadius:3}}/>
+                      <div style={{height:'100%',width:`${(c.value/max)*100}%`,background:CHART_COLORS[i%CHART_COLORS.length],borderRadius:3}}/>
                     </div>
                   </div>
                 )
