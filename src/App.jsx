@@ -22,6 +22,7 @@ import FluxoCaixa from './pages/FluxoCaixa'
 import CentroCusto from './pages/CentroCusto'
 import EntradaEstoque from './pages/EntradaEstoque'
 import { VERSION } from './version'
+import ErrorBoundary from './components/ErrorBoundary'
 import {
   LayoutDashboard, Users, Package, TrendingUp, TrendingDown,
   Wallet, ShoppingCart, CreditCard, HandCoins, Menu, X,
@@ -185,7 +186,9 @@ function AppInner() {
           </div>
         </header>
         <main className="page-content">
-          <PageContent page={page} onNavigate={setPage} />
+          <ErrorBoundary key={page}>
+            <PageContent page={page} onNavigate={setPage} />
+          </ErrorBoundary>
         </main>
       </div>
     </div>
