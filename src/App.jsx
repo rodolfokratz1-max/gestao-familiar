@@ -21,6 +21,7 @@ import Movimentacoes from './pages/Movimentacoes'
 import FluxoCaixa from './pages/FluxoCaixa'
 import CentroCusto from './pages/CentroCusto'
 import EntradaEstoque from './pages/EntradaEstoque'
+import { VERSION } from './version'
 import { LayoutDashboard, Users, Package, TrendingUp, TrendingDown, Wallet, ShoppingCart, Wrench, CreditCard, HandCoins, Menu, X, Landmark, BarChart2, LogOut, User, Shield, ClipboardList, Building2, Repeat2, ListTree, ArrowLeftRight, BarChart, Target, PackagePlus } from 'lucide-react'
 
 const nav = [
@@ -150,7 +151,7 @@ function AppInner() {
           <button className="menu-btn" onClick={() => setSidebarOpen(o => !o)}>{sidebarOpen ? <X size={20} /> : <Menu size={20} />}</button>
           <h2 className="page-title">{titles[page]}</h2>
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text3)', fontFamily: 'var(--mono)', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 6, padding: '2px 7px', letterSpacing: '.3px' }}>v1.17c</span>
+            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text3)', fontFamily: 'var(--mono)', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 6, padding: '2px 7px', letterSpacing: '.3px' }}>{VERSION}</span>
             <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13 }}>
               {inicialUsuario}
             </div>

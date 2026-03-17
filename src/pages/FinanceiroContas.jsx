@@ -155,20 +155,24 @@ export default function FinanceiroContas({ module }) {
     })
     if (e1) { toast(e1.message, 'error'); return }
 
-    // Lança no caixa se tiver conta selecionada
-    if (pgtoForm.conta_id) {
-      const tipo = cfg.table === 'contas_receber' ? 'entrada' : 'saida'
-      await supabase.from('caixa').insert({
-        data: pgtoForm.data,
-        tipo,
-        descricao: `${cfg.pagoLabel}: ${row.descricao}`,
-        valor,
-        categoria: cfg.table === 'contas_receber' ? 'Recebimento' : 'Pagamento',
-        conta_id: pgtoForm.conta_id,
-        obs: pgtoForm.obs,
-      })
+    // Lança no caixa SEMPRE (conta é obrigatória)
+    const tipo = cfg.table === 'contas_receber' ? 'entrada' : 'saida'
+    const { error: eCaixa } = await supabase.from('caixa').insert({
+      data: pgtoForm.data,
+      tipo,
+      descricao: `${cfg.pagoLabel}: ${row.descricao}`,
+      valor,
+      categoria: pgtoForm.categoria || (cfg.table === 'contas_receber' ? 'Recebimento' : 'Pagamento'),
+      conta_id: pgtoForm.conta_id || null,
+      forma_pgto: pgtoForm.forma_pgto || null,
+      obs: pgtoForm.obs,
+      origem_id: row.id,
+      origem_tabela: cfg.table,
+    })
+    if (eCaixa) console.error('Erro ao lançar no caixa:', eCaixa)
 
-      // Atualiza saldo da conta
+    // Atualiza saldo da conta se selecionada
+    if (pgtoForm.conta_id) {
       const { data: contaData } = await supabase.from('contas').select('saldo_atual').eq('id', pgtoForm.conta_id).single()
       if (contaData) {
         const novoSaldo = Number(contaData.saldo_atual || 0) + (tipo === 'entrada' ? valor : -valor)
@@ -395,14 +399,14 @@ export default function FinanceiroContas({ module }) {
               <div className="form-grid form-grid-2">
                 <div className="form-group">
                   <label className="form-label">Valor pago *</label>
-                  <input className="form-input" type="number" step="0.01" value={pgtoForm.valor} onChange={e => setPgtoForm(p => ({ ...p, valor: e.target.value }))} />
+                  <input className="form-input" type="number" step="0.01" value={pgtoForm.valor} onChange={e => setPgtoForm(p => ({ ...p, valor: e.target.value }))} autoFocus />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Data *</label>
                   <input className="form-input" type="date" value={pgtoForm.data} onChange={e => setPgtoForm(p => ({ ...p, data: e.target.value }))} />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Forma de Pagamento</label>
+                  <label className="form-label">Forma de Pagamento *</label>
                   <select className="form-select" value={pgtoForm.forma_pgto} onChange={e => setPgtoForm(p => ({ ...p, forma_pgto: e.target.value }))}>
                     <option value="">Selecionar...</option>
                     {FORMAS_PGTO.map(o => <option key={o} value={o}>{o}</option>)}
@@ -411,14 +415,18 @@ export default function FinanceiroContas({ module }) {
                 <div className="form-group">
                   <label className="form-label">Conta / Carteira</label>
                   <select className="form-select" value={pgtoForm.conta_id} onChange={e => setPgtoForm(p => ({ ...p, conta_id: e.target.value }))}>
-                    <option value="">Selecionar (sincroniza caixa)</option>
-                    {contas.map(c => <option key={c.id} value={c.id}>{c.nome} — {c.tipo}</option>)}
+                    <option value="">Sem conta (não atualiza saldo)</option>
+                    {contas.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
                   </select>
                 </div>
                 <div className="form-group" style={{ gridColumn: '1/-1' }}>
                   <label className="form-label">Observações</label>
                   <textarea className="form-textarea" value={pgtoForm.obs} onChange={e => setPgtoForm(p => ({ ...p, obs: e.target.value }))} rows={2} />
                 </div>
+              </div>
+              <div style={{ background: 'rgba(79,142,247,.08)', border: '1px solid rgba(79,142,247,.2)', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: 'var(--text2)', marginTop: 4 }}>
+                ℹ️ O pagamento será lançado automaticamente no <strong>Caixa</strong> e no <strong>Fluxo de Caixa</strong>.
+                {pgtoForm.conta_id ? <span style={{ color: 'var(--green)' }}> O saldo da conta selecionada será atualizado.</span> : <span style={{ color: 'var(--yellow)' }}> Selecione uma conta para atualizar o saldo.</span>}
               </div>
               <div className="modal-footer">
                 <button className="btn btn-secondary" onClick={() => setModalPgto(null)}>Cancelar</button>

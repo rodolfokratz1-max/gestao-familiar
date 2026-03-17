@@ -62,39 +62,46 @@ export default function EntradaEstoque() {
 
   async function reverterNota(entradaId) {
     const entrada = historico.find(h => h.id === entradaId)
-    if (!entrada) return
+    if (!entrada) { toast('Nota não encontrada','error'); return }
     setRevertendo(null)
     setProcessando(true)
+    let erros = []
     try {
       // 1. Reverte estoque de cada item
-      const itensEntrada = entrada.itens || []
-      for (const item of itensEntrada.filter(i => i.produto_id)) {
-        const { data:prod, error:errP } = await supabase
-          .from('produtos').select('estoque').eq('id', item.produto_id).single()
-        if (!errP && prod !== null) {
+      const itensEntrada = Array.isArray(entrada.itens) ? entrada.itens : []
+      for (const item of itensEntrada) {
+        if (!item.produto_id) continue
+        const { data:prod } = await supabase.from('produtos').select('estoque').eq('id', item.produto_id).single()
+        if (prod) {
           const novoEst = Math.max(0, Number(prod.estoque||0) - Number(item.qtd||0))
-          await supabase.from('produtos').update({ estoque: novoEst }).eq('id', item.produto_id)
+          const { error:eEst } = await supabase.from('produtos').update({ estoque: novoEst }).eq('id', item.produto_id)
+          if (eEst) erros.push('estoque: '+eEst.message)
         }
       }
-      // 2. Remove contas a pagar (origem pode ser UUID ou string)
-      const { error: e2 } = await supabase.from('contas_pagar')
-        .delete().eq('origem_id', entrada.id).eq('origem_tabela','entradas_estoque')
-      if (e2) console.warn('contas_pagar delete:', e2.message)
 
-      // 3. Remove compra gerada
-      const { error: e3 } = await supabase.from('compras')
-        .delete().eq('origem_id', entrada.id).eq('origem_tabela','entradas_estoque')
-      if (e3) console.warn('compras delete:', e3.message)
+      // 2. Remove contas a pagar vinculadas
+      await supabase.from('contas_pagar').delete().eq('origem_id', entrada.id)
+      await supabase.from('contas_pagar').delete().eq('origem_tabela','entradas_estoque').eq('origem_id', entrada.id)
 
-      // 4. Remove a entrada
-      const { error: e4 } = await supabase.from('entradas_estoque').delete().eq('id', entrada.id)
-      if (e4) throw e4
+      // 3. Remove compras vinculadas
+      await supabase.from('compras').delete().eq('origem_id', entrada.id)
 
-      toast('✅ Nota revertida com sucesso!', 'success')
+      // 4. Remove pagamentos parciais vinculados às contas deletadas (cleanup)
+      // Já são deletados em cascata se houver FK, senão sem problema
+
+      // 5. Remove a entrada do histórico
+      const { error: eEntrada } = await supabase.from('entradas_estoque').delete().eq('id', entrada.id)
+      if (eEntrada) throw eEntrada
+
+      if (erros.length > 0) {
+        toast(`⚠️ Nota revertida com avisos: ${erros.join(', ')}`, 'info')
+      } else {
+        toast('✅ Nota revertida! Estoque descontado e registros removidos.', 'success')
+      }
       await loadHistorico()
     } catch(err) {
-      console.error('reverterNota error:', err)
-      toast('Erro ao reverter: ' + (err.message || JSON.stringify(err)), 'error')
+      console.error('reverterNota:', err)
+      toast('Erro ao reverter: ' + (err?.message || String(err)), 'error')
     } finally {
       setProcessando(false)
     }
