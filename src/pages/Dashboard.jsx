@@ -1,13 +1,11 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { TrendingUp, TrendingDown, Wallet, HandCoins, CreditCard, AlertCircle, ChevronRight, Target, BarChart2, RefreshCw } from 'lucide-react'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell, Legend } from 'recharts'
+import { BarChartSVG, PieChartSVG, CHART_COLORS } from '../lib/charts'
 
 const fmt = v => 'R$ ' + Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2})
 const fmtK = v => { const n=Number(v||0); return Math.abs(n)>=1000 ? 'R$'+(n/1000).toFixed(0)+'k' : 'R$'+n.toFixed(0) }
 const today = () => new Date().toISOString().split('T')[0]
-const CORES = ['#4f8ef7','#34d399','#f87171','#fbbf24','#a78bfa','#fb923c','#38bdf8','#f472b6']
-
 export default function Dashboard({ onNavigate }) {
   const [loading, setLoading]     = useState(true)
   const [stats, setStats]         = useState({})
@@ -109,20 +107,6 @@ export default function Dashboard({ onNavigate }) {
     setLoading(false)
   }
 
-  const CustomTooltip = ({active,payload,label}) => {
-    if (!active||!payload?.length) return null
-    return (
-      <div style={{background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:10,padding:'10px 14px',fontSize:12}}>
-        <div style={{fontWeight:700,marginBottom:6}}>{label}</div>
-        {payload.map(p=>(
-          <div key={p.name} style={{display:'flex',justifyContent:'space-between',gap:16,marginBottom:2,color:p.name==='Receita'?'var(--green)':p.name==='Despesa'?'var(--red)':'var(--accent)'}}>
-            <span>{p.name}</span><span style={{fontWeight:700}}>{fmt(p.value)}</span>
-          </div>
-        ))}
-      </div>
-    )
-  }
-
   const cartoesComFatura = cartoes.map(c => ({
     ...c,
     faturaAberta: faturas.find(f=>f.cartao_id===c.id&&!f.pago)
@@ -184,16 +168,7 @@ export default function Dashboard({ onNavigate }) {
         {/* Barras 6 meses */}
         <div className="card">
           <div className="card-header"><span className="card-title">Receita × Despesa — 6 meses</span></div>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={chart6m} barGap={3}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false}/>
-              <XAxis dataKey="name" tick={{fill:'var(--text3)',fontSize:11}} axisLine={false} tickLine={false}/>
-              <YAxis tickFormatter={fmtK} tick={{fill:'var(--text3)',fontSize:10}} axisLine={false} tickLine={false} width={48}/>
-              <Tooltip content={<CustomTooltip/>} cursor={{fill:'rgba(255,255,255,.04)'}}/>
-              <Bar dataKey="Receita" fill="var(--green)" radius={[3,3,0,0]} opacity={.85}/>
-              <Bar dataKey="Despesa" fill="var(--red)" radius={[3,3,0,0]} opacity={.85}/>
-            </BarChart>
-          </ResponsiveContainer>
+          <BarChartSVG data={chart6m} keys={['Receita','Despesa']} colors={['#34d399','#f87171']} height={200}/>
         </div>
 
         {/* Pizza despesas por categoria */}
@@ -201,15 +176,7 @@ export default function Dashboard({ onNavigate }) {
           <div className="card-header"><span className="card-title">Despesas por categoria (mês)</span></div>
           {catDespesa.length === 0
             ? <div style={{color:'var(--text3)',fontSize:13,padding:'20px 0',textAlign:'center'}}>Sem lançamentos categorizados este mês</div>
-            : <ResponsiveContainer width="100%" height={200}>
-                <PieChart>
-                  <Pie data={catDespesa} cx="40%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={2} dataKey="value">
-                    {catDespesa.map((_,i)=><Cell key={i} fill={CORES[i%CORES.length]}/>)}
-                  </Pie>
-                  <Tooltip formatter={v=>fmt(v)}/>
-                  <Legend iconType="circle" iconSize={8} wrapperStyle={{fontSize:11}}/>
-                </PieChart>
-              </ResponsiveContainer>
+            : <PieChartSVG data={catDespesa} colors={CHART_COLORS} height={200}/>
           }
         </div>
       </div>

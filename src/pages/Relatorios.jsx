@@ -1,12 +1,11 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell, Legend } from 'recharts'
+import { BarChartSVG, PieChartSVG, CHART_COLORS } from '../lib/charts'
 import { FileText, TrendingUp, TrendingDown, BarChart2, Download } from 'lucide-react'
 
 const fmt = v => 'R$ ' + Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2})
 const fmtK = v => { const n=Number(v||0); return Math.abs(n)>=1000?'R$'+(n/1000).toFixed(0)+'k':'R$'+n.toFixed(0) }
 const MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
-const CORES = ['#4f8ef7','#34d399','#f87171','#fbbf24','#a78bfa','#fb923c','#38bdf8','#f472b6','#4ade80','#f97316']
 
 export default function Relatorios() {
   const anoAtual = new Date().getFullYear()
@@ -81,19 +80,6 @@ export default function Relatorios() {
     { id:'periodo', label:'Extrato por Período', icon:<FileText size={13}/> },
   ]
 
-  const CustomTooltip = ({active,payload,label}) => {
-    if (!active||!payload?.length) return null
-    return (
-      <div style={{background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:10,padding:'10px 14px',fontSize:12}}>
-        <div style={{fontWeight:700,marginBottom:6}}>{label}</div>
-        {payload.map(p=>(
-          <div key={p.name} style={{display:'flex',justifyContent:'space-between',gap:16,marginBottom:2,color:p.name==='Receita'?'var(--green)':p.name==='Despesa'?'var(--red)':'var(--accent)'}}>
-            <span>{p.name}</span><span style={{fontWeight:700}}>{fmt(p.value)}</span>
-          </div>
-        ))}
-      </div>
-    )
-  }
 
   return (
     <div>
@@ -146,16 +132,7 @@ export default function Relatorios() {
             </div>
             <div className="card" style={{marginBottom:16}}>
               <div className="card-header"><span className="card-title">Resultado mensal — {ano}</span></div>
-              <ResponsiveContainer width="100%" height={240}>
-                <BarChart data={dados.meses.map(m=>({name:m.label,Receita:m.receita,Despesa:m.despesa}))} barGap={3}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false}/>
-                  <XAxis dataKey="name" tick={{fill:'var(--text3)',fontSize:11}} axisLine={false} tickLine={false}/>
-                  <YAxis tickFormatter={fmtK} tick={{fill:'var(--text3)',fontSize:10}} axisLine={false} tickLine={false} width={48}/>
-                  <Tooltip content={<CustomTooltip/>} cursor={{fill:'rgba(255,255,255,.04)'}}/>
-                  <Bar dataKey="Receita" fill="var(--green)" radius={[3,3,0,0]} opacity={.85}/>
-                  <Bar dataKey="Despesa" fill="var(--red)" radius={[3,3,0,0]} opacity={.85}/>
-                </BarChart>
-              </ResponsiveContainer>
+              <BarChartSVG data={dados.meses.map(m=>({name:m.label,Receita:m.receita,Despesa:m.despesa}))} keys={['Receita','Despesa']} colors={['#34d399','#f87171']} height={240}/>
             </div>
             <div className="card" style={{padding:0,overflow:'hidden'}}>
               <div style={{overflowX:'auto'}}>
@@ -205,7 +182,7 @@ export default function Relatorios() {
                     <ResponsiveContainer width="100%" height={280}>
                       <PieChart>
                         <Pie data={dados.lista} cx="45%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={2} dataKey="value">
-                          {dados.lista.map((_,i)=><Cell key={i} fill={CORES[i%CORES.length]}/>)}
+                          {dados.lista.map((_,i)=><Cell key={i} fill={CHART_COLORS[i%CHART_COLORS.length]}/>)}
                         </Pie>
                         <Tooltip formatter={v=>[fmt(v)]}/>
                         <Legend iconType="circle" iconSize={8} wrapperStyle={{fontSize:11}}/>
@@ -224,7 +201,7 @@ export default function Relatorios() {
                           </div>
                         </div>
                         <div style={{height:5,borderRadius:3,background:'var(--bg3)',overflow:'hidden'}}>
-                          <div style={{height:'100%',width:`${(c.value/dados.lista[0].value)*100}%`,background:CORES[i%CORES.length],borderRadius:3}}/>
+                          <div style={{height:'100%',width:`${(c.value/dados.lista[0].value)*100}%`,background:CHART_COLORS[i%CHART_COLORS.length],borderRadius:3}}/>
                         </div>
                       </div>
                     ))}
