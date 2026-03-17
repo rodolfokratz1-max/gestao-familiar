@@ -210,13 +210,23 @@ export default function EntradaEstoque() {
           if (!item.produto_id && item.descricao?.trim()) {
             nextNum++
             const codigo = 'PROD-'+String(nextNum).padStart(3,'0')
-            // Tenta inserir; se codigo duplicado (race), adiciona sufixo timestamp
-            const { data:novo, error:errCod } = await supabase.from('produtos').insert({
-              codigo: errCod ? `PROD-${Date.now()}` : codigo,
+            // Tenta inserir com código sequencial
+            const { data:novo, error:errInsert } = await supabase.from('produtos').insert({
+              codigo,
               nome:item.descricao, tipo:'produto',
               preco_custo:Number(item.valor_unit)||0, estoque:0, estoque_min:0, unidade:'un', ativo:true
             }).select().single()
-            if (novo) itensProc[idx] = {...item, produto_id:novo.id, produto_nome:novo.nome}
+            // Se deu erro de duplicata, tenta com sufixo timestamp
+            if (errInsert) {
+              const { data:novo2 } = await supabase.from('produtos').insert({
+                codigo: `PROD-${Date.now()}`,
+                nome:item.descricao, tipo:'produto',
+                preco_custo:Number(item.valor_unit)||0, estoque:0, estoque_min:0, unidade:'un', ativo:true
+              }).select().single()
+              if (novo2) itensProc[idx] = {...item, produto_id:novo2.id, produto_nome:novo2.nome}
+            } else if (novo) {
+              itensProc[idx] = {...item, produto_id:novo.id, produto_nome:novo.nome}
+            }
           }
         }
       }
