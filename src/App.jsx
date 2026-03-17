@@ -24,7 +24,42 @@ import EntradaEstoque from './pages/EntradaEstoque'
 import { VERSION } from './version'
 import { LayoutDashboard, Users, Package, TrendingUp, TrendingDown, Wallet, ShoppingCart, Wrench, CreditCard, HandCoins, Menu, X, Landmark, BarChart2, LogOut, User, Shield, ClipboardList, Building2, Repeat2, ListTree, ArrowLeftRight, BarChart, Target, PackagePlus } from 'lucide-react'
 
-const nav = [
+function PageContent({ page, onNavigate }) {
+  var titles = {
+  dashboard:'Dashboard', relatorios:'Relatórios', pessoas:'Clientes & Fornecedores',
+  produtos:'Produtos & Serviços', contas:'Contas & Carteiras',
+  receitas:'Receitas', despesas:'Despesas', caixa:'Caixa',
+  contas_receber:'Contas a Receber', contas_pagar:'Contas a Pagar', recorrencias:'Recorrências',
+  cartoes:'Cartões de Crédito', compras:'Compras', os:'Ordens de Serviço', empresa:'Dados da Empresa', usuarios:'Gerenciar Usuários',
+  plano_contas:'Plano de Contas', movimentacoes:'Movimentações', fluxo_caixa:'Fluxo de Caixa', centro_custo:'Centros de Custo',
+}
+
+  if (page === 'dashboard') return <Dashboard onNavigate={onNavigate} />
+  if (page === 'relatorios') return <Relatorios />
+  if (page === 'pessoas') return <Pessoas />
+  if (page === 'produtos') return <Produtos />
+  if (page === 'contas') return <Contas />
+  if (page === 'receitas') return <Financeiro module="receitas" />
+  if (page === 'despesas') return <Financeiro module="despesas" />
+  if (page === 'caixa') return <Caixa />
+  if (page === 'contas_receber') return <FinanceiroContas module="contas_receber" />
+  if (page === 'contas_pagar') return <FinanceiroContas module="contas_pagar" />
+  if (page === 'cartoes') return <Cartoes />
+  if (page === 'compras') return <Compras />
+  if (page === 'os') return <OrdemServico />
+  if (page === 'recorrencias') return <Recorrencias />
+  if (page === 'plano_contas') return <PlanoContas />
+  if (page === 'movimentacoes') return <Movimentacoes />
+  if (page === 'fluxo_caixa') return <FluxoCaixa />
+  if (page === 'centro_custo') return <CentroCusto />
+  if (page === 'entrada_estoque') return <EntradaEstoque />
+  if (page === 'empresa') return <Empresa />
+  if (page === 'usuarios') return <Usuarios />
+  return null
+}
+
+function AppInner() {
+var nav = [
   { group: 'Visão Geral', items: [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'relatorios', label: 'Relatórios', icon: BarChart2 },
@@ -58,41 +93,6 @@ const nav = [
   ]},
 ]
 
-const titles = {
-  dashboard:'Dashboard', relatorios:'Relatórios', pessoas:'Clientes & Fornecedores',
-  produtos:'Produtos & Serviços', contas:'Contas & Carteiras',
-  receitas:'Receitas', despesas:'Despesas', caixa:'Caixa',
-  contas_receber:'Contas a Receber', contas_pagar:'Contas a Pagar', recorrencias:'Recorrências',
-  cartoes:'Cartões de Crédito', compras:'Compras', os:'Ordens de Serviço', empresa:'Dados da Empresa', usuarios:'Gerenciar Usuários',
-  plano_contas:'Plano de Contas', movimentacoes:'Movimentações', fluxo_caixa:'Fluxo de Caixa', centro_custo:'Centros de Custo',
-}
-
-function PageContent({ page, onNavigate }) {
-  if (page === 'dashboard') return <Dashboard onNavigate={onNavigate} />
-  if (page === 'relatorios') return <Relatorios />
-  if (page === 'pessoas') return <Pessoas />
-  if (page === 'produtos') return <Produtos />
-  if (page === 'contas') return <Contas />
-  if (page === 'receitas') return <Financeiro module="receitas" />
-  if (page === 'despesas') return <Financeiro module="despesas" />
-  if (page === 'caixa') return <Caixa />
-  if (page === 'contas_receber') return <FinanceiroContas module="contas_receber" />
-  if (page === 'contas_pagar') return <FinanceiroContas module="contas_pagar" />
-  if (page === 'cartoes') return <Cartoes />
-  if (page === 'compras') return <Compras />
-  if (page === 'os') return <OrdemServico />
-  if (page === 'recorrencias') return <Recorrencias />
-  if (page === 'plano_contas') return <PlanoContas />
-  if (page === 'movimentacoes') return <Movimentacoes />
-  if (page === 'fluxo_caixa') return <FluxoCaixa />
-  if (page === 'centro_custo') return <CentroCusto />
-  if (page === 'entrada_estoque') return <EntradaEstoque />
-  if (page === 'empresa') return <Empresa />
-  if (page === 'usuarios') return <Usuarios />
-  return null
-}
-
-function AppInner() {
   const { user, loading, signOut } = useAuth()
   const [page, setPage] = useState('dashboard')
   const [sidebarOpen, setSidebarOpen] = useState(false)
