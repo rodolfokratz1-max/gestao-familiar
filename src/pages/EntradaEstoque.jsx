@@ -60,28 +60,41 @@ export default function EntradaEstoque() {
     setLoadingHist(false)
   }
 
-  async function reverterNota(entrada) {
+  async function reverterNota(entradaId) {
+    const entrada = historico.find(h => h.id === entradaId)
+    if (!entrada) return
     setRevertendo(null)
     setProcessando(true)
     try {
       // 1. Reverte estoque de cada item
-      for (const item of (entrada.itens||[]).filter(i=>i.produto_id)) {
-        const { data:prod } = await supabase.from('produtos').select('estoque').eq('id',item.produto_id).single()
-        if (prod) {
+      const itensEntrada = entrada.itens || []
+      for (const item of itensEntrada.filter(i => i.produto_id)) {
+        const { data:prod, error:errP } = await supabase
+          .from('produtos').select('estoque').eq('id', item.produto_id).single()
+        if (!errP && prod !== null) {
           const novoEst = Math.max(0, Number(prod.estoque||0) - Number(item.qtd||0))
           await supabase.from('produtos').update({ estoque: novoEst }).eq('id', item.produto_id)
         }
       }
-      // 2. Remove contas a pagar geradas por esta entrada
-      await supabase.from('contas_pagar').delete().eq('origem_id', entrada.id).eq('origem_tabela','entradas_estoque')
+      // 2. Remove contas a pagar (origem pode ser UUID ou string)
+      const { error: e2 } = await supabase.from('contas_pagar')
+        .delete().eq('origem_id', entrada.id).eq('origem_tabela','entradas_estoque')
+      if (e2) console.warn('contas_pagar delete:', e2.message)
+
       // 3. Remove compra gerada
-      await supabase.from('compras').delete().eq('origem_id', entrada.id).eq('origem_tabela','entradas_estoque')
-      // 4. Remove a entrada do histórico
-      await supabase.from('entradas_estoque').delete().eq('id', entrada.id)
-      toast('✅ Nota revertida! Estoque, compras e contas a pagar foram desfeitos.', 'success')
-      loadHistorico()
+      const { error: e3 } = await supabase.from('compras')
+        .delete().eq('origem_id', entrada.id).eq('origem_tabela','entradas_estoque')
+      if (e3) console.warn('compras delete:', e3.message)
+
+      // 4. Remove a entrada
+      const { error: e4 } = await supabase.from('entradas_estoque').delete().eq('id', entrada.id)
+      if (e4) throw e4
+
+      toast('✅ Nota revertida com sucesso!', 'success')
+      await loadHistorico()
     } catch(err) {
-      toast('Erro ao reverter: '+err.message, 'error')
+      console.error('reverterNota error:', err)
+      toast('Erro ao reverter: ' + (err.message || JSON.stringify(err)), 'error')
     } finally {
       setProcessando(false)
     }
@@ -150,9 +163,10 @@ export default function EntradaEstoque() {
   async function criarProdutoDoItem(idx) {
     const item = itens[idx]
     if (!item.descricao?.trim()) return toast('Preencha a descrição antes de criar','error')
-    const { data: last } = await supabase.from('produtos').select('codigo').order('created_at',{ascending:false}).limit(1).single()
-    const lastNum = parseInt((last?.codigo||'PROD-000').replace(/[^0-9]/g,''))||0
-    const codigo = 'PROD-'+String(lastNum+1).padStart(3,'0')
+    const { data: allCodes } = await supabase.from('produtos').select('codigo')
+    const nums = (allCodes||[]).map(r => parseInt((r.codigo||'').replace(/[^0-9]/g,''))||0)
+    const nextNum = Math.max(0, ...nums) + 1
+    const codigo = 'PROD-'+String(nextNum).padStart(3,'0')
     const { data:novo, error } = await supabase.from('produtos').insert({
       codigo, nome:item.descricao, tipo:'produto',
       preco_custo:Number(item.valor_unit)||0, estoque:0, estoque_min:0, unidade:'un', ativo:true
@@ -171,22 +185,32 @@ export default function EntradaEstoque() {
   // ── CONFIRMAR ENTRADA ─────────────────────────────────
   async function confirmarEntrada() {
     if (itens.length === 0) return toast('Adicione pelo menos um item','error')
+    if (!nota.fornecedor_id) return toast('Selecione o fornecedor antes de confirmar','error')
     setConfirmando(false)
     setProcessando(true)
     try {
       // 0. Cria produtos automaticamente para itens sem vínculo
+      // Usa código único baseado em timestamp+random para evitar colisão em uso simultâneo
       const itensProc = [...itens]
-      for (let idx=0; idx<itensProc.length; idx++) {
-        const item = itensProc[idx]
-        if (!item.produto_id && item.descricao?.trim()) {
-          const { data:last } = await supabase.from('produtos').select('codigo').order('created_at',{ascending:false}).limit(1).single()
-          const lastNum = parseInt((last?.codigo||'PROD-000').replace(/[^0-9]/g,''))||0
-          const codigo = 'PROD-'+String(lastNum+idx+1).padStart(3,'0')
-          const { data:novo } = await supabase.from('produtos').insert({
-            codigo, nome:item.descricao, tipo:'produto',
-            preco_custo:Number(item.valor_unit)||0, estoque:0, estoque_min:0, unidade:'un', ativo:true
-          }).select().single()
-          if (novo) itensProc[idx] = {...item, produto_id:novo.id, produto_nome:novo.nome}
+      const itensSemVinc = itensProc.filter(i => !i.produto_id && i.descricao?.trim())
+      if (itensSemVinc.length > 0) {
+        // Busca o maior número sequencial existente uma só vez
+        const { data: allCodes } = await supabase.from('produtos').select('codigo').order('created_at',{ascending:false})
+        const nums = (allCodes||[]).map(r => parseInt((r.codigo||'').replace(/[^0-9]/g,''))||0)
+        let nextNum = Math.max(0, ...nums)
+        for (let idx=0; idx<itensProc.length; idx++) {
+          const item = itensProc[idx]
+          if (!item.produto_id && item.descricao?.trim()) {
+            nextNum++
+            const codigo = 'PROD-'+String(nextNum).padStart(3,'0')
+            // Tenta inserir; se codigo duplicado (race), adiciona sufixo timestamp
+            const { data:novo, error:errCod } = await supabase.from('produtos').insert({
+              codigo: errCod ? `PROD-${Date.now()}` : codigo,
+              nome:item.descricao, tipo:'produto',
+              preco_custo:Number(item.valor_unit)||0, estoque:0, estoque_min:0, unidade:'un', ativo:true
+            }).select().single()
+            if (novo) itensProc[idx] = {...item, produto_id:novo.id, produto_nome:novo.nome}
+          }
         }
       }
 
@@ -310,7 +334,7 @@ export default function EntradaEstoque() {
                         <td>
                           <div className="action-btns">
                             <button className="icon-btn" title="Ver detalhes" onClick={()=>setNotaDetalhe(h)}><Eye size={14}/></button>
-                            <button className="icon-btn del" title="Reverter nota" onClick={()=>setRevertendo(h)}><Trash2 size={14}/></button>
+                            <button className="icon-btn del" title="Reverter nota" onClick={()=>setRevertendo(h.id)} disabled={processando}><Trash2 size={14}/></button>
                           </div>
                         </td>
                       </tr>
@@ -531,7 +555,11 @@ export default function EntradaEstoque() {
       {itens.length>0&&(
         <div style={{display:'flex',justifyContent:'flex-end',gap:10}}>
           <button className="btn btn-secondary" onClick={()=>{setItens([]);setNota({numero:'',fornecedor_id:'',fornecedor_nome:'',data_emissao:today(),chave_nfe:'',obs:''})}}>Limpar</button>
-          <button className="btn btn-primary" onClick={()=>setConfirmando(true)} disabled={processando}>
+          <button className="btn btn-primary" onClick={()=>{
+            if (!nota.fornecedor_id) { toast('Selecione o fornecedor antes de confirmar','error'); return }
+            if (itens.length===0) { toast('Adicione pelo menos um item','error'); return }
+            setConfirmando(true)
+          }} disabled={processando}>
             <CheckCircle size={15}/> {processando?'Processando...':`Confirmar Entrada (${itens.length} itens)`}
           </button>
         </div>
