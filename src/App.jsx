@@ -150,10 +150,10 @@ function AppInner() {
           <button className="menu-btn" onClick={() => setSidebarOpen(o => !o)}>{sidebarOpen ? <X size={20} /> : <Menu size={20} />}</button>
           <h2 className="page-title">{titles[page]}</h2>
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text3)', fontFamily: 'var(--mono)', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 6, padding: '2px 7px', letterSpacing: '.3px' }}>v1.17c</span>
             <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13 }}>
               {inicialUsuario}
             </div>
-            <span style={{ fontSize: 13, color: 'var(--text2)', display: 'none' }}>{nomeUsuario}</span>
           </div>
         </header>
         <main className="page-content">
