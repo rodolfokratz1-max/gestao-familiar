@@ -56,32 +56,49 @@ export default function Caixa() {
 
   async function transferir() {
     const { contaOrigem, contaDestino, valor, descricao, data, obs } = transfForm
-    if (!contaOrigem)                   return toast('Selecione a conta de origem','error')
-    if (!contaDestino)                  return toast('Selecione a conta de destino','error')
-    if (contaOrigem === contaDestino)   return toast('Origem e destino devem ser diferentes','error')
-    if (!valor || Number(valor) <= 0)  return toast('Informe o valor','error')
+    if (!contaOrigem)                  return toast('Selecione a conta de origem', 'error')
+    if (!contaDestino)                 return toast('Selecione a conta de destino', 'error')
+    if (contaOrigem === contaDestino)  return toast('Origem e destino devem ser diferentes', 'error')
+    if (!valor || Number(valor) <= 0)  return toast('Informe o valor', 'error')
     const v = Number(valor)
-    const origemNome  = contas.find(c=>c.id===contaOrigem)?.nome  || ''
-    const destinoNome = contas.find(c=>c.id===contaDestino)?.nome || ''
 
-    await supabase.from('caixa').insert({
-      data, tipo:'saida', valor:v, categoria:'Transferência',
-      descricao:`${descricao} → ${destinoNome}`,
-      conta_id: contaOrigem, obs, origem_tabela:'transferencia',
-    })
-    await supabase.from('caixa').insert({
-      data, tipo:'entrada', valor:v, categoria:'Transferência',
-      descricao:`${descricao} ← ${origemNome}`,
-      conta_id: contaDestino, obs, origem_tabela:'transferencia',
-    })
-    // Atualiza saldos
-    const orig = contas.find(c=>c.id===contaOrigem)
-    const dest = contas.find(c=>c.id===contaDestino)
-    if (orig) await supabase.from('contas').update({ saldo_atual: Number(orig.saldo_atual||0)-v }).eq('id',contaOrigem)
-    if (dest) await supabase.from('contas').update({ saldo_atual: Number(dest.saldo_atual||0)+v }).eq('id',contaDestino)
+    // Busca saldos ATUAIS do banco (não do cache)
+    const [{ data: origData }, { data: destData }] = await Promise.all([
+      supabase.from('contas').select('nome,saldo_atual').eq('id', contaOrigem).single(),
+      supabase.from('contas').select('nome,saldo_atual').eq('id', contaDestino).single(),
+    ])
 
-    toast(`✅ Transferência de ${fmt(v)} realizada!`,'success')
-    setModalTransf(false); setTransfForm(EMPTY_TRANSF); load()
+    if (!origData) return toast('Conta de origem não encontrada', 'error')
+    if (!destData) return toast('Conta de destino não encontrada', 'error')
+
+    const saldoOrig = Number(origData.saldo_atual || 0)
+    if (saldoOrig < v) {
+      return toast(`Saldo insuficiente na conta "${origData.nome}". Disponível: ${fmt(saldoOrig)}`, 'error')
+    }
+
+    // Lança no caixa
+    const { error: e1 } = await supabase.from('caixa').insert({
+      data, tipo: 'saida', valor: v, categoria: 'Transferência',
+      descricao: `${descricao} → ${destData.nome}`,
+      conta_id: contaOrigem, obs: obs || null, origem_tabela: 'transferencia',
+    })
+    if (e1) return toast('Erro ao lançar saída: ' + e1.message, 'error')
+
+    const { error: e2 } = await supabase.from('caixa').insert({
+      data, tipo: 'entrada', valor: v, categoria: 'Transferência',
+      descricao: `${descricao} ← ${origData.nome}`,
+      conta_id: contaDestino, obs: obs || null, origem_tabela: 'transferencia',
+    })
+    if (e2) return toast('Erro ao lançar entrada: ' + e2.message, 'error')
+
+    // Atualiza saldos com valores do banco
+    await supabase.from('contas').update({ saldo_atual: saldoOrig - v }).eq('id', contaOrigem)
+    await supabase.from('contas').update({ saldo_atual: Number(destData.saldo_atual || 0) + v }).eq('id', contaDestino)
+
+    toast(`✅ ${fmt(v)} transferido de "${origData.nome}" para "${destData.nome}"`, 'success')
+    setModalTransf(false)
+    setTransfForm(EMPTY_TRANSF)
+    load()
   }
 
   // ── LANÇAMENTO MANUAL ─────────────────────────────────
