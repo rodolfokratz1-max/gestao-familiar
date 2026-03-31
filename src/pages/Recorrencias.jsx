@@ -65,7 +65,13 @@ export default function Recorrencias() {
     if (!form.nome?.trim()) return toast('Nome obrigatório', 'error')
     if (!form.valor || Number(form.valor) <= 0) return toast('Valor deve ser maior que zero', 'error')
     if (!form.dia_vencimento || form.dia_vencimento < 1 || form.dia_vencimento > 31) return toast('Dia de vencimento inválido', 'error')
-    const payload = { ...form, valor: Number(form.valor), data_fim: form.data_fim || null }
+    const payload = {
+      ...form,
+      valor: Number(form.valor),
+      data_fim: form.data_fim || null,
+      conta_id: form.conta_id || null,
+      descricao: form.descricao || null,
+    }
     let error
     if (editing) ({ error } = await supabase.from('recorrencias').update(payload).eq('id', editing))
     else ({ error } = await supabase.from('recorrencias').insert(payload))

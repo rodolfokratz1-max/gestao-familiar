@@ -8,9 +8,13 @@ const supabaseServiceKey = import.meta.env.VITE_SUPABASE_SERVICE_KEY
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 // Cliente admin (para criar/gerenciar usuários — usa service role)
-// Só funciona se VITE_SUPABASE_SERVICE_KEY estiver configurado no .env
+// storageKey diferente para evitar conflito com o cliente normal
 export const supabaseAdmin = supabaseServiceKey
   ? createClient(supabaseUrl, supabaseServiceKey, {
-      auth: { autoRefreshToken: false, persistSession: false }
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+        storageKey: 'sb-admin-token',
+      }
     })
   : null
