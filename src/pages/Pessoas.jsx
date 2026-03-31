@@ -64,8 +64,9 @@ export default function Pessoas() {
     if (!form.nome.trim()) return toast('Nome é obrigatório', 'error')
     if (!form.codigo.trim()) return toast('Código é obrigatório', 'error')
     let error
-    if (editing) ({ error } = await supabase.from('pessoas').update(form).eq('id', editing))
-    else ({ error } = await supabase.from('pessoas').insert(form))
+    const payload = { ...form, data_nascimento: form.data_nascimento || null }
+    if (editing) ({ error } = await supabase.from('pessoas').update(payload).eq('id', editing))
+    else ({ error } = await supabase.from('pessoas').insert(payload))
     if (error) { toast(error.message, 'error'); return }
     toast(editing ? 'Registro atualizado!' : 'Registro criado!', 'success')
     setModal(false); load()

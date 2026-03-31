@@ -104,6 +104,7 @@ export default function OrdemServico() {
     if (!formOs.equipamento?.trim()) return toast('Informe o equipamento/serviço', 'error')
     const payload = {
       ...formOs,
+      prazo: formOs.prazo || null,
       usuario_email: user?.email || '',
       usuario_nome: user?.user_metadata?.name || user?.email?.split('@')[0] || '',
     }
