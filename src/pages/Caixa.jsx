@@ -47,8 +47,10 @@ export default function Caixa() {
     return mQ && mT
   })
 
-  const entradas = filtered.filter(r=>r.tipo==='entrada').reduce((s,r)=>s+Number(r.valor||0),0)
-  const saidas   = filtered.filter(r=>r.tipo==='saida').reduce((s,r)=>s+Number(r.valor||0),0)
+  // Exclui transferências dos totais — não impactam patrimônio
+  const semTransf = filtered.filter(r => r.categoria !== 'Transferência')
+  const entradas = semTransf.filter(r=>r.tipo==='entrada').reduce((s,r)=>s+Number(r.valor||0),0)
+  const saidas   = semTransf.filter(r=>r.tipo==='saida').reduce((s,r)=>s+Number(r.valor||0),0)
   const saldo    = entradas - saidas
 
   // ── TRANSFERÊNCIA ─────────────────────────────────────
@@ -166,15 +168,16 @@ export default function Caixa() {
                 <thead><tr><th>Data</th><th>Tipo</th><th>Descrição</th><th>Categoria</th><th style={{textAlign:'right'}}>Valor</th><th>Ações</th></tr></thead>
                 <tbody>
                   {filtered.map(r => {
-                    const tc = tipoConfig[r.tipo] || tipoConfig.entrada
+                    const isTransf = r.categoria === 'Transferência'
+                    const tc = isTransf ? tipoConfig.transferencia : (tipoConfig[r.tipo] || tipoConfig.entrada)
                     return (
                       <tr key={r.id}>
                         <td className="text-mono text-muted" style={{fontSize:12,whiteSpace:'nowrap'}}>{r.data?.split('-').reverse().join('/')}</td>
                         <td><span className={`badge ${tc.cls}`} style={{display:'inline-flex',alignItems:'center',gap:4}}>{tc.icon}{tc.label}</span></td>
                         <td className="font-bold">{r.descricao}</td>
                         <td className="text-muted" style={{fontSize:12}}>{r.categoria||'—'}</td>
-                        <td className={`text-mono font-bold ${r.tipo==='entrada'?'text-green':r.tipo==='saida'?'text-red':''}`} style={{textAlign:'right'}}>
-                          {r.tipo==='entrada'?'+':r.tipo==='saida'?'-':''}{fmt(r.valor)}
+                        <td className={`text-mono font-bold ${isTransf ? '' : r.tipo==='entrada'?'text-green':'text-red'}`} style={{textAlign:'right'}}>
+                          {isTransf ? '' : r.tipo==='entrada' ? '+' : '-'}{fmt(r.valor)}
                         </td>
                         <td><div className="action-btns">
                           <button className="icon-btn edit" onClick={()=>openEditLanc(r)}><Pencil size={14}/></button>

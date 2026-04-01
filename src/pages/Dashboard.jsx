@@ -44,8 +44,8 @@ export default function Dashboard({ onNavigate }) {
     const areceberData = areceber?.value?.data || []
 
     // Stats do mês atual
-    const entMes = caixaData.filter(r => r.tipo==='entrada' && r.data>=ini && r.data<=fim).reduce((s,r)=>s+Number(r.valor),0)
-    const saiMes = caixaData.filter(r => r.tipo==='saida' && r.data>=ini && r.data<=fim).reduce((s,r)=>s+Number(r.valor),0)
+    const entMes = caixaData.filter(r => r.tipo==='entrada' && r.data>=ini && r.data<=fim && r.categoria!=='Transferência').reduce((s,r)=>s+Number(r.valor),0)
+    const saiMes = caixaData.filter(r => r.tipo==='saida' && r.data>=ini && r.data<=fim && r.categoria!=='Transferência').reduce((s,r)=>s+Number(r.valor),0)
     const totalApagar = apagarData.reduce((s,r)=>s+Number(r.valor),0)
     const totalAreceber = areceberData.reduce((s,r)=>s+Number(r.valor),0)
 
@@ -69,8 +69,8 @@ export default function Dashboard({ onNavigate }) {
       const label = d.toLocaleString('pt-BR',{month:'short'})
       const ult = new Date(y,d.getMonth()+1,0).getDate()
       const iM=`${y}-${m}-01`, fM=`${y}-${m}-${ult}`
-      const ent = caixaData.filter(r=>r.tipo==='entrada'&&r.data>=iM&&r.data<=fM).reduce((s,r)=>s+Number(r.valor),0)
-      const sai = caixaData.filter(r=>r.tipo==='saida'&&r.data>=iM&&r.data<=fM).reduce((s,r)=>s+Number(r.valor),0)
+      const ent = caixaData.filter(r=>r.tipo==='entrada'&&r.data>=iM&&r.data<=fM&&r.categoria!=='Transferência').reduce((s,r)=>s+Number(r.valor),0)
+      const sai = caixaData.filter(r=>r.tipo==='saida'&&r.data>=iM&&r.data<=fM&&r.categoria!=='Transferência').reduce((s,r)=>s+Number(r.valor),0)
       months.push({ name:label, Receita:ent, Despesa:sai, Resultado:ent-sai })
     }
     setChart6m(months)

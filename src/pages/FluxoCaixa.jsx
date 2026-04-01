@@ -39,6 +39,7 @@ export default function FluxoCaixa() {
 
     for (const r of (data||[])) {
       const m = new Date(r.data+'T12:00:00').getMonth()
+      if (r.categoria === 'Transferência') return // não conta no fluxo
       if (r.tipo === 'entrada') meses[m].receita += Number(r.valor)
       else if (r.tipo === 'saida') meses[m].despesa += Number(r.valor)
     }

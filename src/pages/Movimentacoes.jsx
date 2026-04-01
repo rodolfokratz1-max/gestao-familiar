@@ -34,8 +34,10 @@ export default function Movimentacoes() {
     return mQ && mT && mI && mF
   })
 
-  const totalEntradas = filtered.filter(r => r.tipo === 'entrada').reduce((s,r) => s + Number(r.valor), 0)
-  const totalSaidas   = filtered.filter(r => r.tipo === 'saida').reduce((s,r) => s + Number(r.valor), 0)
+  // Exclui transferências dos totais
+  const semTransfMov = filtered.filter(r => r.categoria !== 'Transferência')
+  const totalEntradas = semTransfMov.filter(r => r.tipo === 'entrada').reduce((s,r) => s + Number(r.valor), 0)
+  const totalSaidas   = semTransfMov.filter(r => r.tipo === 'saida').reduce((s,r) => s + Number(r.valor), 0)
   const resultado     = totalEntradas - totalSaidas
 
   const tipoConfig = {
@@ -102,7 +104,8 @@ export default function Movimentacoes() {
                 </thead>
                 <tbody>
                   {filtered.map(r => {
-                    const tc = tipoConfig[r.tipo] || tipoConfig.entrada
+                    const isTransf = r.categoria === 'Transferência'
+                    const tc = isTransf ? tipoConfig.transferencia : (tipoConfig[r.tipo] || tipoConfig.entrada)
                     return (
                       <tr key={r.id}>
                         <td style={{ whiteSpace:'nowrap', color:'var(--text2)', fontSize:12 }}>
@@ -118,8 +121,8 @@ export default function Movimentacoes() {
                             : <span style={{ color:'var(--text3)' }}>—</span>}
                         </td>
                         <td style={{ textAlign:'right', fontWeight:700, fontFamily:'var(--mono)', whiteSpace:'nowrap' }}
-                          className={r.tipo==='entrada' ? 'text-green' : r.tipo==='saida' ? 'text-red' : ''}>
-                          {r.tipo === 'saida' ? '- ' : r.tipo === 'entrada' ? '+ ' : ''}{fmt(r.valor)}
+                          className={isTransf ? '' : r.tipo==='entrada' ? 'text-green' : 'text-red'}>
+                          {isTransf ? '' : r.tipo === 'saida' ? '- ' : '+ '}{fmt(r.valor)}
                         </td>
                         <td>
                           <span className={`badge ${tc.cls}`} style={{ display:'inline-flex', alignItems:'center', gap:4 }}>
