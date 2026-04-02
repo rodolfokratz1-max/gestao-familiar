@@ -39,18 +39,21 @@ export default function EntradaEstoque() {
   const [historico, setHistorico] = useState([])
   const [loadingHist, setLoadingHist] = useState(false)
   const [notaDetalhe, setNotaDetalhe] = useState(null)
+  const [margemPadrao, setMargemPadrao] = useState(0)
   const [revertendo, setRevertendo] = useState(null)
 
   useEffect(() => { loadAuxiliar() }, [])
   useEffect(() => { if (aba === 'historico') loadHistorico() }, [aba])
 
   async function loadAuxiliar() {
-    const [{ data: p }, { data: f }, { data: c }] = await Promise.all([
+    const [{ data: p }, { data: f }, { data: c }, empData] = await Promise.all([
       supabase.from('produtos').select('id,nome,codigo,preco_custo,estoque,unidade').eq('tipo','produto').eq('ativo',true).order('nome'),
-      supabase.from('pessoas').select('id,nome').in('tipo',['fornecedor','ambos']).eq('ativo',true).order('nome'),
+      supabase.from('pessoas').select('id,nome,cnpj,telefone,email,logradouro,numero,bairro,cidade,estado,cep').in('tipo',['fornecedor','ambos']).eq('ativo',true).order('nome'),
       supabase.from('contas').select('id,nome').eq('ativo',true).order('nome'),
+      supabase.from('empresa').select('margem_padrao').limit(1).single(),
     ])
     setProdutos(p||[]); setFornecedores(f||[]); setContas(c||[])
+    if (empData?.data?.margem_padrao) setMargemPadrao(Number(empData.data.margem_padrao)||0)
   }
 
   async function loadHistorico() {
@@ -120,7 +123,46 @@ export default function EntradaEstoque() {
       const dEmi    = xml.querySelector('dhEmi,dEmi')?.textContent?.substring(0,10) || today()
       const emitNome = xml.querySelector('emit xNome')?.textContent || ''
       const emitCNPJ = xml.querySelector('emit CNPJ')?.textContent || ''
-      const fornVinc = fornecedores.find(f => f.cnpj?.replace(/\D/g,'') === emitCNPJ.replace(/\D/g,''))
+      // Extrai dados completos do emitente para cadastro automático
+      const emitFone    = xml.querySelector('emit fone')?.textContent || ''
+      const emitEmail   = xml.querySelector('emit email')?.textContent || ''
+      const emitLogr    = xml.querySelector('emit xLgr')?.textContent || ''
+      const emitNum     = xml.querySelector('emit nro')?.textContent || ''
+      const emitBairro  = xml.querySelector('emit xBairro')?.textContent || ''
+      const emitCidade  = xml.querySelector('emit xMun')?.textContent || ''
+      const emitUF      = xml.querySelector('emit UF')?.textContent || ''
+      const emitCEP     = xml.querySelector('emit CEP')?.textContent || ''
+      const emitIE      = xml.querySelector('emit IE')?.textContent || ''
+
+      // Busca fornecedor pelo CNPJ no cadastro local
+      let fornVinc = fornecedores.find(f => f.cnpj?.replace(/\D/g,'') === emitCNPJ.replace(/\D/g,''))
+
+      // Se não encontrou, cria automaticamente
+      if (!fornVinc && emitNome) {
+        const cnpjFmt = emitCNPJ.length === 14
+          ? emitCNPJ.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5')
+          : emitCNPJ
+        const { data: novoForn, error: errForn } = await supabase.from('pessoas').insert({
+          nome: emitNome, tipo: 'fornecedor', ativo: true,
+          cnpj: cnpjFmt || null,
+          ie: emitIE || null,
+          telefone: emitFone || null,
+          email: emitEmail || null,
+          logradouro: emitLogr || null,
+          numero: emitNum || null,
+          bairro: emitBairro || null,
+          cidade: emitCidade || null,
+          estado: emitUF || null,
+          cep: emitCEP || null,
+          codigo: `FORN-${Date.now()}`,
+        }).select('id,nome,cnpj').single()
+        if (!errForn && novoForn) {
+          fornVinc = novoForn
+          setFornecedores(prev => [...prev, novoForn])
+          toast(`✅ Fornecedor "${emitNome}" cadastrado automaticamente!`, 'success')
+        }
+      }
+
       setNota({ numero:nNF, fornecedor_id:fornVinc?.id||'', fornecedor_nome:fornVinc?.nome||emitNome, data_emissao:dEmi.substring(0,10), chave_nfe:chave, obs:`NF-e ${nNF} — ${emitNome}` })
       const dets = xml.querySelectorAll('det')
       const itensXML = Array.from(dets).map(det => {
@@ -174,9 +216,14 @@ export default function EntradaEstoque() {
     const nums = (allCodes||[]).map(r => parseInt((r.codigo||'').replace(/[^0-9]/g,''))||0)
     const nextNum = Math.max(0, ...nums) + 1
     const codigo = 'PROD-'+String(nextNum).padStart(3,'0')
+    const custo = Number(item.valor_unit)||0
+    const venda = margemPadrao > 0 ? custo / (1 - margemPadrao/100) : 0
     const { data:novo, error } = await supabase.from('produtos').insert({
       codigo, nome:item.descricao, tipo:'produto',
-      preco_custo:Number(item.valor_unit)||0, estoque:0, estoque_min:0, unidade:'un', ativo:true
+      preco_custo: custo,
+      preco_venda: venda > 0 ? Number(venda.toFixed(2)) : null,
+      margem: margemPadrao > 0 ? margemPadrao : null,
+      estoque:0, estoque_min:0, unidade:'un', ativo:true
     }).select().single()
     if (error) { toast('Erro: '+error.message,'error'); return }
     setItens(prev=>prev.map((it,i)=>i===idx?{...it,produto_id:novo.id,produto_nome:novo.nome}:it))
@@ -211,10 +258,15 @@ export default function EntradaEstoque() {
             nextNum++
             const codigo = 'PROD-'+String(nextNum).padStart(3,'0')
             // Tenta inserir com código sequencial
-            const { data:novo, error:errInsert } = await supabase.from('produtos').insert({
+            const custoItem = Number(item.valor_unit)||0
+          const vendaCalc = margemPadrao > 0 ? custoItem / (1 - margemPadrao/100) : 0
+          const { data:novo, error:errInsert } = await supabase.from('produtos').insert({
               codigo,
               nome:item.descricao, tipo:'produto',
-              preco_custo:Number(item.valor_unit)||0, estoque:0, estoque_min:0, unidade:'un', ativo:true
+              preco_custo: custoItem,
+              preco_venda: vendaCalc > 0 ? Number(vendaCalc.toFixed(2)) : null,
+              margem: margemPadrao > 0 ? margemPadrao : null,
+              estoque:0, estoque_min:0, unidade:'un', ativo:true
             }).select().single()
             // Se deu erro de duplicata, tenta com sufixo timestamp
             if (errInsert) {

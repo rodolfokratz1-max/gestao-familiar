@@ -9,7 +9,7 @@ const EMPTY = {
   nome: '', nome_fantasia: '', cnpj: '', ie: '', im: '',
   telefone: '', whatsapp: '', email: '', site: '',
   endereco: '', numero: '', complemento: '', bairro: '', cidade: '', estado: '', cep: '',
-  cor_primaria: '#1e3a5f', cor_secundaria: '#2563eb',
+  margem_padrao: '', cor_primaria: '#1e3a5f', cor_secundaria: '#2563eb',
   rodape_os: 'Agradecemos a preferência! Qualquer dúvida estamos à disposição.',
   logo_base64: '', ativo: true,
 }
