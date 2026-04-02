@@ -207,6 +207,15 @@ export default function Empresa() {
                 <input className="form-input" value={form.cor_secundaria} onChange={e => f('cor_secundaria', e.target.value)} style={{ fontFamily: 'monospace', maxWidth: 100 }} />
               </div>
             </div>
+            <div className="form-group">
+              <label className="form-label">Margem de Lucro Padrão (%)</label>
+              <input className="form-input" type="number" step="0.1" min="0" max="100"
+                value={form.margem_padrao||''} onChange={e => f('margem_padrao', e.target.value)}
+                placeholder="Ex: 40" />
+              <span style={{ fontSize:11, color:'var(--text3)', marginTop:3 }}>
+                Aplicada automaticamente em produtos criados via NF-e
+              </span>
+            </div>
             <div className="form-group" style={{ gridColumn: '1/-1' }}>
               <label className="form-label">Rodapé dos documentos</label>
               <textarea className="form-textarea" rows={2} value={form.rodape_os} onChange={e => f('rodape_os', e.target.value)} />

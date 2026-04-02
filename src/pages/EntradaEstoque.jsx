@@ -155,11 +155,14 @@ export default function EntradaEstoque() {
           estado: emitUF || null,
           cep: emitCEP || null,
           codigo: `FORN-${Date.now()}`,
-        }).select('id,nome,cnpj').single()
+        }).select('id,nome,cnpj,telefone,email,logradouro,numero,bairro,cidade,estado,cep').single()
         if (!errForn && novoForn) {
           fornVinc = novoForn
+          // Atualiza lista de fornecedores imediatamente
           setFornecedores(prev => [...prev, novoForn])
           toast(`✅ Fornecedor "${emitNome}" cadastrado automaticamente!`, 'success')
+        } else if (errForn) {
+          console.warn('Erro ao criar fornecedor:', errForn.message)
         }
       }
 
@@ -466,10 +469,21 @@ export default function EntradaEstoque() {
           <div className="form-group"><label className="form-label">Número da NF</label><input className="form-input" value={nota.numero} onChange={e=>fn('numero',e.target.value)} placeholder="Ex: 001234"/></div>
           <div className="form-group"><label className="form-label">Data de Emissão</label><input className="form-input" type="date" value={nota.data_emissao} onChange={e=>fn('data_emissao',e.target.value)}/></div>
           <div className="form-group" style={{gridColumn:'1/-1'}}>
-            <label className="form-label">Fornecedor</label>
+            <label className="form-label">Fornecedor *</label>
             <select className="form-select" value={nota.fornecedor_id} onChange={e=>{const f=fornecedores.find(x=>x.id===e.target.value);fn('fornecedor_id',e.target.value);fn('fornecedor_nome',f?.nome||'')}}>
-              <option value="">Selecionar...</option>{fornecedores.map(f=><option key={f.id} value={f.id}>{f.nome}</option>)}
+              <option value="">Selecionar...</option>
+              {fornecedores.map(f=><option key={f.id} value={f.id}>{f.nome}{f.cnpj?` — ${f.cnpj}`:''}</option>)}
             </select>
+            {nota.fornecedor_id && nota.fornecedor_nome && !fornecedores.find(f=>f.id===nota.fornecedor_id) && (
+              <div style={{fontSize:12,color:'var(--yellow)',marginTop:4}}>
+                ⚠ Fornecedor "{nota.fornecedor_nome}" — recarregando lista...
+              </div>
+            )}
+            {nota.fornecedor_id && fornecedores.find(f=>f.id===nota.fornecedor_id) && (
+              <div style={{fontSize:11,color:'var(--green)',marginTop:3}}>
+                ✓ {fornecedores.find(f=>f.id===nota.fornecedor_id)?.nome}
+              </div>
+            )}
           </div>
           {nota.chave_nfe&&<div className="form-group" style={{gridColumn:'1/-1'}}><label className="form-label">Chave NF-e</label><input className="form-input" value={nota.chave_nfe} readOnly style={{fontSize:11,opacity:.7,fontFamily:'var(--mono)'}}/></div>}
           <div className="form-group" style={{gridColumn:'1/-1'}}><label className="form-label">Observações</label><input className="form-input" value={nota.obs} onChange={e=>fn('obs',e.target.value)}/></div>
