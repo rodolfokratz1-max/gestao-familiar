@@ -140,7 +140,7 @@ export default function EntradaEstoque() {
         const cnpjLimpo = emitCNPJ.replace(/\D/g,'')
         const { data: found } = await supabase.from('pessoas')
           .select('id,nome,cnpj')
-          .ilike('cnpj', `%${cnpjLimpo.slice(-8)}%`)
+          .ilike('cpf_cnpj', `%${cnpjLimpo.slice(-8)}%`)
           .in('tipo',['fornecedor','ambos'])
           .limit(1).single()
         fornVinc = found || null
@@ -153,7 +153,7 @@ export default function EntradaEstoque() {
           : emitCNPJ
         const { data: novoForn, error: errForn } = await supabase.from('pessoas').insert({
           nome: emitNome, tipo: 'fornecedor', ativo: true,
-          cnpj: cnpjFmt || null,
+          cpf_cnpj: cnpjFmt || null,
           ie: emitIE || null,
           telefone: emitFone || null,
           email: emitEmail || null,
@@ -175,7 +175,7 @@ export default function EntradaEstoque() {
 
       // Recarrega lista completa do banco para garantir que o novo aparece no select
       const { data: fornList } = await supabase.from('pessoas')
-        .select('id,nome,cnpj')
+        .select('id,nome,cpf_cnpj')
         .in('tipo',['fornecedor','ambos'])
         .eq('ativo',true)
         .order('nome')
@@ -487,7 +487,7 @@ export default function EntradaEstoque() {
             <label className="form-label">Fornecedor *</label>
             <select className="form-select" value={nota.fornecedor_id} onChange={e=>{const f=fornecedores.find(x=>x.id===e.target.value);fn('fornecedor_id',e.target.value);fn('fornecedor_nome',f?.nome||'')}}>
               <option value="">Selecionar...</option>
-              {fornecedores.map(f=><option key={f.id} value={f.id}>{f.nome}{f.cnpj?` — ${f.cnpj}`:''}</option>)}
+              {fornecedores.map(f=><option key={f.id} value={f.id}>{f.nome}{f.cpf_cnpj?` — ${f.cpf_cnpj}`:''}</option>)}
             </select>
             {nota.fornecedor_id && nota.fornecedor_nome && !fornecedores.find(f=>f.id===nota.fornecedor_id) && (
               <div style={{fontSize:12,color:'var(--yellow)',marginTop:4}}>
