@@ -134,8 +134,17 @@ export default function EntradaEstoque() {
       const emitCEP     = xml.querySelector('emit CEP')?.textContent || ''
       const emitIE      = xml.querySelector('emit IE')?.textContent || ''
 
-      // Busca fornecedor pelo CNPJ no cadastro local
-      let fornVinc = fornecedores.find(f => f.cnpj?.replace(/\D/g,'') === emitCNPJ.replace(/\D/g,''))
+      // Busca fornecedor pelo CNPJ — primeiro no banco (mais confiável que cache local)
+      let fornVinc = null
+      if (emitCNPJ) {
+        const cnpjLimpo = emitCNPJ.replace(/\D/g,'')
+        const { data: found } = await supabase.from('pessoas')
+          .select('id,nome,cnpj')
+          .ilike('cnpj', `%${cnpjLimpo.slice(-8)}%`)
+          .in('tipo',['fornecedor','ambos'])
+          .limit(1).single()
+        fornVinc = found || null
+      }
 
       // Se não encontrou, cria automaticamente
       if (!fornVinc && emitNome) {
@@ -155,16 +164,22 @@ export default function EntradaEstoque() {
           estado: emitUF || null,
           cep: emitCEP || null,
           codigo: `FORN-${Date.now()}`,
-        }).select('id,nome,cnpj,telefone,email,logradouro,numero,bairro,cidade,estado,cep').single()
+        }).select('id,nome,cnpj').single()
         if (!errForn && novoForn) {
           fornVinc = novoForn
-          // Atualiza lista de fornecedores imediatamente
-          setFornecedores(prev => [...prev, novoForn])
-          toast(`✅ Fornecedor "${emitNome}" cadastrado automaticamente!`, 'success')
+          toast(`✅ Fornecedor "${emitNome}" cadastrado! Já selecionado.`, 'success')
         } else if (errForn) {
-          console.warn('Erro ao criar fornecedor:', errForn.message)
+          toast(`⚠ Não foi possível cadastrar o fornecedor: ${errForn.message}`, 'error')
         }
       }
+
+      // Recarrega lista completa do banco para garantir que o novo aparece no select
+      const { data: fornList } = await supabase.from('pessoas')
+        .select('id,nome,cnpj')
+        .in('tipo',['fornecedor','ambos'])
+        .eq('ativo',true)
+        .order('nome')
+      if (fornList) setFornecedores(fornList)
 
       setNota({ numero:nNF, fornecedor_id:fornVinc?.id||'', fornecedor_nome:fornVinc?.nome||emitNome, data_emissao:dEmi.substring(0,10), chave_nfe:chave, obs:`NF-e ${nNF} — ${emitNome}` })
       const dets = xml.querySelectorAll('det')
