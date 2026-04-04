@@ -31,7 +31,7 @@ export default function Dashboard({ onNavigate }) {
     const d7  = new Date(); d7.setDate(d7.getDate()+7); const d7s = d7.toISOString().split('T')[0]
 
     const [caixa, apagar, areceber, cartR, fatR, ccR] = await Promise.allSettled([
-      supabase.from('caixa').select('tipo,valor,data,categoria').gte('data',`${ano}-01-01`).lte('data',`${ano}-12-31`),
+      supabase.from('caixa').select('tipo,valor,data,categoria,origem_tabela').gte('data',`${ano}-01-01`).lte('data',`${ano}-12-31`),
       supabase.from('contas_pagar').select('valor,vencimento').eq('pago',false).eq('ativo',true),
       supabase.from('contas_receber').select('valor,vencimento').eq('recebido',false).eq('ativo',true),
       supabase.from('cartoes').select('*').eq('ativo',true).order('nome'),
@@ -75,16 +75,19 @@ export default function Dashboard({ onNavigate }) {
     }
     setChart6m(months)
 
+    // Exclui transferências das categorias — não são receita/despesa real
+    const naoEhTransf = r => r.categoria !== 'Transferência' && r.origem_tabela !== 'transferencia'
+
     // Categorias por despesa (mês atual)
     const catMap = {}
-    caixaData.filter(r=>r.tipo==='saida'&&r.data>=ini&&r.data<=fim&&r.categoria).forEach(r=>{
+    caixaData.filter(r=>r.tipo==='saida'&&r.data>=ini&&r.data<=fim&&r.categoria&&naoEhTransf(r)).forEach(r=>{
       catMap[r.categoria] = (catMap[r.categoria]||0)+Number(r.valor)
     })
     setCatDespesa(Object.entries(catMap).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([name,value])=>({name,value})))
 
     // Categorias por receita (mês atual)
     const catMapR = {}
-    caixaData.filter(r=>r.tipo==='entrada'&&r.data>=ini&&r.data<=fim&&r.categoria).forEach(r=>{
+    caixaData.filter(r=>r.tipo==='entrada'&&r.data>=ini&&r.data<=fim&&r.categoria&&naoEhTransf(r)).forEach(r=>{
       catMapR[r.categoria] = (catMapR[r.categoria]||0)+Number(r.valor)
     })
     setCatReceita(Object.entries(catMapR).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([name,value])=>({name,value})))

@@ -24,7 +24,7 @@ const EMPTY = {
   nome:'', descricao:'', valor:'', categoria:'Assinatura',
   dia_vencimento:10, periodicidade:'mensal',
   data_inicio: today(), data_fim:'',
-  conta_id:'', tipo:'pagar', ativo:true
+  conta_id:'', forma_pgto:'', tipo:'pagar', ativo:true
 }
 
 export default function Recorrencias() {
@@ -70,6 +70,7 @@ export default function Recorrencias() {
       valor: Number(form.valor),
       data_fim: form.data_fim || null,
       conta_id: form.conta_id || null,
+      forma_pgto: form.forma_pgto || null,
       descricao: form.descricao || null,
     }
     let error
@@ -150,7 +151,8 @@ export default function Recorrencias() {
             ? { pago: false, data_emissao: today() }
             : { recebido: false, data_emissao: today() }
           ),
-          ...(rec.conta_id ? { conta_id: rec.conta_id } : {}),
+          ...(rec.conta_id  ? { conta_id:  rec.conta_id  } : {}),
+          ...(rec.forma_pgto ? { forma_pgto: rec.forma_pgto } : {}),
         }
 
         const { error } = await supabase.from(tabela).insert(payload)
@@ -339,6 +341,15 @@ export default function Recorrencias() {
               <select className="form-select" value={form.conta_id} onChange={e => f('conta_id', e.target.value)}>
                 <option value="">Nenhuma</option>
                 {contas.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Forma de Pagamento</label>
+              <select className="form-select" value={form.forma_pgto||''} onChange={e => f('forma_pgto', e.target.value)}>
+                <option value="">Selecionar...</option>
+                {['Dinheiro','PIX','Cartão Débito','Cartão Crédito','Boleto','Débito Automático','Transferência','Cheque','Outro'].map(fp =>
+                  <option key={fp} value={fp}>{fp}</option>
+                )}
               </select>
             </div>
             <div className="form-group">

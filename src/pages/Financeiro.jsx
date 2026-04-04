@@ -15,13 +15,13 @@ const configs = {
     table: 'receitas', newLabel: 'Nova Receita',
     pagoField: 'recebido', pagoLabel: 'Recebido',
     caixaTipo: 'entrada', caixaCategoria: 'Receita',
-    empty: { data: today(), descricao: '', categoria: '', valor: '', conta_id: '', centro_custo_id: '', recebido: false, obs: '', ativo: true },
+    empty: { data: today(), descricao: '', categoria: '', valor: '', conta_id: '', forma_pgto: '', centro_custo_id: '', recebido: false, obs: '', ativo: true },
   },
   despesas: {
     table: 'despesas', newLabel: 'Nova Despesa',
     pagoField: 'pago', pagoLabel: 'Pago',
     caixaTipo: 'saida', caixaCategoria: 'Despesa',
-    empty: { data: today(), descricao: '', categoria: '', valor: '', conta_id: '', centro_custo_id: '', pago: false, obs: '', ativo: true },
+    empty: { data: today(), descricao: '', categoria: '', valor: '', conta_id: '', forma_pgto: '', centro_custo_id: '', pago: false, obs: '', ativo: true },
   },
 }
 
@@ -101,6 +101,7 @@ export default function Financeiro({ module }) {
       valor: r.valor,
       categoria: r.categoria || cfg.caixaCategoria,
       conta_id: r.conta_id || null,
+      forma_pgto: r.forma_pgto || null,
       origem_id: r.id,
       origem_tabela: cfg.table,
       obs: r.obs,
@@ -240,6 +241,15 @@ export default function Financeiro({ module }) {
               <select className="form-select" value={form.conta_id} onChange={e => f('conta_id', e.target.value)}>
                 <option value="">Selecionar...</option>
                 {contas.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Forma de Pagamento</label>
+              <select className="form-select" value={form.forma_pgto||''} onChange={e => f('forma_pgto', e.target.value)}>
+                <option value="">Selecionar...</option>
+                {['Dinheiro','PIX','Cartão Débito','Cartão Crédito','Boleto','Transferência','Cheque','Outro'].map(fp =>
+                  <option key={fp} value={fp}>{fp}</option>
+                )}
               </select>
             </div>
             <div className="form-group" style={{ gridColumn: '1/-1' }}>

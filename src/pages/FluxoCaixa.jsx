@@ -10,19 +10,26 @@ const MESES_FULL = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho
 export default function FluxoCaixa() {
   const [ano, setAno] = useState(new Date().getFullYear())
   const [dados, setDados] = useState([])
+  const [contas, setContas] = useState([])
+  const [filterConta, setFilterConta] = useState('')
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => { load() }, [ano])
+  useEffect(() => {
+    supabase.from('contas').select('id,nome').eq('ativo',true).order('nome').then(({data})=>setContas(data||[]))
+  }, [])
+  useEffect(() => { load() }, [ano, filterConta])
 
   async function load() {
     setLoading(true)
     const ini = `${ano}-01-01`
     const fim = `${ano}-12-31`
-    const { data } = await supabase
+    let q = supabase
       .from('caixa')
-      .select('data,tipo,valor')
+      .select('data,tipo,valor,categoria,origem_tabela')
       .gte('data', ini)
       .lte('data', fim)
+    if (filterConta) q = q.eq('conta_id', filterConta)
+    const { data } = await q
 
     // Agrupa por mês
     const meses = Array.from({length:12}, (_,i) => ({
@@ -39,7 +46,8 @@ export default function FluxoCaixa() {
 
     for (const r of (data||[])) {
       const m = new Date(r.data+'T12:00:00').getMonth()
-      if (r.categoria === 'Transferência') return // não conta no fluxo
+      // Exclui transferências — não impactam resultado real
+      if (r.categoria === 'Transferência' || r.origem_tabela === 'transferencia') continue
       if (r.tipo === 'entrada') meses[m].receita += Number(r.valor)
       else if (r.tipo === 'saida') meses[m].despesa += Number(r.valor)
     }
@@ -80,6 +88,19 @@ export default function FluxoCaixa() {
             {anos.map(a => <option key={a} value={a}>{a}</option>)}
           </select>
         </div>
+        <div className="form-group" style={{ marginBottom:0 }}>
+          <label className="form-label">Conta</label>
+          <select className="form-select" style={{ width:'auto' }} value={filterConta} onChange={e => setFilterConta(e.target.value)}>
+            <option value="">Todas as contas</option>
+            {contas.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+          </select>
+        </div>
+        {filterConta && (
+          <div style={{fontSize:11,padding:'6px 10px',background:'rgba(79,142,247,.1)',borderRadius:6,color:'var(--accent)',alignSelf:'flex-end',marginBottom:1}}>
+            Filtrando: <strong>{contas.find(c=>c.id===filterConta)?.nome}</strong>
+            <button onClick={()=>setFilterConta('')} style={{background:'none',border:'none',cursor:'pointer',color:'var(--accent)',marginLeft:6}}>✕</button>
+          </div>
+        )}
       </div>
 
       {/* Cards totais */}

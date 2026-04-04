@@ -49,3 +49,7 @@ BEGIN
   WHERE id = p_produto_id;
 END;
 $$;
+
+
+-- ── 5. forma_pgto em recorrências (para propagar para os lançamentos gerados) ──
+ALTER TABLE recorrencias ADD COLUMN IF NOT EXISTS forma_pgto TEXT;
