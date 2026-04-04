@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
+import { gerarCodigo } from '../lib/codigos'
 import { useToast } from '../contexts/ToastContext'
 import ConfirmDialog from '../components/ConfirmDialog'
 import {
@@ -134,7 +135,7 @@ export default function EntradaEstoque() {
       const emitCEP     = xml.querySelector('emit CEP')?.textContent || ''
       const emitIE      = xml.querySelector('emit IE')?.textContent || ''
 
-      // Busca fornecedor pelo CNPJ — primeiro no banco (mais confiável que cache local)
+      // Busca fornecedor pelo CNPJ — sem .single() para não gerar erro quando não encontrar
       let fornVinc = null
       if (emitCNPJ) {
         const cnpjLimpo = emitCNPJ.replace(/\D/g,'')
@@ -142,15 +143,26 @@ export default function EntradaEstoque() {
           .select('id,nome,cpf_cnpj')
           .ilike('cpf_cnpj', `%${cnpjLimpo.slice(-8)}%`)
           .in('tipo',['fornecedor','ambos'])
-          .limit(1).single()
-        fornVinc = found || null
+          .limit(1)
+        fornVinc = (found && found.length > 0) ? found[0] : null
       }
 
-      // Se não encontrou, cria automaticamente
+      // Se não encontrou pelo CNPJ, tenta pelo nome exato
+      if (!fornVinc && emitNome) {
+        const { data: foundNome } = await supabase.from('pessoas')
+          .select('id,nome,cpf_cnpj')
+          .ilike('nome', emitNome.trim())
+          .in('tipo',['fornecedor','ambos'])
+          .limit(1)
+        fornVinc = (foundNome && foundNome.length > 0) ? foundNome[0] : null
+      }
+
+      // Se não encontrou de nenhuma forma, cria automaticamente com código sequencial
       if (!fornVinc && emitNome) {
         const cnpjFmt = emitCNPJ.length === 14
           ? emitCNPJ.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5')
           : emitCNPJ
+        const codigoForn = await gerarCodigo('pessoas')
         const { data: novoForn, error: errForn } = await supabase.from('pessoas').insert({
           nome: emitNome, tipo: 'fornecedor', ativo: true,
           cpf_cnpj: cnpjFmt || null,
@@ -163,10 +175,10 @@ export default function EntradaEstoque() {
           cidade: emitCidade || null,
           estado: emitUF || null,
           cep: emitCEP || null,
-          codigo: `FORN-${Date.now()}`,
+          codigo: codigoForn,
         }).select('id,nome,cpf_cnpj').single()
         if (!errForn && novoForn) {
-          fornVinc = novoForn
+          fornVinc = { ...novoForn, _novo: true }
           toast(`✅ Fornecedor "${emitNome}" cadastrado! Já selecionado.`, 'success')
         } else if (errForn) {
           toast(`⚠ Não foi possível cadastrar o fornecedor: ${errForn.message}`, 'error')
@@ -180,6 +192,11 @@ export default function EntradaEstoque() {
         .eq('ativo',true)
         .order('nome')
       if (fornList) setFornecedores(fornList)
+
+      // Se fornecedor já existia (não foi criado agora), informa ao usuário
+      if (fornVinc && !fornVinc._novo) {
+        toast(`ℹ️ Fornecedor "${fornVinc.nome}" já cadastrado. Selecionado automaticamente.`, 'info')
+      }
 
       setNota({ numero:nNF, fornecedor_id:fornVinc?.id||'', fornecedor_nome:fornVinc?.nome||emitNome, data_emissao:dEmi.substring(0,10), chave_nfe:chave, obs:`NF-e ${nNF} — ${emitNome}` })
       const dets = xml.querySelectorAll('det')
