@@ -177,11 +177,27 @@ export default function EntradaEstoque() {
           cep: emitCEP || null,
           codigo: codigoForn,
         }).select('id,nome,cpf_cnpj').single()
+
         if (!errForn && novoForn) {
+          // Inseriu com sucesso — fornecedor novo
           fornVinc = { ...novoForn, _novo: true }
           toast(`✅ Fornecedor "${emitNome}" cadastrado! Já selecionado.`, 'success')
         } else if (errForn) {
-          toast(`⚠ Não foi possível cadastrar o fornecedor: ${errForn.message}`, 'error')
+          // Pode ser race condition (outro usuário cadastrou ao mesmo tempo)
+          // Re-busca no banco antes de exibir erro
+          const cnpjLimpo2 = emitCNPJ.replace(/\D/g,'')
+          const { data: recheck } = await supabase.from('pessoas')
+            .select('id,nome,cpf_cnpj')
+            .ilike('cpf_cnpj', `%${cnpjLimpo2.slice(-8)}%`)
+            .in('tipo',['fornecedor','ambos'])
+            .limit(1)
+          if (recheck && recheck.length > 0) {
+            // Outro usuário cadastrou simultaneamente — usa o que já existe
+            fornVinc = recheck[0]
+            toast(`ℹ️ Fornecedor "${fornVinc.nome}" já foi cadastrado por outro usuário. Selecionado.`, 'info')
+          } else {
+            toast(`⚠ Não foi possível cadastrar o fornecedor: ${errForn.message}`, 'error')
+          }
         }
       }
 
@@ -278,7 +294,21 @@ export default function EntradaEstoque() {
     setConfirmando(false)
     setProcessando(true)
     try {
-      // 0. Cria produtos automaticamente para itens sem vínculo
+      // 0a. Verifica se esta NF-e já foi importada (chave de 44 dígitos é única)
+      if (nota.chave_nfe && nota.chave_nfe.length >= 44) {
+        const { data: nfDup } = await supabase.from('entradas_estoque')
+          .select('id,numero_nf,created_at')
+          .eq('chave_nfe', nota.chave_nfe)
+          .limit(1)
+        if (nfDup && nfDup.length > 0) {
+          const dataImp = new Date(nfDup[0].created_at).toLocaleDateString('pt-BR')
+          toast(`⚠️ Esta NF-e (chave ${nota.chave_nfe.slice(-8)}) já foi importada em ${dataImp}. Operação cancelada.`, 'error')
+          setProcessando(false)
+          return
+        }
+      }
+
+    // 0b. Cria produtos automaticamente para itens sem vínculo
       // Usa código único baseado em timestamp+random para evitar colisão em uso simultâneo
       const itensProc = [...itens]
       const itensSemVinc = itensProc.filter(i => !i.produto_id && i.descricao?.trim())
@@ -327,13 +357,22 @@ export default function EntradaEstoque() {
       }).select().single()
       if (errE) throw errE
 
-      // 2. Atualiza estoque
+      // 2. Atualiza estoque de forma atômica via RPC para evitar sobrescrição em uso simultâneo
       for (const item of itensProc.filter(i=>i.produto_id)) {
-        const { data:prod } = await supabase.from('produtos').select('estoque').eq('id',item.produto_id).single()
-        await supabase.from('produtos').update({
-          estoque: Number(prod?.estoque||0)+Number(item.qtd),
-          preco_custo: Number(item.valor_unit),
-        }).eq('id',item.produto_id)
+        // Usa RPC que faz UPDATE estoque = estoque + qtd diretamente no banco (atômico)
+        const { error: eRpc } = await supabase.rpc('incrementar_estoque', {
+          p_produto_id: item.produto_id,
+          p_qtd: Number(item.qtd),
+          p_preco_custo: Number(item.valor_unit),
+        })
+        // Fallback: se a função RPC não existir ainda, usa update convencional
+        if (eRpc && eRpc.message?.includes('function')) {
+          const { data:prod } = await supabase.from('produtos').select('estoque').eq('id',item.produto_id).single()
+          await supabase.from('produtos').update({
+            estoque: Number(prod?.estoque||0)+Number(item.qtd),
+            preco_custo: Number(item.valor_unit),
+          }).eq('id',item.produto_id)
+        }
       }
 
       // 3. Cria registro em Compras
