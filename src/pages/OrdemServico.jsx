@@ -158,11 +158,13 @@ export default function OrdemServico() {
       })
     }
 
-    // Lança no Caixa
+    // Lança no Caixa (conta_id vindo da conta_receber criada, se houver)
     await supabase.from('caixa').insert({
       data: today(), tipo: 'entrada',
       descricao: `OS ${o.numero} — ${o.cliente_nome}`,
       valor: total, categoria: 'Ordem de Serviço',
+      conta_id: cr?.conta_id || null,
+      forma_pgto: o.forma_pgto || null,
       origem_id: cr?.id, origem_tabela: 'contas_receber', obs: o.obs,
     })
 
