@@ -1,15 +1,17 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { BarChartSVG, PieChartSVG, CHART_COLORS } from '../lib/charts'
-import { FileText, TrendingUp, TrendingDown, BarChart2, Download } from 'lucide-react'
+import { FileText, TrendingUp, TrendingDown, BarChart2, ArrowLeftRight } from 'lucide-react'
 
-const fmt = v => 'R$ ' + Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2})
-const fmtK = v => { const n=Number(v||0); return Math.abs(n)>=1000?'R$'+(n/1000).toFixed(0)+'k':'R$'+n.toFixed(0) }
+const fmt  = v => 'R$ ' + Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2})
 const MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
+
+// Filtra lançamentos que NÃO são transferências entre contas
+const semTransferencia = rows => (rows||[]).filter(r => r.categoria !== 'Transferência' && r.origem_tabela !== 'transferencia')
 
 export default function Relatorios() {
   const anoAtual = new Date().getFullYear()
-  const [aba, setAba]         = useState('dre') // dre | categorias | categorias_rec | periodo
+  const [aba, setAba]         = useState('dre')
   const [ano, setAno]         = useState(anoAtual)
   const [mesIni, setMesIni]   = useState(String(new Date().getMonth()+1).padStart(2,'0'))
   const [mesFim, setMesFim]   = useState(String(new Date().getMonth()+1).padStart(2,'0'))
@@ -20,71 +22,106 @@ export default function Relatorios() {
 
   async function loadDados() {
     setLoading(true)
-    const ini = `${ano}-${mesIni.padStart(2,'0')}-01`
-    const ult  = new Date(ano, Number(mesFim), 0).getDate()
-    const fim  = `${ano}-${mesFim.padStart(2,'0')}-${ult}`
-    const anoIni = `${ano}-01-01`, anoFim = `${ano}-12-31`
+    const ini    = `${ano}-${mesIni.padStart(2,'0')}-01`
+    const ult    = new Date(ano, Number(mesFim), 0).getDate()
+    const fim    = `${ano}-${mesFim.padStart(2,'0')}-${ult}`
+    const anoIni = `${ano}-01-01`
+    const anoFim = `${ano}-12-31`
 
     if (aba === 'dre') {
-      // DRE anual — todos os meses
-      const { data: caixa } = await supabase.from('caixa').select('tipo,valor,data,categoria').gte('data',anoIni).lte('data',anoFim)
-      const meses = MESES.map((label,i) => {
+      const { data: caixaRaw } = await supabase
+        .from('caixa')
+        .select('tipo,valor,data,categoria,origem_tabela')
+        .gte('data', anoIni).lte('data', anoFim)
+
+      // Exclui transferências — não são receita nem despesa real
+      const caixa = semTransferencia(caixaRaw)
+
+      const meses = MESES.map((label, i) => {
         const m = String(i+1).padStart(2,'0')
-        const d = caixa?.filter(r=>r.data?.startsWith(`${ano}-${m}`)) || []
-        const receita = d.filter(r=>r.tipo==='entrada').reduce((s,r)=>s+Number(r.valor),0)
-        const despesa = d.filter(r=>r.tipo==='saida').reduce((s,r)=>s+Number(r.valor),0)
-        return { label, mes:m, receita, despesa, resultado:receita-despesa }
+        const d = caixa.filter(r => r.data?.startsWith(`${ano}-${m}`))
+        const receita = d.filter(r => r.tipo==='entrada').reduce((s,r)=>s+Number(r.valor),0)
+        const despesa = d.filter(r => r.tipo==='saida').reduce((s,r)=>s+Number(r.valor),0)
+        return { label, mes: m, receita, despesa, resultado: receita-despesa }
       })
-      const totalRec = meses.reduce((s,m)=>s+m.receita,0)
-      const totalDes = meses.reduce((s,m)=>s+m.despesa,0)
-      setDados({ meses, totalRec, totalDes, totalRes:totalRec-totalDes })
+      const totalRec = meses.reduce((s,m)=>s+m.receita, 0)
+      const totalDes = meses.reduce((s,m)=>s+m.despesa, 0)
+      setDados({ meses, totalRec, totalDes, totalRes: totalRec-totalDes })
     }
 
     if (aba === 'categorias') {
-      const { data: saidas } = await supabase.from('caixa').select('valor,categoria').eq('tipo','saida').gte('data',ini).lte('data',fim)
+      const { data: raw } = await supabase
+        .from('caixa')
+        .select('valor,categoria,origem_tabela')
+        .eq('tipo','saida')
+        .gte('data', ini).lte('data', fim)
+
+      // Exclui transferências das despesas por categoria
+      const saidas = semTransferencia(raw)
       const map = {}
-      ;(saidas||[]).forEach(r => { const k=r.categoria||'Sem categoria'; map[k]=(map[k]||0)+Number(r.valor) })
+      saidas.forEach(r => { const k=r.categoria||'Sem categoria'; map[k]=(map[k]||0)+Number(r.valor) })
       const lista = Object.entries(map).sort((a,b)=>b[1]-a[1]).map(([name,value])=>({name,value}))
-      const total = lista.reduce((s,x)=>s+x.value,0)
+      const total = lista.reduce((s,x)=>s+x.value, 0)
       setDados({ lista, total })
     }
 
     if (aba === 'categorias_rec') {
-      const { data: entradas } = await supabase.from('caixa').select('valor,categoria').eq('tipo','entrada').gte('data',ini).lte('data',fim)
+      const { data: raw } = await supabase
+        .from('caixa')
+        .select('valor,categoria,origem_tabela')
+        .eq('tipo','entrada')
+        .gte('data', ini).lte('data', fim)
+
+      // Exclui transferências das receitas por categoria
+      const entradas = semTransferencia(raw)
       const map = {}
-      ;(entradas||[]).forEach(r => { const k=r.categoria||'Sem categoria'; map[k]=(map[k]||0)+Number(r.valor) })
+      entradas.forEach(r => { const k=r.categoria||'Sem categoria'; map[k]=(map[k]||0)+Number(r.valor) })
       const lista = Object.entries(map).sort((a,b)=>b[1]-a[1]).map(([name,value])=>({name,value}))
-      const total = lista.reduce((s,x)=>s+x.value,0)
+      const total = lista.reduce((s,x)=>s+x.value, 0)
       setDados({ lista, total })
     }
 
     if (aba === 'periodo') {
-      const { data: caixa } = await supabase.from('caixa').select('tipo,valor,data,categoria,descricao').gte('data',ini).lte('data',fim).order('data',{ascending:false})
-      const entradas = (caixa||[]).filter(r=>r.tipo==='entrada')
-      const saidas   = (caixa||[]).filter(r=>r.tipo==='saida')
-      const totalE   = entradas.reduce((s,r)=>s+Number(r.valor),0)
-      const totalS   = saidas.reduce((s,r)=>s+Number(r.valor),0)
-      setDados({ caixa: caixa||[], totalE, totalS, resultado:totalE-totalS })
+      const { data: caixaRaw } = await supabase
+        .from('caixa')
+        .select('id,tipo,valor,data,categoria,descricao,origem_tabela')
+        .gte('data', ini).lte('data', fim)
+        .order('data', { ascending: false })
+
+      // Separa transferências — exibe na listagem mas NÃO soma nos totais
+      const caixaSemTransf = semTransferencia(caixaRaw)
+      const transferencias = (caixaRaw||[]).filter(r => r.categoria === 'Transferência' || r.origem_tabela === 'transferencia')
+
+      const totalE   = caixaSemTransf.filter(r=>r.tipo==='entrada').reduce((s,r)=>s+Number(r.valor),0)
+      const totalS   = caixaSemTransf.filter(r=>r.tipo==='saida').reduce((s,r)=>s+Number(r.valor),0)
+      const totalTrf = transferencias.filter(r=>r.tipo==='saida').reduce((s,r)=>s+Number(r.valor),0)
+
+      setDados({
+        caixa: caixaRaw || [],
+        caixaSemTransf,
+        totalE, totalS,
+        totalTrf,
+        resultado: totalE - totalS
+      })
     }
 
     setLoading(false)
   }
 
-  const anos = Array.from({length:5},(_,i)=>anoAtual-2+i)
+  const anos  = Array.from({length:5},(_,i)=>anoAtual-2+i)
   const meses = Array.from({length:12},(_,i)=>({ v:String(i+1).padStart(2,'0'), l:MESES[i] }))
 
   const ABAS = [
-    { id:'dre', label:'DRE Anual', icon:<BarChart2 size={13}/> },
-    { id:'categorias', label:'Despesas por Categoria', icon:<TrendingDown size={13}/> },
-    { id:'categorias_rec', label:'Receitas por Categoria', icon:<TrendingUp size={13}/> },
-    { id:'periodo', label:'Extrato por Período', icon:<FileText size={13}/> },
+    { id:'dre',           label:'DRE Anual',               icon:<BarChart2 size={13}/> },
+    { id:'categorias',    label:'Despesas por Categoria',   icon:<TrendingDown size={13}/> },
+    { id:'categorias_rec',label:'Receitas por Categoria',   icon:<TrendingUp size={13}/> },
+    { id:'periodo',       label:'Extrato por Período',      icon:<FileText size={13}/> },
   ]
-
 
   return (
     <div>
       {/* Abas */}
-      <div style={{display:'flex',gap:4,marginBottom:16,borderBottom:'1px solid var(--border)',paddingBottom:0,flexWrap:'wrap'}}>
+      <div style={{display:'flex',gap:4,marginBottom:16,borderBottom:'1px solid var(--border)',flexWrap:'wrap'}}>
         {ABAS.map(a=>(
           <button key={a.id} onClick={()=>setAba(a.id)} style={{
             display:'flex',alignItems:'center',gap:5,background:'none',border:'none',cursor:'pointer',
@@ -122,17 +159,28 @@ export default function Relatorios() {
 
       {loading ? <div className="loading"><div className="spinner"/></div> : <>
 
-        {/* DRE ANUAL */}
+        {/* ── DRE ANUAL ──────────────────────────────────────── */}
         {aba === 'dre' && dados.meses && (
           <>
+            <div style={{fontSize:11,color:'var(--text3)',marginBottom:10,display:'flex',alignItems:'center',gap:5}}>
+              <ArrowLeftRight size={11}/> Transferências entre contas excluídas dos totais
+            </div>
             <div className="stats-grid" style={{marginBottom:16}}>
               <div className="stat-card green"><div className="stat-label">Receita {ano}</div><div className="stat-value green text-mono">{fmt(dados.totalRec)}</div></div>
               <div className="stat-card red"><div className="stat-label">Despesa {ano}</div><div className="stat-value red text-mono">{fmt(dados.totalDes)}</div></div>
-              <div className={`stat-card ${dados.totalRes>=0?'green':'red'}`}><div className="stat-label">Resultado {ano}</div><div className={`stat-value text-mono ${dados.totalRes>=0?'green':'red'}`}>{fmt(dados.totalRes)}</div></div>
+              <div className={`stat-card ${dados.totalRes>=0?'green':'red'}`}>
+                <div className="stat-label">Resultado {ano}</div>
+                <div className={`stat-value text-mono ${dados.totalRes>=0?'green':'red'}`}>{fmt(dados.totalRes)}</div>
+              </div>
             </div>
             <div className="card" style={{marginBottom:16}}>
               <div className="card-header"><span className="card-title">Resultado mensal — {ano}</span></div>
-              <BarChartSVG data={dados.meses.map(m=>({name:m.label,Receita:m.receita,Despesa:m.despesa}))} keys={['Receita','Despesa']} colors={['#34d399','#f87171']} height={240}/>
+              <BarChartSVG
+                data={dados.meses.map(m=>({name:m.label,Receita:m.receita,Despesa:m.despesa}))}
+                keys={['Receita','Despesa']}
+                colors={['#34d399','#f87171']}
+                height={240}
+              />
             </div>
             <div className="card" style={{padding:0,overflow:'hidden'}}>
               <div style={{overflowX:'auto'}}>
@@ -167,9 +215,12 @@ export default function Relatorios() {
           </>
         )}
 
-        {/* CATEGORIAS DESPESA/RECEITA */}
+        {/* ── CATEGORIAS DESPESA / RECEITA ────────────────────── */}
         {(aba === 'categorias' || aba === 'categorias_rec') && dados.lista && (
           <>
+            <div style={{fontSize:11,color:'var(--text3)',marginBottom:10,display:'flex',alignItems:'center',gap:5}}>
+              <ArrowLeftRight size={11}/> Transferências entre contas não incluídas
+            </div>
             <div className="stat-card" style={{marginBottom:16,background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:12,padding:'14px 20px'}}>
               <div className="stat-label">{aba==='categorias'?'Total Despesas':'Total Receitas'} no período</div>
               <div className={`stat-value text-mono ${aba==='categorias'?'red':'green'}`}>{fmt(dados.total)}</div>
@@ -179,15 +230,11 @@ export default function Relatorios() {
               : <div className="dash-grid">
                   <div className="card">
                     <div className="card-header"><span className="card-title">Distribuição</span></div>
-                    <ResponsiveContainer width="100%" height={280}>
-                      <PieChart>
-                        <Pie data={dados.lista} cx="45%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={2} dataKey="value">
-                          {dados.lista.map((_,i)=><Cell key={i} fill={CHART_COLORS[i%CHART_COLORS.length]}/>)}
-                        </Pie>
-                        <Tooltip formatter={v=>[fmt(v)]}/>
-                        <Legend iconType="circle" iconSize={8} wrapperStyle={{fontSize:11}}/>
-                      </PieChart>
-                    </ResponsiveContainer>
+                    <PieChartSVG
+                      data={dados.lista}
+                      colors={CHART_COLORS}
+                      height={280}
+                    />
                   </div>
                   <div className="card">
                     <div className="card-header"><span className="card-title">Ranking</span></div>
@@ -211,32 +258,79 @@ export default function Relatorios() {
           </>
         )}
 
-        {/* EXTRATO POR PERÍODO */}
+        {/* ── EXTRATO POR PERÍODO ─────────────────────────────── */}
         {aba === 'periodo' && dados.caixa !== undefined && (
           <>
+            <div style={{fontSize:11,color:'var(--text3)',marginBottom:10,display:'flex',alignItems:'center',gap:5}}>
+              <ArrowLeftRight size={11}/> Transferências aparecem na listagem mas <strong style={{marginLeft:3}}>não somam</strong> nas entradas/saídas
+            </div>
             <div className="stats-grid" style={{marginBottom:16}}>
-              <div className="stat-card green"><div className="stat-label">Entradas</div><div className="stat-value green text-mono">{fmt(dados.totalE)}</div></div>
-              <div className="stat-card red"><div className="stat-label">Saídas</div><div className="stat-value red text-mono">{fmt(dados.totalS)}</div></div>
-              <div className={`stat-card ${dados.resultado>=0?'green':'red'}`}><div className="stat-label">Resultado</div><div className={`stat-value text-mono ${dados.resultado>=0?'green':'red'}`}>{fmt(dados.resultado)}</div></div>
+              <div className="stat-card green">
+                <div className="stat-label">Entradas (sem transf.)</div>
+                <div className="stat-value green text-mono">{fmt(dados.totalE)}</div>
+              </div>
+              <div className="stat-card red">
+                <div className="stat-label">Saídas (sem transf.)</div>
+                <div className="stat-value red text-mono">{fmt(dados.totalS)}</div>
+              </div>
+              <div className={`stat-card ${dados.resultado>=0?'green':'red'}`}>
+                <div className="stat-label">Resultado</div>
+                <div className={`stat-value text-mono ${dados.resultado>=0?'green':'red'}`}>{fmt(dados.resultado)}</div>
+              </div>
+              {dados.totalTrf > 0 && (
+                <div className="stat-card" style={{background:'var(--bg2)'}}>
+                  <div className="stat-label">Transferências (não computadas)</div>
+                  <div className="stat-value text-mono" style={{color:'var(--text2)'}}>{fmt(dados.totalTrf)}</div>
+                </div>
+              )}
             </div>
             {dados.caixa.length === 0
               ? <div className="empty-state"><FileText size={40}/><p>Nenhuma movimentação no período</p></div>
               : <div className="card" style={{padding:0,overflow:'hidden'}}>
                   <div className="table-wrap">
                     <table>
-                      <thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th style={{textAlign:'right'}}>Valor</th><th>Tipo</th></tr></thead>
+                      <thead>
+                        <tr>
+                          <th>Data</th>
+                          <th>Descrição</th>
+                          <th>Categoria</th>
+                          <th style={{textAlign:'right'}}>Valor</th>
+                          <th>Tipo</th>
+                        </tr>
+                      </thead>
                       <tbody>
-                        {dados.caixa.map(r=>(
-                          <tr key={r.id||Math.random()}>
-                            <td style={{fontSize:12,color:'var(--text2)',whiteSpace:'nowrap'}}>{r.data?new Date(r.data+'T12:00:00').toLocaleDateString('pt-BR'):'—'}</td>
-                            <td style={{fontWeight:600}}>{r.descricao}</td>
-                            <td>{r.categoria?<span className="badge badge-gray" style={{fontSize:11}}>{r.categoria}</span>:'—'}</td>
-                            <td style={{textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,color:r.tipo==='entrada'?'var(--green)':'var(--red)'}}>
-                              {r.tipo==='entrada'?'+ ':r.tipo==='saida'?'- ':''}{fmt(r.valor)}
-                            </td>
-                            <td><span className={`badge ${r.tipo==='entrada'?'badge-green':r.tipo==='saida'?'badge-red':'badge-gray'}`} style={{fontSize:11}}>{r.tipo==='entrada'?'Entrada':r.tipo==='saida'?'Saída':'Transf.'}</span></td>
-                          </tr>
-                        ))}
+                        {dados.caixa.map(r => {
+                          const isTransf = r.categoria==='Transferência' || r.origem_tabela==='transferencia'
+                          return (
+                            <tr key={r.id||Math.random()} style={{opacity: isTransf ? 0.65 : 1}}>
+                              <td style={{fontSize:12,color:'var(--text2)',whiteSpace:'nowrap'}}>
+                                {r.data ? new Date(r.data+'T12:00:00').toLocaleDateString('pt-BR') : '—'}
+                              </td>
+                              <td style={{fontWeight:600}}>{r.descricao}</td>
+                              <td>
+                                {r.categoria
+                                  ? <span className={`badge ${isTransf?'badge-gray':''}`} style={{fontSize:11}}>{r.categoria}</span>
+                                  : '—'}
+                              </td>
+                              <td style={{
+                                textAlign:'right',fontFamily:'var(--mono)',fontWeight:700,
+                                color: isTransf ? 'var(--text3)' : r.tipo==='entrada' ? 'var(--green)' : 'var(--red)'
+                              }}>
+                                {isTransf ? '' : r.tipo==='entrada' ? '+ ' : '- '}{fmt(r.valor)}
+                              </td>
+                              <td>
+                                {isTransf
+                                  ? <span className="badge badge-gray" style={{fontSize:11,display:'inline-flex',alignItems:'center',gap:3}}>
+                                      <ArrowLeftRight size={10}/> Transf.
+                                    </span>
+                                  : <span className={`badge ${r.tipo==='entrada'?'badge-green':'badge-red'}`} style={{fontSize:11}}>
+                                      {r.tipo==='entrada'?'Entrada':'Saída'}
+                                    </span>
+                                }
+                              </td>
+                            </tr>
+                          )
+                        })}
                       </tbody>
                     </table>
                   </div>

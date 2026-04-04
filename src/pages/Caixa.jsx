@@ -48,7 +48,8 @@ export default function Caixa() {
   })
 
   // Exclui transferências dos totais — não impactam patrimônio
-  const semTransf = filtered.filter(r => r.categoria !== 'Transferência')
+  const isTransferencia = r => r.categoria === 'Transferência' || r.origem_tabela === 'transferencia'
+  const semTransf = filtered.filter(r => !isTransferencia(r))
   const entradas = semTransf.filter(r=>r.tipo==='entrada').reduce((s,r)=>s+Number(r.valor||0),0)
   const saidas   = semTransf.filter(r=>r.tipo==='saida').reduce((s,r)=>s+Number(r.valor||0),0)
   const saldo    = entradas - saidas
