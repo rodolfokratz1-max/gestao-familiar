@@ -48,7 +48,7 @@ export default function EntradaEstoque() {
   async function loadAuxiliar() {
     const [{ data: p }, { data: f }, { data: c }, empData] = await Promise.all([
       supabase.from('produtos').select('id,nome,codigo,preco_custo,estoque,unidade').eq('tipo','produto').eq('ativo',true).order('nome'),
-      supabase.from('pessoas').select('id,nome,cnpj,telefone,email,logradouro,numero,bairro,cidade,estado,cep').in('tipo',['fornecedor','ambos']).eq('ativo',true).order('nome'),
+      supabase.from('pessoas').select('id,nome,cpf_cnpj,telefone,email,logradouro,numero,bairro,cidade,estado,cep').in('tipo',['fornecedor','ambos']).eq('ativo',true).order('nome'),
       supabase.from('contas').select('id,nome').eq('ativo',true).order('nome'),
       supabase.from('empresa').select('margem_padrao').limit(1).single(),
     ])
@@ -139,7 +139,7 @@ export default function EntradaEstoque() {
       if (emitCNPJ) {
         const cnpjLimpo = emitCNPJ.replace(/\D/g,'')
         const { data: found } = await supabase.from('pessoas')
-          .select('id,nome,cnpj')
+          .select('id,nome,cpf_cnpj')
           .ilike('cpf_cnpj', `%${cnpjLimpo.slice(-8)}%`)
           .in('tipo',['fornecedor','ambos'])
           .limit(1).single()
@@ -164,7 +164,7 @@ export default function EntradaEstoque() {
           estado: emitUF || null,
           cep: emitCEP || null,
           codigo: `FORN-${Date.now()}`,
-        }).select('id,nome,cnpj').single()
+        }).select('id,nome,cpf_cnpj').single()
         if (!errForn && novoForn) {
           fornVinc = novoForn
           toast(`✅ Fornecedor "${emitNome}" cadastrado! Já selecionado.`, 'success')
