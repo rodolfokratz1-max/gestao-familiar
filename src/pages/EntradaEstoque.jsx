@@ -390,16 +390,23 @@ export default function EntradaEstoque() {
 
       // 4. Gera financeiro (Conta a Pagar) se solicitado
       if (gerarFin) {
-        const parcelas = Number(fin.parcelas)||1
-        const valorParcela = (totalNota/parcelas).toFixed(2)
-        for (let p=0; p<parcelas; p++) {
+        const nParcelas = Number(fin.parcelas)||1
+        // Distribui o valor evitando diferença de centavos:
+        // parcelas normais usam Math.floor(centavos), a última absorve o restante
+        const totalCentavos = Math.round(totalNota * 100)
+        const parcelaCentavos = Math.floor(totalCentavos / nParcelas)
+        const restoCentavos = totalCentavos - parcelaCentavos * nParcelas
+
+        for (let p=0; p<nParcelas; p++) {
           const venc = new Date(fin.vencimento1+'T12:00:00')
           venc.setDate(venc.getDate()+p*Number(fin.intervalo_dias))
           const vencStr = venc.toISOString().split('T')[0]
+          // A última parcela absorve o centavo restante
+          const valorParcela = ((parcelaCentavos + (p === nParcelas - 1 ? restoCentavos : 0)) / 100).toFixed(2)
           await supabase.from('contas_pagar').insert({
             data_emissao: today(),
-            descricao: parcelas>1
-              ? `NF ${nota.numero||'s/n'} — ${nota.fornecedor_nome} (${p+1}/${parcelas})`
+            descricao: nParcelas>1
+              ? `NF ${nota.numero||'s/n'} — ${nota.fornecedor_nome} (${p+1}/${nParcelas})`
               : `NF ${nota.numero||'s/n'} — ${nota.fornecedor_nome}`,
             valor: valorParcela,
             vencimento: vencStr,
@@ -417,7 +424,7 @@ export default function EntradaEstoque() {
       }
 
       const qtd = itensProc.filter(i=>i.produto_id).length
-      toast(`✅ Entrada confirmada! ${qtd} produto(s) atualizados.${gerarFin?` ${fin.parcelas} parcela(s) em Contas a Pagar.`:''} Registrado em Compras.`,'success')
+      toast(`✅ Entrada confirmada! ${qtd} produto(s) atualizados.${gerarFin?` ${Number(fin.parcelas)||1} parcela(s) em Contas a Pagar.`:''} Registrado em Compras.`,'success')
 
       // Reset
       setNota({numero:'',fornecedor_id:'',fornecedor_nome:'',data_emissao:today(),chave_nfe:'',obs:''})

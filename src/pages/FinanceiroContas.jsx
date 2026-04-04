@@ -191,6 +191,35 @@ export default function FinanceiroContas({ module }) {
       await supabase.from(cfg.table).update({ [cfg.pagoField]: true }).eq('id', row.id)
     }
 
+    // Sincroniza status da Compra vinculada (se existir) com base nas parcelas pagas
+    if (cfg.table === 'contas_pagar' && row.origem_id && row.origem_tabela) {
+      // Re-busca todas as parcelas do grupo APÓS o update acima (estado já persistido no banco)
+      const { data: todasParcelas } = await supabase
+        .from('contas_pagar')
+        .select('id, valor, pago')
+        .eq('origem_tabela', row.origem_tabela)
+        .eq('origem_id', row.origem_id)
+        .eq('ativo', true)
+      if (todasParcelas && todasParcelas.length > 0) {
+        // Usa o estado real do banco — não precisa de p.id === row.id pois o update já foi feito acima
+        const pagas = todasParcelas.filter(p => p.pago).length
+        // Se esta parcela acabou de ser quitada (saldo zerou), ela ainda pode não ter pago=true
+        // Verificamos se ela está no lote e o saldo zerou
+        const estaParcelaQuitada = novoTotalPago >= Number(row.valor) - 0.01
+        const pagasAjustado = estaParcelaQuitada && !todasParcelas.find(p => p.id === row.id)?.pago
+          ? pagas + 1
+          : pagas
+        const total_p = todasParcelas.length
+        const novoStatus = pagasAjustado === 0 ? 'pendente' : pagasAjustado >= total_p ? 'pago' : 'parcial'
+        // Atualiza a Compra vinculada
+        if (row.origem_tabela === 'compras') {
+          await supabase.from('compras').update({ status: novoStatus }).eq('id', row.origem_id)
+        } else if (row.origem_tabela === 'entradas_estoque') {
+          await supabase.from('compras').update({ status: novoStatus }).eq('origem_id', row.origem_id).eq('origem_tabela', 'entradas_estoque')
+        }
+      }
+    }
+
     toast('Pagamento registrado!', 'success')
     setModalPgto(null)
     setPgtoForm({ valor: '', data: today(), forma_pgto: '', conta_id: '', obs: '' })
