@@ -92,8 +92,8 @@ export default function FinanceiroContas({ module }) {
     return matchS && matchF
   })
 
-  const totalGeral    = rows.reduce((s, r) => s + Number(r.valor || 0), 0)
-  const totalPago     = rows.reduce((s, r) => s + totalPagoRow(r.id), 0)
+  const totalGeral = filtered.reduce((s, r) => s + Number(r.valor || 0), 0)
+  const totalPago = filtered.reduce((s, r) => s + totalPagoRow(r.id), 0)
   const totalPendente = totalGeral - totalPago
 
   function openNew() { setForm(emptyForm()); setEditing(null); setModal(true) }
