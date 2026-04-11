@@ -3,6 +3,7 @@ import { ToastProvider } from './contexts/ToastContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
+import InboxWhatsApp from './pages/InboxWhatsApp'
 import Pessoas from './pages/Pessoas'
 import Produtos from './pages/Produtos'
 import Financeiro from './pages/Financeiro'
@@ -28,7 +29,7 @@ import {
   Wallet, ShoppingCart, CreditCard, HandCoins, Menu, X,
   Landmark, BarChart2, LogOut, Shield, ClipboardList,
   Building2, Repeat2, ListTree, ArrowLeftRight, BarChart,
-  Target, PackagePlus
+  Target, PackagePlus, MessageCircle
 } from 'lucide-react'
 
 function getNav() {
@@ -59,6 +60,7 @@ function getNav() {
       { id: 'compras',         label: 'Compras',             icon: ShoppingCart },
       { id: 'os',              label: 'Ordens de Serviço',   icon: ClipboardList },
       { id: 'entrada_estoque', label: 'Entrada de Estoque',  icon: PackagePlus },
+      { id: 'inbox_whatsapp',  label: 'Inbox WhatsApp',      icon: MessageCircle },
     ]},
     { group: 'Sistema', items: [
       { id: 'empresa',  label: 'Dados da Empresa', icon: Building2 },
@@ -78,7 +80,7 @@ function getTitle(page) {
     recorrencias:'Recorrências', movimentacoes:'Movimentações',
     fluxo_caixa:'Fluxo de Caixa', cartoes:'Cartões de Crédito',
     compras:'Compras', os:'Ordens de Serviço',
-    entrada_estoque:'Entrada de Estoque (NF)',
+    entrada_estoque:'Entrada de Estoque (NF)', inbox_whatsapp: 'Inbox WhatsApp',
     empresa:'Dados da Empresa', usuarios:'Gerenciar Usuários',
   }
   return map[page] || ''
@@ -104,6 +106,7 @@ function PageContent({ page, onNavigate }) {
   if (page === 'fluxo_caixa')     return <FluxoCaixa />
   if (page === 'centro_custo')    return <CentroCusto />
   if (page === 'entrada_estoque') return <EntradaEstoque />
+  if (page === 'inbox_whatsapp') return <InboxWhatsApp />
   if (page === 'empresa')         return <Empresa />
   if (page === 'usuarios')        return <Usuarios />
   return null
