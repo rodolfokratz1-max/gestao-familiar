@@ -241,45 +241,7 @@ export default function EntradaEstoque() {
       setItens(itensXML)
       const vinc = itensXML.filter(i=>i.produto_id).length
       const totalCalc = itensXML.reduce((s,i)=>s+i.qtd*i.valor_unit,0)
-
-      // ── Lê dados de cobrança da NF-e (<cobr> / <dup>) ──────────────
-      const dups = xml.querySelectorAll('cobr dup')
-      if (dups && dups.length > 0) {
-        // Tem duplicatas — pré-preenche financeiro automaticamente
-        const primeiraVenc = dups[0].querySelector('dVenc')?.textContent || ''
-        const numParcelas  = dups.length
-
-        // Calcula intervalo entre parcelas (em dias)
-        let intervaloDias = 30
-        if (dups.length >= 2) {
-          const d1 = new Date(dups[0].querySelector('dVenc')?.textContent || '')
-          const d2 = new Date(dups[1].querySelector('dVenc')?.textContent || '')
-          if (!isNaN(d1) && !isNaN(d2)) {
-            intervaloDias = Math.round((d2 - d1) / (1000 * 60 * 60 * 24))
-          }
-        }
-
-        // Detecta forma de pagamento pelo tPag do XML
-        const tPag = xml.querySelector('pag tPag')?.textContent || ''
-        const formaMap = {
-          '01': 'Dinheiro', '02': 'Cheque', '03': 'Cartão Crédito',
-          '04': 'Cartão Débito', '05': 'Cartão Crédito', '10': 'PIX',
-          '15': 'Boleto', '90': 'Boleto'
-        }
-        const formaPag = formaMap[tPag] || 'Boleto'
-
-        setFin(f => ({
-          ...f,
-          forma_pgto: formaPag,
-          vencimento1: primeiraVenc || f.vencimento1,
-          parcelas: numParcelas,
-          intervalo_dias: intervaloDias,
-        }))
-        setGerarFin(true)
-        toast(`✅ XML importado! ${itensXML.length} itens · Total: R$ ${totalCalc.toLocaleString('pt-BR',{minimumFractionDigits:2})} · ${vinc} vinculados · 💳 ${numParcelas}x venc. ${primeiraVenc ? new Date(primeiraVenc+'T12:00:00').toLocaleDateString('pt-BR') : ''} (da NF-e)`, 'success')
-      } else {
-        toast(`✅ XML importado! ${itensXML.length} itens · Total: R$ ${totalCalc.toLocaleString('pt-BR',{minimumFractionDigits:2})} · ${vinc} vinculados automaticamente.`, 'success')
-      }
+      toast(`✅ XML importado! ${itensXML.length} itens · Total: R$ ${totalCalc.toLocaleString('pt-BR',{minimumFractionDigits:2})} · ${vinc} vinculados automaticamente.`, 'success')
     } catch(err) {
       toast('Erro ao ler XML. Verifique se é uma NF-e válida.','error')
     }
