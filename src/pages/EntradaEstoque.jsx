@@ -30,6 +30,10 @@ export default function EntradaEstoque() {
   const [gerarFin, setGerarFin] = useState(false)
   const [fin, setFin] = useState({ forma_pgto:'Boleto', conta_id:'', vencimento1:today(), parcelas:1, intervalo_dias:30 })
 
+  // Duplicatas lidas do XML da NF-e
+  const [dupsXML, setDupsXML] = useState([]) // [{ nDup, dVenc, vDup }]
+  const [usarDupsXML, setUsarDupsXML] = useState(false)
+
   // UI
   const [processando, setProcessando] = useState(false)
   const [buscaProduto, setBuscaProduto] = useState({})
@@ -245,39 +249,30 @@ export default function EntradaEstoque() {
       // ── Lê dados de cobrança da NF-e (<cobr> / <dup>) ──────────────
       const dups = xml.querySelectorAll('cobr dup')
       if (dups && dups.length > 0) {
-        // Tem duplicatas — pré-preenche financeiro automaticamente
-        const primeiraVenc = dups[0].querySelector('dVenc')?.textContent || ''
-        const numParcelas  = dups.length
-
-        // Calcula intervalo entre parcelas (em dias)
-        let intervaloDias = 30
-        if (dups.length >= 2) {
-          const d1 = new Date(dups[0].querySelector('dVenc')?.textContent || '')
-          const d2 = new Date(dups[1].querySelector('dVenc')?.textContent || '')
-          if (!isNaN(d1) && !isNaN(d2)) {
-            intervaloDias = Math.round((d2 - d1) / (1000 * 60 * 60 * 24))
-          }
-        }
+        // Extrai cada duplicata com número, vencimento e valor
+        const dupsLidas = Array.from(dups).map(dup => ({
+          nDup:  dup.querySelector('nDup')?.textContent  || '',
+          dVenc: dup.querySelector('dVenc')?.textContent || '',
+          vDup:  Number(dup.querySelector('vDup')?.textContent || 0),
+        }))
 
         // Detecta forma de pagamento pelo tPag do XML
         const tPag = xml.querySelector('pag tPag')?.textContent || ''
         const formaMap = {
-          '01': 'Dinheiro', '02': 'Cheque', '03': 'Cartão Crédito',
-          '04': 'Cartão Débito', '05': 'Cartão Crédito', '10': 'PIX',
-          '15': 'Boleto', '90': 'Boleto'
+          '01':'Dinheiro','02':'Cheque','03':'Cartão Crédito',
+          '04':'Cartão Débito','05':'Cartão Crédito','10':'PIX',
+          '15':'Boleto','90':'Boleto'
         }
         const formaPag = formaMap[tPag] || 'Boleto'
 
-        setFin(f => ({
-          ...f,
-          forma_pgto: formaPag,
-          vencimento1: primeiraVenc || f.vencimento1,
-          parcelas: numParcelas,
-          intervalo_dias: intervaloDias,
-        }))
+        setDupsXML(dupsLidas)
+        setUsarDupsXML(true)
+        setFin(f => ({ ...f, forma_pgto: formaPag }))
         setGerarFin(true)
-        toast(`✅ XML importado! ${itensXML.length} itens · Total: R$ ${totalCalc.toLocaleString('pt-BR',{minimumFractionDigits:2})} · ${vinc} vinculados · 💳 ${numParcelas}x venc. ${primeiraVenc ? new Date(primeiraVenc+'T12:00:00').toLocaleDateString('pt-BR') : ''} (da NF-e)`, 'success')
+        toast(`✅ XML importado! ${itensXML.length} itens · Total: R$ ${totalCalc.toLocaleString('pt-BR',{minimumFractionDigits:2})} · ${vinc} vinculados · 💳 ${dupsLidas.length} parcela(s) detectada(s) na NF-e`, 'success')
       } else {
+        setDupsXML([])
+        setUsarDupsXML(false)
         toast(`✅ XML importado! ${itensXML.length} itens · Total: R$ ${totalCalc.toLocaleString('pt-BR',{minimumFractionDigits:2})} · ${vinc} vinculados automaticamente.`, 'success')
       }
     } catch(err) {
@@ -428,36 +423,58 @@ export default function EntradaEstoque() {
 
       // 4. Gera financeiro (Conta a Pagar) se solicitado
       if (gerarFin) {
-        const nParcelas = Number(fin.parcelas)||1
-        // Distribui o valor evitando diferença de centavos:
-        // parcelas normais usam Math.floor(centavos), a última absorve o restante
-        const totalCentavos = Math.round(totalNota * 100)
-        const parcelaCentavos = Math.floor(totalCentavos / nParcelas)
-        const restoCentavos = totalCentavos - parcelaCentavos * nParcelas
+        if (usarDupsXML && dupsXML.length > 0) {
+          // Usa exatamente as duplicatas do XML — valores e datas originais
+          for (let i=0; i<dupsXML.length; i++) {
+            const dup = dupsXML[i]
+            await supabase.from('contas_pagar').insert({
+              data_emissao: today(),
+              descricao: dupsXML.length>1
+                ? `NF ${nota.numero||'s/n'} — ${nota.fornecedor_nome} (${dup.nDup||i+1}/${dupsXML.length})`
+                : `NF ${nota.numero||'s/n'} — ${nota.fornecedor_nome}`,
+              valor: Number(dup.vDup).toFixed(2),
+              vencimento: dup.dVenc || null,
+              pago: false,
+              categoria: 'Compra/Fornecedor',
+              forma_pgto: fin.forma_pgto,
+              conta_id: fin.conta_id||null,
+              pessoa_nome: nota.fornecedor_nome||'',
+              pessoa_id: nota.fornecedor_id||null,
+              origem_id: entrada.id,
+              origem_tabela: 'entradas_estoque',
+              ativo: true,
+            })
+          }
+        } else {
+          // Modo manual — calcula parcelas normalmente
+          const nParcelas = Number(fin.parcelas)||1
+          const totalCentavos = Math.round(totalNota * 100)
+          const parcelaCentavos = Math.floor(totalCentavos / nParcelas)
+          const restoCentavos = totalCentavos - parcelaCentavos * nParcelas
 
-        for (let p=0; p<nParcelas; p++) {
-          const venc = new Date(fin.vencimento1+'T12:00:00')
-          venc.setDate(venc.getDate()+p*Number(fin.intervalo_dias))
-          const vencStr = venc.toISOString().split('T')[0]
-          // A última parcela absorve o centavo restante
-          const valorParcela = ((parcelaCentavos + (p === nParcelas - 1 ? restoCentavos : 0)) / 100).toFixed(2)
-          await supabase.from('contas_pagar').insert({
-            data_emissao: today(),
-            descricao: nParcelas>1
-              ? `NF ${nota.numero||'s/n'} — ${nota.fornecedor_nome} (${p+1}/${nParcelas})`
-              : `NF ${nota.numero||'s/n'} — ${nota.fornecedor_nome}`,
-            valor: valorParcela,
-            vencimento: vencStr,
-            pago: false,
-            categoria: 'Compra/Fornecedor',
-            forma_pgto: fin.forma_pgto,
-            conta_id: fin.conta_id||null,
-            pessoa_nome: nota.fornecedor_nome||'',
-            pessoa_id: nota.fornecedor_id||null,
-            origem_id: entrada.id,
-            origem_tabela: 'entradas_estoque',
-            ativo: true,
-          })
+          for (let p=0; p<nParcelas; p++) {
+            const venc = new Date(fin.vencimento1+'T12:00:00')
+            venc.setDate(venc.getDate()+p*Number(fin.intervalo_dias))
+            const vencStr = venc.toISOString().split('T')[0]
+            const valorParcela = ((parcelaCentavos + (p === nParcelas - 1 ? restoCentavos : 0)) / 100).toFixed(2)
+            await supabase.from('contas_pagar').insert({
+              data_emissao: today(),
+              descricao: nParcelas>1
+                ? `NF ${nota.numero||'s/n'} — ${nota.fornecedor_nome} (${p+1}/${nParcelas})`
+                : `NF ${nota.numero||'s/n'} — ${nota.fornecedor_nome}`,
+              valor: valorParcela,
+              vencimento: vencStr,
+              pago: false,
+              categoria: 'Compra/Fornecedor',
+              forma_pgto: fin.forma_pgto,
+              conta_id: fin.conta_id||null,
+              pessoa_nome: nota.fornecedor_nome||'',
+              pessoa_id: nota.fornecedor_id||null,
+              origem_id: entrada.id,
+              origem_tabela: 'entradas_estoque',
+              ativo: true,
+            })
+          }
         }
       }
 
@@ -715,7 +732,45 @@ export default function EntradaEstoque() {
               {gerarFin?<ChevronUp size={15} color="var(--text3)"/>:<ChevronDown size={15} color="var(--text3)"/>}
             </div>
             {gerarFin&&(
-              <div className="form-grid form-grid-2" style={{padding:'14px 16px'}}>
+              <div style={{padding:'14px 16px'}}>
+                {/* Duplicatas do XML — mostra tabela se detectou */}
+                {usarDupsXML && dupsXML.length > 0 && (
+                  <div style={{marginBottom:14,border:'1px solid rgba(79,142,247,.3)',borderRadius:10,overflow:'hidden'}}>
+                    <div style={{background:'rgba(79,142,247,.08)',padding:'10px 14px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                      <div style={{display:'flex',alignItems:'center',gap:8}}>
+                        <span style={{fontSize:13,fontWeight:700,color:'var(--accent)'}}>💳 Cobrança da NF-e</span>
+                        <span style={{fontSize:11,color:'var(--text3)'}}>{dupsXML.length} parcela(s) detectada(s)</span>
+                      </div>
+                      <button onClick={()=>setUsarDupsXML(false)}
+                        style={{fontSize:11,color:'var(--text3)',background:'transparent',border:'1px solid var(--border)',borderRadius:6,padding:'3px 8px',cursor:'pointer'}}>
+                        Editar manualmente
+                      </button>
+                    </div>
+                    <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                      <thead>
+                        <tr style={{borderBottom:'1px solid var(--border)'}}>
+                          <th style={{padding:'8px 14px',textAlign:'left',color:'var(--text3)',fontWeight:600}}>Parcela</th>
+                          <th style={{padding:'8px 14px',textAlign:'left',color:'var(--text3)',fontWeight:600}}>Vencimento</th>
+                          <th style={{padding:'8px 14px',textAlign:'right',color:'var(--text3)',fontWeight:600}}>Valor</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dupsXML.map((d,i) => (
+                          <tr key={i} style={{borderBottom:'1px solid var(--border)'}}>
+                            <td style={{padding:'8px 14px',color:'var(--text2)'}}>{d.nDup || i+1}</td>
+                            <td style={{padding:'8px 14px',color:'var(--text)'}}>{d.dVenc ? new Date(d.dVenc+'T12:00:00').toLocaleDateString('pt-BR') : '—'}</td>
+                            <td style={{padding:'8px 14px',textAlign:'right',fontWeight:600,color:'var(--text)',fontFamily:'var(--mono)'}}>{fmt(d.vDup)}</td>
+                          </tr>
+                        ))}
+                        <tr style={{background:'var(--bg3)'}}>
+                          <td colSpan={2} style={{padding:'8px 14px',fontWeight:700,fontSize:12}}>Total</td>
+                          <td style={{padding:'8px 14px',textAlign:'right',fontWeight:700,color:'var(--accent)',fontFamily:'var(--mono)'}}>{fmt(dupsXML.reduce((s,d)=>s+d.vDup,0))}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              <div className="form-grid form-grid-2">
                 <div className="form-group"><label className="form-label">Forma de Pagamento</label>
                   <select className="form-select" value={fin.forma_pgto} onChange={e=>ff('forma_pgto',e.target.value)}>
                     {FORMAS.map(f=><option key={f} value={f}>{f}</option>)}
@@ -745,6 +800,7 @@ export default function EntradaEstoque() {
                     {' '}a cada <strong>{fin.intervalo_dias} dias</strong> a partir de {new Date(fin.vencimento1+'T12:00:00').toLocaleDateString('pt-BR')}
                   </div>
                 )}
+              </div>
               </div>
             )}
           </div>
