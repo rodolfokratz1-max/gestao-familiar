@@ -479,7 +479,8 @@ export default function EntradaEstoque() {
       }
 
       const qtd = itensProc.filter(i=>i.produto_id).length
-      toast(`✅ Entrada confirmada! ${qtd} produto(s) atualizados.${gerarFin?` ${Number(fin.parcelas)||1} parcela(s) em Contas a Pagar.`:''} Registrado em Compras.`,'success')
+      const nParcelasConfirm = gerarFin ? (usarDupsXML && dupsXML.length > 0 ? dupsXML.length : Number(fin.parcelas)||1) : 0
+      toast(`✅ Entrada confirmada! ${qtd} produto(s) atualizados.${gerarFin?` ${nParcelasConfirm} parcela(s) em Contas a Pagar.`:''} Registrado em Compras.`,'success')
 
       // Reset
       setNota({numero:'',fornecedor_id:'',fornecedor_nome:'',data_emissao:today(),chave_nfe:'',obs:''})
@@ -733,17 +734,43 @@ export default function EntradaEstoque() {
             </div>
             {gerarFin&&(
               <div style={{padding:'14px 16px'}}>
-                {/* Duplicatas do XML — mostra tabela se detectou */}
-                {usarDupsXML && dupsXML.length > 0 && (
-                  <div style={{marginBottom:14,border:'1px solid rgba(79,142,247,.3)',borderRadius:10,overflow:'hidden'}}>
+
+                {/* Forma de pagamento e conta — sempre visíveis */}
+                <div className="form-grid form-grid-2" style={{marginBottom:14}}>
+                  <div className="form-group"><label className="form-label">Forma de Pagamento</label>
+                    <select className="form-select" value={fin.forma_pgto} onChange={e=>ff('forma_pgto',e.target.value)}>
+                      {FORMAS.map(f=><option key={f} value={f}>{f}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group"><label className="form-label">Conta / Carteira</label>
+                    <select className="form-select" value={fin.conta_id} onChange={e=>ff('conta_id',e.target.value)}>
+                      <option value="">Nenhuma</option>{contas.map(c=><option key={c.id} value={c.id}>{c.nome}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                {/* MODO XML: mostra tabela de duplicatas */}
+                {usarDupsXML && dupsXML.length > 0 ? (
+                  <div style={{border:'1px solid rgba(79,142,247,.3)',borderRadius:10,overflow:'hidden'}}>
                     <div style={{background:'rgba(79,142,247,.08)',padding:'10px 14px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
                       <div style={{display:'flex',alignItems:'center',gap:8}}>
                         <span style={{fontSize:13,fontWeight:700,color:'var(--accent)'}}>💳 Cobrança da NF-e</span>
                         <span style={{fontSize:11,color:'var(--text3)'}}>{dupsXML.length} parcela(s) detectada(s)</span>
                       </div>
-                      <button onClick={()=>setUsarDupsXML(false)}
+                      <button onClick={()=>{
+                        // Pré-preenche campos manuais com dados do XML como ponto de partida
+                        const primeiraVenc = dupsXML[0]?.dVenc || today()
+                        let intervalo = 30
+                        if (dupsXML.length >= 2) {
+                          const d1 = new Date(dupsXML[0].dVenc+'T12:00:00')
+                          const d2 = new Date(dupsXML[1].dVenc+'T12:00:00')
+                          if (!isNaN(d1) && !isNaN(d2)) intervalo = Math.round((d2-d1)/(1000*60*60*24))
+                        }
+                        setFin(f=>({...f, vencimento1: primeiraVenc, parcelas: dupsXML.length, intervalo_dias: intervalo}))
+                        setUsarDupsXML(false)
+                      }}
                         style={{fontSize:11,color:'var(--text3)',background:'transparent',border:'1px solid var(--border)',borderRadius:6,padding:'3px 8px',cursor:'pointer'}}>
-                        Editar manualmente
+                        ✏️ Editar manualmente
                       </button>
                     </div>
                     <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
@@ -769,38 +796,38 @@ export default function EntradaEstoque() {
                       </tbody>
                     </table>
                   </div>
-                )}
-              <div className="form-grid form-grid-2">
-                <div className="form-group"><label className="form-label">Forma de Pagamento</label>
-                  <select className="form-select" value={fin.forma_pgto} onChange={e=>ff('forma_pgto',e.target.value)}>
-                    {FORMAS.map(f=><option key={f} value={f}>{f}</option>)}
-                  </select>
-                </div>
-                <div className="form-group"><label className="form-label">Conta / Carteira</label>
-                  <select className="form-select" value={fin.conta_id} onChange={e=>ff('conta_id',e.target.value)}>
-                    <option value="">Nenhuma</option>{contas.map(c=><option key={c.id} value={c.id}>{c.nome}</option>)}
-                  </select>
-                </div>
-                <div className="form-group"><label className="form-label">1º Vencimento</label><input className="form-input" type="date" value={fin.vencimento1} onChange={e=>ff('vencimento1',e.target.value)}/></div>
-                <div className="form-group"><label className="form-label">Nº de Parcelas</label>
-                  <select className="form-select" value={fin.parcelas} onChange={e=>ff('parcelas',Number(e.target.value))}>
-                    {[1,2,3,4,6,8,10,12].map(n=><option key={n} value={n}>{n}x {n>1?`de ${fmt(totalNota/n)}`:''}</option>)}
-                  </select>
-                </div>
-                {fin.parcelas>1&&(
-                  <div className="form-group"><label className="form-label">Intervalo entre parcelas</label>
-                    <select className="form-select" value={fin.intervalo_dias} onChange={e=>ff('intervalo_dias',Number(e.target.value))}>
-                      <option value={30}>30 dias</option><option value={60}>60 dias</option><option value={90}>90 dias</option>
-                    </select>
+                ) : (
+                  /* MODO MANUAL: campos para preencher */
+                  <div className="form-grid form-grid-2">
+                    {dupsXML.length > 0 && (
+                      <div style={{gridColumn:'1/-1',marginBottom:4}}>
+                        <button onClick={()=>setUsarDupsXML(true)}
+                          style={{fontSize:11,color:'var(--accent)',background:'transparent',border:'1px solid rgba(79,142,247,.3)',borderRadius:6,padding:'3px 8px',cursor:'pointer'}}>
+                          ← Voltar para dados da NF-e
+                        </button>
+                      </div>
+                    )}
+                    <div className="form-group"><label className="form-label">1º Vencimento</label><input className="form-input" type="date" value={fin.vencimento1} onChange={e=>ff('vencimento1',e.target.value)}/></div>
+                    <div className="form-group"><label className="form-label">Nº de Parcelas</label>
+                      <select className="form-select" value={fin.parcelas} onChange={e=>ff('parcelas',Number(e.target.value))}>
+                        {[1,2,3,4,6,8,10,12].map(n=><option key={n} value={n}>{n}x {n>1?`de ${fmt(totalNota/n)}`:''}</option>)}
+                      </select>
+                    </div>
+                    {fin.parcelas>1&&(
+                      <div className="form-group"><label className="form-label">Intervalo entre parcelas</label>
+                        <select className="form-select" value={fin.intervalo_dias} onChange={e=>ff('intervalo_dias',Number(e.target.value))}>
+                          <option value={30}>30 dias</option><option value={60}>60 dias</option><option value={90}>90 dias</option>
+                        </select>
+                      </div>
+                    )}
+                    {fin.parcelas>1&&(
+                      <div style={{gridColumn:'1/-1',background:'var(--bg3)',borderRadius:8,padding:'10px 14px',fontSize:12}}>
+                        <strong>{fin.parcelas}x</strong> de <strong style={{color:'var(--accent)',fontFamily:'var(--mono)'}}>{fmt(totalNota/fin.parcelas)}</strong>
+                        {' '}a cada <strong>{fin.intervalo_dias} dias</strong> a partir de {new Date(fin.vencimento1+'T12:00:00').toLocaleDateString('pt-BR')}
+                      </div>
+                    )}
                   </div>
                 )}
-                {fin.parcelas>1&&(
-                  <div style={{gridColumn:'1/-1',background:'var(--bg3)',borderRadius:8,padding:'10px 14px',fontSize:12}}>
-                    <strong>{fin.parcelas}x</strong> de <strong style={{color:'var(--accent)',fontFamily:'var(--mono)'}}>{fmt(totalNota/fin.parcelas)}</strong>
-                    {' '}a cada <strong>{fin.intervalo_dias} dias</strong> a partir de {new Date(fin.vencimento1+'T12:00:00').toLocaleDateString('pt-BR')}
-                  </div>
-                )}
-              </div>
               </div>
             )}
           </div>
@@ -825,7 +852,7 @@ export default function EntradaEstoque() {
           title="Confirmar Entrada de Estoque"
           confirmLabel="✓ Confirmar Entrada"
           confirmStyle="success"
-          message={`Ao confirmar:\n\n${itensVinculados>0?`• ${itensVinculados} produto(s) terão estoque atualizado\n`:''}${itensSemVinculo>0?`• ${itensSemVinculo} produto(s) novo(s) serão criados no cadastro\n`:''}• Total: ${fmt(totalNota)}\n• Registrado em Compras${gerarFin?`\n• ${fin.parcelas}x de ${fmt(totalNota/fin.parcelas)} em Contas a Pagar`:'\n• Sem lançamento financeiro (pode gerar depois)'}`}
+          message={`Ao confirmar:\n\n${itensVinculados>0?`• ${itensVinculados} produto(s) terão estoque atualizado\n`:''}${itensSemVinculo>0?`• ${itensSemVinculo} produto(s) novo(s) serão criados no cadastro\n`:''}• Total: ${fmt(totalNota)}\n• Registrado em Compras${gerarFin?`\n• ${usarDupsXML && dupsXML.length > 0 ? dupsXML.length : fin.parcelas}x em Contas a Pagar${usarDupsXML && dupsXML.length > 0 ? ' (datas/valores da NF-e)' : ` de ${fmt(totalNota/fin.parcelas)}`}`:'\n• Sem lançamento financeiro (pode gerar depois)'}`}
           onConfirm={confirmarEntrada}
           onCancel={()=>setConfirmando(false)}
         />
