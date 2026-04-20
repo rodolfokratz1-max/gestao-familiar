@@ -141,7 +141,8 @@ export default function FinanceiroContas({ module }) {
     const valor = Number(pgtoForm.valor)
     if (!valor || valor <= 0) return toast('Informe o valor pago', 'error')
     const saldo = saldoRow(row)
-    if (valor > saldo + 0.01) return toast(`Valor maior que o saldo em aberto (${fmt(saldo)})`, 'error')
+    // Validação apenas sobre o valor original — encargos são à parte
+    if (valor > saldo + 0.01) return toast(`Valor pago não pode ser maior que o saldo original (${fmt(saldo)})`, 'error')
 
     const juros    = Number(pgtoForm.juros)    || 0
     const multa    = Number(pgtoForm.multa)    || 0
@@ -520,7 +521,7 @@ export default function FinanceiroContas({ module }) {
                       if (j === 0 && m === 0 && d === 0) return null
                       return (
                         <div style={{ marginTop: 10, display: 'flex', gap: 12, fontSize: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-                          <span style={{ color: 'var(--text2)' }}>Valor original: <strong className="text-mono">{fmt(Number(pgtoForm.valor) || 0)}</strong></span>
+                          <span style={{ color: 'var(--text2)' }}>Valor pago: <strong className="text-mono">{fmt(Number(pgtoForm.valor) || 0)}</strong></span>
                           <span style={{ color: enc > 0 ? 'var(--red)' : 'var(--green)' }}>Encargos: <strong className="text-mono">{enc >= 0 ? '+' : ''}{fmt(enc)}</strong></span>
                           <span style={{ color: 'var(--accent)', fontWeight: 600 }}>Total debitado: <strong className="text-mono">{fmt(total)}</strong></span>
                           {(j > 0 || m > 0) && (
