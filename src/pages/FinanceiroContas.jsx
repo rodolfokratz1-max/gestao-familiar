@@ -141,14 +141,22 @@ export default function FinanceiroContas({ module }) {
     const valor = Number(pgtoForm.valor)
     if (!valor || valor <= 0) return toast('Informe o valor pago', 'error')
     const saldo = saldoRow(row)
-    // Validação apenas sobre o valor original — encargos são à parte
-    if (valor > saldo + 0.01) return toast(`Valor pago não pode ser maior que o saldo original (${fmt(saldo)})`, 'error')
 
     const juros    = Number(pgtoForm.juros)    || 0
     const multa    = Number(pgtoForm.multa)    || 0
     const desconto = Number(pgtoForm.desconto) || 0
     const encargos = juros + multa - desconto
-    const valorTotal = valor + encargos
+    const esperado = saldo + encargos
+
+    // Valor pago deve fechar com original + encargos (tolerância de 0.01 centavo)
+    if (Math.abs(valor - esperado) > 0.01) {
+      return toast(
+        `Valor não fecha: ${fmt(saldo)} + encargos (${fmt(encargos)}) = ${fmt(esperado)} esperado, mas foi informado ${fmt(valor)}`,
+        'error'
+      )
+    }
+
+    const valorTotal = valor
 
     // Registra pagamento parcial
     const { error: e1 } = await supabase.from('pagamentos_parciais').insert({
@@ -471,7 +479,24 @@ export default function FinanceiroContas({ module }) {
                 </div>
                 <div className="form-group">
                   <label className="form-label">Valor pago *</label>
-                  <input className="form-input" type="number" step="0.01" value={pgtoForm.valor} onChange={e => setPgtoForm(p => ({ ...p, valor: e.target.value }))} autoFocus />
+                  <input className="form-input" type="number" step="0.01" value={pgtoForm.valor}
+                    onChange={e => setPgtoForm(p => ({ ...p, valor: e.target.value }))}
+                    onBlur={e => {
+                      const valorPago = Number(e.target.value) || 0
+                      const saldo = saldoRow(modalPgto)
+                      const diff = Number((valorPago - saldo).toFixed(2))
+                      if (diff > 0) {
+                        // Acréscimo → joga em Juros, zera Desconto
+                        setPgtoForm(p => ({ ...p, juros: String(diff), multa: '', desconto: '' }))
+                      } else if (diff < 0) {
+                        // Desconto → joga em Desconto, zera Juros e Multa
+                        setPgtoForm(p => ({ ...p, juros: '', multa: '', desconto: String(Math.abs(diff)) }))
+                      } else {
+                        // Igual → limpa encargos
+                        setPgtoForm(p => ({ ...p, juros: '', multa: '', desconto: '' }))
+                      }
+                    }}
+                    autoFocus />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Data *</label>
@@ -491,10 +516,10 @@ export default function FinanceiroContas({ module }) {
                     {contas.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
                   </select>
                 </div>
-                {/* Encargos por atraso */}
+                {/* Encargos */}
                 <div className="form-group" style={{ gridColumn: '1/-1' }}>
                   <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px' }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', marginBottom: 10 }}>Encargos por atraso (opcional)</div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', marginBottom: 10 }}>Encargos / Desconto</div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
                       <div className="form-group" style={{ marginBottom: 0 }}>
                         <label className="form-label">Juros (R$)</label>
@@ -513,20 +538,37 @@ export default function FinanceiroContas({ module }) {
                       </div>
                     </div>
                     {(() => {
+                      const saldo = saldoRow(modalPgto)
+                      const valorPago = Number(pgtoForm.valor) || 0
                       const j = Number(pgtoForm.juros) || 0
                       const m = Number(pgtoForm.multa) || 0
                       const d = Number(pgtoForm.desconto) || 0
                       const enc = j + m - d
-                      const total = (Number(pgtoForm.valor) || 0) + enc
-                      if (j === 0 && m === 0 && d === 0) return null
+                      const esperado = Number((saldo + enc).toFixed(2))
+                      const fechou = Math.abs(valorPago - esperado) <= 0.01
+                      const temEncargos = j > 0 || m > 0 || d > 0
+                      if (!temEncargos && valorPago === 0) return null
                       return (
                         <div style={{ marginTop: 10, display: 'flex', gap: 12, fontSize: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-                          <span style={{ color: 'var(--text2)' }}>Valor pago: <strong className="text-mono">{fmt(Number(pgtoForm.valor) || 0)}</strong></span>
-                          <span style={{ color: enc > 0 ? 'var(--red)' : 'var(--green)' }}>Encargos: <strong className="text-mono">{enc >= 0 ? '+' : ''}{fmt(enc)}</strong></span>
-                          <span style={{ color: 'var(--accent)', fontWeight: 600 }}>Total debitado: <strong className="text-mono">{fmt(total)}</strong></span>
-                          {(j > 0 || m > 0) && (
+                          <span style={{ color: 'var(--text2)' }}>
+                            Original: <strong className="text-mono">{fmt(saldo)}</strong>
+                          </span>
+                          {temEncargos && (
+                            <span style={{ color: enc > 0 ? 'var(--red)' : 'var(--green)' }}>
+                              Encargos: <strong className="text-mono">{enc >= 0 ? '+' : ''}{fmt(enc)}</strong>
+                            </span>
+                          )}
+                          <span style={{ color: fechou ? 'var(--green)' : 'var(--red)', fontWeight: 600 }}>
+                            {fechou ? '✓' : '✗'} Esperado: <strong className="text-mono">{fmt(esperado)}</strong>
+                          </span>
+                          {!fechou && valorPago > 0 && (
+                            <span style={{ color: 'var(--red)', fontWeight: 600 }}>
+                              Diferença: <strong className="text-mono">{fmt(Number((valorPago - esperado).toFixed(2)))}</strong>
+                            </span>
+                          )}
+                          {temEncargos && (j > 0 || m > 0) && fechou && (
                             <span style={{ background: 'rgba(234,179,8,.15)', color: '#a16207', padding: '2px 8px', borderRadius: 5 }}>
-                              Lançamento automático em "Encargos Financeiros" será gerado
+                              Lançamento em "Encargos Financeiros" será gerado
                             </span>
                           )}
                         </div>
