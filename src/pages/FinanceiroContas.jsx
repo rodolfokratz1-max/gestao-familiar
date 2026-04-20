@@ -461,6 +461,11 @@ export default function FinanceiroContas({ module }) {
               </div>
               <div className="form-grid form-grid-2">
                 <div className="form-group">
+                  <label className="form-label">Valor original</label>
+                  <input className="form-input" type="text" value={fmt(saldoRow(modalPgto))} readOnly
+                    style={{ background: 'var(--bg3)', color: 'var(--text2)', cursor: 'default' }} />
+                </div>
+                <div className="form-group">
                   <label className="form-label">Valor pago *</label>
                   <input className="form-input" type="number" step="0.01" value={pgtoForm.valor} onChange={e => setPgtoForm(p => ({ ...p, valor: e.target.value }))} autoFocus />
                 </div>
@@ -512,7 +517,7 @@ export default function FinanceiroContas({ module }) {
                       if (j === 0 && m === 0 && d === 0) return null
                       return (
                         <div style={{ marginTop: 10, display: 'flex', gap: 12, fontSize: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-                          <span style={{ color: 'var(--text2)' }}>Principal: <strong className="text-mono">{fmt(Number(pgtoForm.valor) || 0)}</strong></span>
+                          <span style={{ color: 'var(--text2)' }}>Valor original: <strong className="text-mono">{fmt(Number(pgtoForm.valor) || 0)}</strong></span>
                           <span style={{ color: enc > 0 ? 'var(--red)' : 'var(--green)' }}>Encargos: <strong className="text-mono">{enc >= 0 ? '+' : ''}{fmt(enc)}</strong></span>
                           <span style={{ color: 'var(--accent)', fontWeight: 600 }}>Total debitado: <strong className="text-mono">{fmt(total)}</strong></span>
                           {(j > 0 || m > 0) && (
