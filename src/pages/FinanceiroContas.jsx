@@ -52,7 +52,7 @@ export default function FinanceiroContas({ module }) {
   const [filterStatus, setFilterStatus] = useState('')
   const [modal, setModal] = useState(false)
   const [modalPgto, setModalPgto] = useState(null) // row para pagamento parcial
-  const [pgtoForm, setPgtoForm] = useState({ valor: '', data: today(), forma_pgto: '', conta_id: '', obs: '' })
+  const [pgtoForm, setPgtoForm] = useState({ valor: '', data: today(), forma_pgto: '', conta_id: '', obs: '', juros: '', multa: '', desconto: '' })
   const [form, setForm] = useState(emptyForm())
   const [editing, setEditing] = useState(null)
   const [deleting, setDeleting] = useState(null)
@@ -143,11 +143,17 @@ export default function FinanceiroContas({ module }) {
     const saldo = saldoRow(row)
     if (valor > saldo + 0.01) return toast(`Valor maior que o saldo em aberto (${fmt(saldo)})`, 'error')
 
+    const juros    = Number(pgtoForm.juros)    || 0
+    const multa    = Number(pgtoForm.multa)    || 0
+    const desconto = Number(pgtoForm.desconto) || 0
+    const encargos = juros + multa - desconto
+    const valorTotal = valor + encargos
+
     // Registra pagamento parcial
     const { error: e1 } = await supabase.from('pagamentos_parciais').insert({
       tabela_origem: cfg.table,
       origem_id: row.id,
-      valor,
+      valor: valorTotal,
       data: pgtoForm.data,
       forma_pgto: pgtoForm.forma_pgto,
       conta_id: pgtoForm.conta_id || null,
@@ -155,7 +161,7 @@ export default function FinanceiroContas({ module }) {
     })
     if (e1) { toast(e1.message, 'error'); return }
 
-    // Lança no caixa SEMPRE
+    // Lança no caixa o valor principal
     const tipo = cfg.table === 'contas_receber' ? 'entrada' : 'saida'
     const caixaPayload = {
       data: pgtoForm.data,
@@ -165,7 +171,6 @@ export default function FinanceiroContas({ module }) {
       categoria: pgtoForm.categoria || (cfg.table === 'contas_receber' ? 'Recebimento' : 'Pagamento'),
       obs: pgtoForm.obs || null,
     }
-    // Adiciona campos opcionais apenas se existirem
     if (pgtoForm.conta_id) caixaPayload.conta_id = pgtoForm.conta_id
     if (row.id) caixaPayload.origem_id = row.id
     if (cfg.table) caixaPayload.origem_tabela = cfg.table
@@ -176,17 +181,41 @@ export default function FinanceiroContas({ module }) {
       console.error('Erro caixa:', eCaixa)
     }
 
-    // Atualiza saldo da conta se selecionada
+    // Lança encargos separados no caixa (se houver)
+    if (encargos > 0) {
+      const encargosPayload = {
+        data: pgtoForm.data,
+        tipo: 'saida',
+        descricao: `Encargos (juros/multa): ${row.descricao}`,
+        valor: encargos,
+        categoria: 'Encargos Financeiros',
+        obs: [
+          juros  > 0 ? `Juros: ${fmt(juros)}`   : '',
+          multa  > 0 ? `Multa: ${fmt(multa)}`   : '',
+          desconto > 0 ? `Desconto: -${fmt(desconto)}` : '',
+        ].filter(Boolean).join(' | ') || null,
+        origem_id: row.id,
+        origem_tabela: cfg.table,
+      }
+      if (pgtoForm.conta_id) encargosPayload.conta_id = pgtoForm.conta_id
+      const { error: eEnc } = await supabase.from('caixa').insert(encargosPayload)
+      if (eEnc) {
+        toast('Aviso: encargos não lançados no Caixa: ' + eEnc.message, 'error')
+        console.error('Erro encargos caixa:', eEnc)
+      }
+    }
+
+    // Atualiza saldo da conta se selecionada (valor principal + encargos)
     if (pgtoForm.conta_id) {
       const { data: contaData } = await supabase.from('contas').select('saldo_atual').eq('id', pgtoForm.conta_id).single()
       if (contaData) {
-        const novoSaldo = Number(contaData.saldo_atual || 0) + (tipo === 'entrada' ? valor : -valor)
+        const novoSaldo = Number(contaData.saldo_atual || 0) + (tipo === 'entrada' ? valor : -valorTotal)
         await supabase.from('contas').update({ saldo_atual: novoSaldo }).eq('id', pgtoForm.conta_id)
       }
     }
 
-    // Se saldo zerou, marca como pago
-    const novoTotalPago = totalPagoRow(row.id) + valor
+    // Se saldo zerou, marca como pago (considera valor principal para quitação)
+    const novoTotalPago = totalPagoRow(row.id) + valorTotal
     if (novoTotalPago >= Number(row.valor) - 0.01) {
       await supabase.from(cfg.table).update({ [cfg.pagoField]: true }).eq('id', row.id)
     }
@@ -222,7 +251,7 @@ export default function FinanceiroContas({ module }) {
 
     toast('Pagamento registrado!', 'success')
     setModalPgto(null)
-    setPgtoForm({ valor: '', data: today(), forma_pgto: '', conta_id: '', obs: '' })
+    setPgtoForm({ valor: '', data: today(), forma_pgto: '', conta_id: '', obs: '', juros: '', multa: '', desconto: '' })
     load()
   }
 
@@ -304,7 +333,7 @@ export default function FinanceiroContas({ module }) {
                           </span></td>
                           <td><div className="action-btns">
                             <button className="icon-btn edit" title="Editar" onClick={() => openEdit(r)}><Pencil size={14} /></button>
-                            {!quitado && <button className="icon-btn" style={{ color: 'var(--green)' }} title="Registrar pagamento" onClick={() => { setModalPgto(r); setPgtoForm({ valor: String(saldo.toFixed(2)), data: today(), forma_pgto: '', conta_id: '', obs: '' }) }}><CreditCard size={14} /></button>}
+                            {!quitado && <button className="icon-btn" style={{ color: 'var(--green)' }} title="Registrar pagamento" onClick={() => { setModalPgto(r); setPgtoForm({ valor: String(saldo.toFixed(2)), data: today(), forma_pgto: '', conta_id: '', obs: '', juros: '', multa: '', desconto: '' }) }}><CreditCard size={14} /></button>}
                             <button className="icon-btn toggle" onClick={() => toggleAtivo(r)}><Power size={14} /></button>
                             <button className="icon-btn del" onClick={() => setDeleting(r)}><Trash2 size={14} /></button>
                           </div></td>
@@ -453,6 +482,50 @@ export default function FinanceiroContas({ module }) {
                     {contas.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
                   </select>
                 </div>
+                {/* Encargos por atraso */}
+                <div className="form-group" style={{ gridColumn: '1/-1' }}>
+                  <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px' }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', marginBottom: 10 }}>Encargos por atraso (opcional)</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label className="form-label">Juros (R$)</label>
+                        <input className="form-input" type="number" step="0.01" min="0" placeholder="0,00"
+                          value={pgtoForm.juros} onChange={e => setPgtoForm(p => ({ ...p, juros: e.target.value }))} />
+                      </div>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label className="form-label">Multa (R$)</label>
+                        <input className="form-input" type="number" step="0.01" min="0" placeholder="0,00"
+                          value={pgtoForm.multa} onChange={e => setPgtoForm(p => ({ ...p, multa: e.target.value }))} />
+                      </div>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label className="form-label">Desconto (R$)</label>
+                        <input className="form-input" type="number" step="0.01" min="0" placeholder="0,00"
+                          value={pgtoForm.desconto} onChange={e => setPgtoForm(p => ({ ...p, desconto: e.target.value }))} />
+                      </div>
+                    </div>
+                    {(() => {
+                      const j = Number(pgtoForm.juros) || 0
+                      const m = Number(pgtoForm.multa) || 0
+                      const d = Number(pgtoForm.desconto) || 0
+                      const enc = j + m - d
+                      const total = (Number(pgtoForm.valor) || 0) + enc
+                      if (j === 0 && m === 0 && d === 0) return null
+                      return (
+                        <div style={{ marginTop: 10, display: 'flex', gap: 12, fontSize: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+                          <span style={{ color: 'var(--text2)' }}>Principal: <strong className="text-mono">{fmt(Number(pgtoForm.valor) || 0)}</strong></span>
+                          <span style={{ color: enc > 0 ? 'var(--red)' : 'var(--green)' }}>Encargos: <strong className="text-mono">{enc >= 0 ? '+' : ''}{fmt(enc)}</strong></span>
+                          <span style={{ color: 'var(--accent)', fontWeight: 600 }}>Total debitado: <strong className="text-mono">{fmt(total)}</strong></span>
+                          {(j > 0 || m > 0) && (
+                            <span style={{ background: 'rgba(234,179,8,.15)', color: '#a16207', padding: '2px 8px', borderRadius: 5 }}>
+                              Lançamento automático em "Encargos Financeiros" será gerado
+                            </span>
+                          )}
+                        </div>
+                      )
+                    })()}
+                  </div>
+                </div>
+
                 <div className="form-group" style={{ gridColumn: '1/-1' }}>
                   <label className="form-label">Observações</label>
                   <textarea className="form-textarea" value={pgtoForm.obs} onChange={e => setPgtoForm(p => ({ ...p, obs: e.target.value }))} rows={2} />
