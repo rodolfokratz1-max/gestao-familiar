@@ -173,13 +173,13 @@ export default function FinanceiroContas({ module }) {
     })
     if (e1) { toast(e1.message, 'error'); return }
 
-    // Lança no caixa o valor principal
+    // Lança no caixa o valor ORIGINAL (sem encargos)
     const tipo = cfg.table === 'contas_receber' ? 'entrada' : 'saida'
     const caixaPayload = {
       data: pgtoForm.data,
       tipo,
       descricao: `${cfg.pagoLabel}: ${row.descricao}`,
-      valor,
+      valor: saldo,  // ← valor original, não o valor pago com encargos
       categoria: pgtoForm.categoria || (cfg.table === 'contas_receber' ? 'Recebimento' : 'Pagamento'),
       obs: pgtoForm.obs || null,
     }
@@ -194,16 +194,18 @@ export default function FinanceiroContas({ module }) {
     }
 
     // Lança encargos separados no caixa (se houver)
-    if (encargos > 0) {
+    // Encargos positivos = juros/multa → saída
+    // Encargos negativos = desconto maior que juros/multa → entrada (estorno)
+    if (Math.abs(encargos) > 0.01) {
       const encargosPayload = {
         data: pgtoForm.data,
-        tipo: 'saida',
-        descricao: `Encargos (juros/multa): ${row.descricao}`,
-        valor: encargos,
+        tipo: encargos > 0 ? 'saida' : 'entrada',
+        descricao: `Encargos (juros/multa/desconto): ${row.descricao}`,
+        valor: Math.abs(encargos),
         categoria: 'Encargos Financeiros',
         obs: [
-          juros  > 0 ? `Juros: ${fmt(juros)}`   : '',
-          multa  > 0 ? `Multa: ${fmt(multa)}`   : '',
+          juros    > 0 ? `Juros: ${fmt(juros)}`        : '',
+          multa    > 0 ? `Multa: ${fmt(multa)}`        : '',
           desconto > 0 ? `Desconto: -${fmt(desconto)}` : '',
         ].filter(Boolean).join(' | ') || null,
         origem_id: row.id,
@@ -217,17 +219,17 @@ export default function FinanceiroContas({ module }) {
       }
     }
 
-    // Atualiza saldo da conta se selecionada (valor principal + encargos)
+    // Atualiza saldo da conta: debita o valor total pago (original + encargos)
     if (pgtoForm.conta_id) {
       const { data: contaData } = await supabase.from('contas').select('saldo_atual').eq('id', pgtoForm.conta_id).single()
       if (contaData) {
-        const novoSaldo = Number(contaData.saldo_atual || 0) + (tipo === 'entrada' ? valor : -valorTotal)
+        const novoSaldo = Number(contaData.saldo_atual || 0) + (tipo === 'entrada' ? saldo : -valor)
         await supabase.from('contas').update({ saldo_atual: novoSaldo }).eq('id', pgtoForm.conta_id)
       }
     }
 
-    // Se saldo zerou, marca como pago (considera valor principal para quitação)
-    const novoTotalPago = totalPagoRow(row.id) + valorTotal
+    // Quitação: usa o valor original (saldo) para verificar se a dívida foi quitada
+    const novoTotalPago = totalPagoRow(row.id) + saldo
     if (novoTotalPago >= Number(row.valor) - 0.01) {
       await supabase.from(cfg.table).update({ [cfg.pagoField]: true }).eq('id', row.id)
     }
