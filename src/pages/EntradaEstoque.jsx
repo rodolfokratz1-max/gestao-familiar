@@ -229,6 +229,16 @@ export default function EntradaEstoque() {
 
       setNota({ numero:nNF, fornecedor_id:fornVinc?.id||'', fornecedor_nome:fornVinc?.nome||emitNome, data_emissao:dEmi.substring(0,10), chave_nfe:chave, obs:`NF-e ${nNF} — ${emitNome}` })
       const dets = xml.querySelectorAll('det')
+
+      // Peso total da NF fica em <transp><vol> — não por item
+      const volNode   = xml.querySelector('transp vol')
+      const pesoB_nf  = Number(volNode?.querySelector('pesoB')?.textContent || 0) || null
+      const pesoL_nf  = Number(volNode?.querySelector('pesoL')?.textContent || 0) || null
+      const qtdItens  = dets.length || 1
+      // Distribui peso proporcionalmente por item (peso por item = total / qtd de itens)
+      const pesoBItem = pesoB_nf ? Number((pesoB_nf / qtdItens).toFixed(3)) : null
+      const pesoLItem = pesoL_nf ? Number((pesoL_nf / qtdItens).toFixed(3)) : null
+
       const itensXML = Array.from(dets).map(det => {
         const descricao = det.querySelector('xProd')?.textContent || ''
         const codigo    = det.querySelector('cProd')?.textContent || ''
@@ -239,30 +249,30 @@ export default function EntradaEstoque() {
         const vUnit = vProd > 0 && qtd > 0 ? (vProd - vDesc) / qtd : vUnCom
 
         // ── Campos fiscais do XML (usados só na criação de produto novo) ──
-        const ncm         = det.querySelector('NCM')?.textContent   || null
-        const cest        = det.querySelector('CEST')?.textContent  || null
-        const cfop        = det.querySelector('CFOP')?.textContent  || null
-        const origem      = det.querySelector('orig')?.textContent  || '0'
-        const gtin        = det.querySelector('cEAN')?.textContent  || null
-        const unidadeXML  = det.querySelector('uCom')?.textContent  || null
-        const pesoB       = Number(det.querySelector('pesoB')?.textContent || 0) || null
-        const pesoL       = Number(det.querySelector('pesoL')?.textContent || 0) || null
-        // ICMS — tenta diferentes grupos (ICMS00, ICMS10, ICMS20, ICMS40, ICMS60, ICMSSN etc)
-        const icmsNode    = det.querySelector('ICMS > *')
-        const cst_icms    = icmsNode?.querySelector('CST,CSOSN')?.textContent || null
-        const aliq_icms   = Number(icmsNode?.querySelector('pICMS')?.textContent || 0) || null
+        const ncm        = det.querySelector('NCM')?.textContent   || null
+        const cest       = det.querySelector('CEST')?.textContent  || null
+        const cfop       = det.querySelector('CFOP')?.textContent  || null
+        const origem     = det.querySelector('orig')?.textContent  || '0'
+        // cEAN pode vir como "SEM GTIN" — nesse caso grava null
+        const cEANraw    = det.querySelector('cEAN')?.textContent  || ''
+        const gtin       = (cEANraw && cEANraw !== 'SEM GTIN' && cEANraw !== 'SEM GTIN ') ? cEANraw : null
+        const unidadeXML = det.querySelector('uCom')?.textContent  || null
+        // ICMS — tenta diferentes grupos (ICMS00, ICMS20, ICMS40, ICMSSN102 etc)
+        const icmsNode   = det.querySelector('ICMS > *')
+        const cst_icms   = icmsNode?.querySelector('CST,CSOSN')?.textContent || null
+        const aliq_icms  = Number(icmsNode?.querySelector('pICMS')?.textContent || 0) || null
         // IPI
-        const ipiNode     = det.querySelector('IPI > *')
-        const ipi_cst     = ipiNode?.querySelector('CST')?.textContent  || null
-        const aliq_ipi    = Number(ipiNode?.querySelector('pIPI')?.textContent || 0) || null
+        const ipiNode    = det.querySelector('IPI > *')
+        const ipi_cst    = ipiNode?.querySelector('CST')?.textContent  || null
+        const aliq_ipi   = Number(ipiNode?.querySelector('pIPI')?.textContent || 0) || null
         // PIS
-        const pisNode     = det.querySelector('PIS > *')
-        const cst_pis     = pisNode?.querySelector('CST')?.textContent  || null
-        const aliq_pis    = Number(pisNode?.querySelector('pPIS')?.textContent || 0) || null
+        const pisNode    = det.querySelector('PIS > *')
+        const cst_pis    = pisNode?.querySelector('CST')?.textContent  || null
+        const aliq_pis   = Number(pisNode?.querySelector('pPIS')?.textContent || 0) || null
         // COFINS
-        const cofinsNode  = det.querySelector('COFINS > *')
-        const cst_cofins  = cofinsNode?.querySelector('CST')?.textContent  || null
-        const aliq_cofins = Number(cofinsNode?.querySelector('pCOFINS')?.textContent || 0) || null
+        const cofinsNode = det.querySelector('COFINS > *')
+        const cst_cofins = cofinsNode?.querySelector('CST')?.textContent  || null
+        const aliq_cofins= Number(cofinsNode?.querySelector('pCOFINS')?.textContent || 0) || null
 
         const prodMatch = produtos.find(p => p.codigo === codigo || p.nome?.toLowerCase() === descricao.toLowerCase())
         return {
@@ -270,7 +280,7 @@ export default function EntradaEstoque() {
           produto_id:prodMatch?.id||'', produto_nome:prodMatch?.nome||'',
           // fiscal — só usado se criar produto novo
           _fiscal: { ncm, cest, cfop, origem, gtin, unidade: unidadeXML,
-            peso_bruto: pesoB, peso_liquido: pesoL,
+            peso_bruto: pesoBItem, peso_liquido: pesoLItem,
             cst_icms, aliquota_icms: aliq_icms,
             ipi_cst, aliquota_ipi: aliq_ipi,
             cst_pis, aliquota_pis: aliq_pis,
