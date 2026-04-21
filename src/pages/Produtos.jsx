@@ -12,7 +12,17 @@ const UNIDADES = ['un','kg','g','l','ml','m','m²','cx','pç','hr','dia','mês']
 
 const EMPTY_PROD = {
   codigo:'', nome:'', tipo:'produto', categoria_id:'', unidade:'un',
-  preco_custo:'', margem:'', preco_venda:'', estoque:'', estoque_min:'', obs:'', ativo:true
+  preco_custo:'', margem:'', preco_venda:'', estoque:'', estoque_min:'',
+  codigo_barras:'', gtin:'', custo_medio:'', ultima_venda:'',
+  // fiscal produto
+  ncm:'', cest:'', cfop:'', origem:'0', gtin_comercial:'',
+  cst_icms:'', aliquota_icms:'', cst_pis:'', aliquota_pis:'', cst_cofins:'', aliquota_cofins:'',
+  ipi_cst:'', aliquota_ipi:'',
+  // fiscal serviço
+  codigo_servico:'', iss_retido: false, aliquota_iss:'',
+  // logística
+  peso_bruto:'', peso_liquido:'', altura:'', largura:'', comprimento:'',
+  obs:'', ativo:true
 }
 const EMPTY_CAT = { nome:'', tipo:'produto', descricao:'' }
 
@@ -29,6 +39,7 @@ export default function Produtos() {
   const [modal, setModal]           = useState(false)
   const [editing, setEditing]       = useState(null)
   const [form, setForm]             = useState(EMPTY_PROD)
+  const [abaModal, setAbaModal]     = useState('geral')
   const [deleting, setDeleting]     = useState(null)
 
   const [modalCat, setModalCat]         = useState(false)
@@ -89,21 +100,48 @@ export default function Produtos() {
   // ── Produtos CRUD ────────────────────────────
   async function openNew() {
     const codigo = await gerarCodigo('produtos')
-    setForm({ ...EMPTY_PROD, codigo }); setEditing(null); setModal(true)
+    setForm({ ...EMPTY_PROD, codigo }); setEditing(null); setAbaModal('geral'); setModal(true)
   }
-  function openEdit(r) { setForm({ ...EMPTY_PROD, ...r, margem: r.preco_custo && r.preco_venda ? calcMargem(r.preco_custo, r.preco_venda) : '' }); setEditing(r.id); setModal(true) }
+  function openEdit(r) { setForm({ ...EMPTY_PROD, ...r, margem: r.preco_custo && r.preco_venda ? calcMargem(r.preco_custo, r.preco_venda) : '' }); setEditing(r.id); setAbaModal('geral'); setModal(true) }
 
   async function save() {
     if (!form.nome.trim()) return toast('Nome é obrigatório', 'error')
     if (!form.codigo.trim()) return toast('Código é obrigatório', 'error')
     const payload = {
       ...form,
-      preco_custo: form.preco_custo || null,
-      preco_venda: form.preco_venda || null,
-      margem: form.margem || null,
-      estoque: form.estoque || 0,
-      estoque_min: form.estoque_min || 0,
-      categoria_id: form.categoria_id || null,
+      preco_custo:    form.preco_custo    || null,
+      preco_venda:    form.preco_venda    || null,
+      margem:         form.margem         || null,
+      estoque:        form.estoque        || 0,
+      estoque_min:    form.estoque_min    || 0,
+      categoria_id:   form.categoria_id   || null,
+      codigo_barras:  form.codigo_barras  || null,
+      gtin:           form.gtin           || null,
+      custo_medio:    form.custo_medio    || null,
+      ultima_venda:   form.ultima_venda   || null,
+      // fiscal produto
+      ncm:            form.ncm            || null,
+      cest:           form.cest           || null,
+      cfop:           form.cfop           || null,
+      origem:         form.origem         || '0',
+      cst_icms:       form.cst_icms       || null,
+      aliquota_icms:  form.aliquota_icms  || null,
+      cst_pis:        form.cst_pis        || null,
+      aliquota_pis:   form.aliquota_pis   || null,
+      cst_cofins:     form.cst_cofins     || null,
+      aliquota_cofins:form.aliquota_cofins|| null,
+      ipi_cst:        form.ipi_cst        || null,
+      aliquota_ipi:   form.aliquota_ipi   || null,
+      // fiscal serviço
+      codigo_servico: form.codigo_servico || null,
+      iss_retido:     form.iss_retido     || false,
+      aliquota_iss:   form.aliquota_iss   || null,
+      // logística
+      peso_bruto:     form.peso_bruto     || null,
+      peso_liquido:   form.peso_liquido   || null,
+      altura:         form.altura         || null,
+      largura:        form.largura        || null,
+      comprimento:    form.comprimento    || null,
     }
     let error
     if (editing) ({ error } = await supabase.from('produtos').update(payload).eq('id', editing))
@@ -250,108 +288,302 @@ export default function Produtos() {
       {/* Modal produto */}
       {modal && (
         <Modal title={editing ? 'Editar' : 'Novo Produto / Serviço'} onClose={() => setModal(false)} onSave={save} size="modal-lg">
-          <div className="form-grid form-grid-2">
-            <div className="form-group">
-              <label className="form-label">Código</label>
-              <input className="form-input" value={form.codigo} readOnly style={{ opacity:.7 }} />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Tipo *</label>
-              <select className="form-select" value={form.tipo} onChange={e => f('tipo', e.target.value)}>
-                <option value="produto">Produto</option>
-                <option value="servico">Serviço</option>
-              </select>
-            </div>
-            <div className="form-group" style={{ gridColumn:'1/-1' }}>
-              <label className="form-label">Nome *</label>
-              <input className="form-input" value={form.nome} onChange={e => f('nome', e.target.value)} placeholder="Nome do produto ou serviço" autoFocus />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Categoria</label>
-              <select className="form-select" value={form.categoria_id} onChange={e => f('categoria_id', e.target.value)}>
-                <option value="">Sem categoria</option>
-                {catsFiltradas.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
-              </select>
-            </div>
-            <div className="form-group">
-              <label className="form-label">Unidade</label>
-              <select className="form-select" value={form.unidade} onChange={e => f('unidade', e.target.value)}>
-                {UNIDADES.map(u => <option key={u} value={u}>{u}</option>)}
-              </select>
-            </div>
 
-            <div style={{ gridColumn:'1/-1', height:1, background:'var(--border)', margin:'2px 0' }} />
-
-            {/* Precificação */}
-            <div className="form-group">
-              <label className="form-label">Preço de Custo</label>
-              <input className="form-input" type="number" step="0.01" value={form.preco_custo}
-                onChange={e => onCustoChange(e.target.value)} placeholder="0,00" />
-            </div>
-            <div className="form-group">
-              <label className="form-label" style={{ display:'flex', alignItems:'center', gap:6 }}>
-                <Calculator size={12} /> Margem de Lucro (%)
-              </label>
-              <input className="form-input" type="number" step="0.1" value={form.margem}
-                onChange={e => onMargemChange(e.target.value)} placeholder="Ex: 40"
-                style={{ borderColor: form.margem ? margemColor : undefined }} />
-            </div>
-
-            {/* Preview do preço sugerido */}
-            {form.preco_custo && form.margem && (
-              <div style={{ gridColumn:'1/-1', background:'var(--bg3)', borderRadius:10, padding:'12px 16px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap' }}>
-                <div>
-                  <div style={{ fontSize:11, color:'var(--text3)', marginBottom:3 }}>PREÇO SUGERIDO (margem {form.margem}%)</div>
-                  <div style={{ fontSize:20, fontWeight:900, color:'var(--green)', fontFamily:'var(--mono)' }}>
-                    {fmt(calcVenda(form.preco_custo, form.margem))}
-                  </div>
-                </div>
-                <button className="btn btn-success btn-sm" onClick={aceitarVendaSugerido}>
-                  ✓ Aceitar este valor
-                </button>
-              </div>
-            )}
-
-            <div className="form-group">
-              <label className="form-label">Preço de Venda</label>
-              <input className="form-input" type="number" step="0.01" value={form.preco_venda}
-                onChange={e => onVendaChange(e.target.value)} placeholder="0,00"
-                style={{ fontWeight:700, borderColor: form.preco_venda ? 'var(--accent)' : undefined }} />
-              {form.preco_custo && form.preco_venda && (
-                <span style={{ fontSize:11, color: margemColor, fontWeight:700 }}>
-                  Margem: {calcMargem(form.preco_custo, form.preco_venda)}%
-                </span>
-              )}
-            </div>
-            <div className="form-group" style={{ alignSelf:'flex-end' }}>
-              {form.preco_custo && form.preco_venda && (
-                <div style={{ background:'var(--bg3)', borderRadius:8, padding:'8px 12px', fontSize:12 }}>
-                  <div style={{ color:'var(--text3)', fontSize:10, marginBottom:2 }}>LUCRO UNITÁRIO</div>
-                  <div style={{ fontWeight:800, color: Number(form.preco_venda) > Number(form.preco_custo) ? 'var(--green)' : 'var(--red)', fontFamily:'var(--mono)' }}>
-                    {fmt(Number(form.preco_venda) - Number(form.preco_custo))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {form.tipo === 'produto' && <>
-              <div style={{ gridColumn:'1/-1', height:1, background:'var(--border)', margin:'2px 0' }} />
-              <div className="form-group">
-                <label className="form-label">Estoque Atual</label>
-                <input className="form-input" type="number" value={form.estoque} onChange={e => f('estoque', e.target.value)} placeholder="0" />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Estoque Mínimo</label>
-                <input className="form-input" type="number" value={form.estoque_min} onChange={e => f('estoque_min', e.target.value)} placeholder="0" />
-                <span style={{ fontSize:11, color:'var(--text3)' }}>Abaixo desse valor aparece alerta vermelho</span>
-              </div>
-            </>}
-
-            <div className="form-group" style={{ gridColumn:'1/-1' }}>
-              <label className="form-label">Observações</label>
-              <textarea className="form-textarea" rows={2} value={form.obs} onChange={e => f('obs', e.target.value)} />
-            </div>
+          {/* Abas */}
+          <div style={{ display:'flex', gap:4, marginBottom:16, borderBottom:'1px solid var(--border)', paddingBottom:0 }}>
+            {[
+              { id:'geral',    label:'Geral' },
+              { id:'fiscal',   label: form.tipo === 'servico' ? 'Fiscal (serviço)' : 'Fiscal (produto)' },
+              { id:'logistica',label:'Logística' },
+            ].map(ab => (
+              <button key={ab.id} onClick={() => setAbaModal(ab.id)}
+                style={{ padding:'7px 16px', fontSize:13, fontWeight: abaModal===ab.id ? 700 : 400,
+                  borderBottom: abaModal===ab.id ? '2px solid var(--accent)' : '2px solid transparent',
+                  color: abaModal===ab.id ? 'var(--accent)' : 'var(--text2)',
+                  background:'transparent', border:'none', borderBottom: abaModal===ab.id ? '2px solid var(--accent)' : '2px solid transparent',
+                  cursor:'pointer' }}>
+                {ab.label}
+              </button>
+            ))}
           </div>
+
+          {/* ── ABA GERAL ── */}
+          {abaModal === 'geral' && (
+            <div className="form-grid form-grid-2">
+              <div className="form-group">
+                <label className="form-label">Código</label>
+                <input className="form-input" value={form.codigo} readOnly style={{ opacity:.7 }} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Tipo *</label>
+                <select className="form-select" value={form.tipo} onChange={e => f('tipo', e.target.value)}>
+                  <option value="produto">Produto</option>
+                  <option value="servico">Serviço</option>
+                </select>
+              </div>
+              <div className="form-group" style={{ gridColumn:'1/-1' }}>
+                <label className="form-label">Nome *</label>
+                <input className="form-input" value={form.nome} onChange={e => f('nome', e.target.value)} placeholder="Nome do produto ou serviço" autoFocus />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Código de Barras</label>
+                <input className="form-input" value={form.codigo_barras||''} onChange={e => f('codigo_barras', e.target.value)} placeholder="EAN-13, Code128..." />
+              </div>
+              <div className="form-group">
+                <label className="form-label">GTIN</label>
+                <input className="form-input" value={form.gtin||''} onChange={e => f('gtin', e.target.value)} placeholder="Global Trade Item Number" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Categoria</label>
+                <select className="form-select" value={form.categoria_id} onChange={e => f('categoria_id', e.target.value)}>
+                  <option value="">Sem categoria</option>
+                  {catsFiltradas.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Unidade</label>
+                <select className="form-select" value={form.unidade} onChange={e => f('unidade', e.target.value)}>
+                  {UNIDADES.map(u => <option key={u} value={u}>{u}</option>)}
+                </select>
+              </div>
+
+              <div style={{ gridColumn:'1/-1', height:1, background:'var(--border)', margin:'2px 0' }} />
+
+              {/* Precificação */}
+              <div className="form-group">
+                <label className="form-label">Preço de Custo</label>
+                <input className="form-input" type="number" step="0.01" value={form.preco_custo}
+                  onChange={e => onCustoChange(e.target.value)} placeholder="0,00" />
+              </div>
+              <div className="form-group">
+                <label className="form-label" style={{ display:'flex', alignItems:'center', gap:6 }}>
+                  <Calculator size={12} /> Margem de Lucro (%)
+                </label>
+                <input className="form-input" type="number" step="0.1" value={form.margem}
+                  onChange={e => onMargemChange(e.target.value)} placeholder="Ex: 40"
+                  style={{ borderColor: form.margem ? margemColor : undefined }} />
+              </div>
+
+              {form.preco_custo && form.margem && (
+                <div style={{ gridColumn:'1/-1', background:'var(--bg3)', borderRadius:10, padding:'12px 16px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap' }}>
+                  <div>
+                    <div style={{ fontSize:11, color:'var(--text3)', marginBottom:3 }}>PREÇO SUGERIDO (margem {form.margem}%)</div>
+                    <div style={{ fontSize:20, fontWeight:900, color:'var(--green)', fontFamily:'var(--mono)' }}>
+                      {fmt(calcVenda(form.preco_custo, form.margem))}
+                    </div>
+                  </div>
+                  <button className="btn btn-success btn-sm" onClick={aceitarVendaSugerido}>
+                    ✓ Aceitar este valor
+                  </button>
+                </div>
+              )}
+
+              <div className="form-group">
+                <label className="form-label">Preço de Venda</label>
+                <input className="form-input" type="number" step="0.01" value={form.preco_venda}
+                  onChange={e => onVendaChange(e.target.value)} placeholder="0,00"
+                  style={{ fontWeight:700, borderColor: form.preco_venda ? 'var(--accent)' : undefined }} />
+                {form.preco_custo && form.preco_venda && (
+                  <span style={{ fontSize:11, color: margemColor, fontWeight:700 }}>
+                    Margem: {calcMargem(form.preco_custo, form.preco_venda)}%
+                  </span>
+                )}
+              </div>
+              <div className="form-group" style={{ alignSelf:'flex-end' }}>
+                {form.preco_custo && form.preco_venda && (
+                  <div style={{ background:'var(--bg3)', borderRadius:8, padding:'8px 12px', fontSize:12 }}>
+                    <div style={{ color:'var(--text3)', fontSize:10, marginBottom:2 }}>LUCRO UNITÁRIO</div>
+                    <div style={{ fontWeight:800, color: Number(form.preco_venda) > Number(form.preco_custo) ? 'var(--green)' : 'var(--red)', fontFamily:'var(--mono)' }}>
+                      {fmt(Number(form.preco_venda) - Number(form.preco_custo))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {form.tipo === 'produto' && <>
+                <div style={{ gridColumn:'1/-1', height:1, background:'var(--border)', margin:'2px 0' }} />
+                <div className="form-group">
+                  <label className="form-label">Estoque Atual</label>
+                  <input className="form-input" type="number" value={form.estoque} onChange={e => f('estoque', e.target.value)} placeholder="0" />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Estoque Mínimo</label>
+                  <input className="form-input" type="number" value={form.estoque_min} onChange={e => f('estoque_min', e.target.value)} placeholder="0" />
+                  <span style={{ fontSize:11, color:'var(--text3)' }}>Abaixo desse valor aparece alerta vermelho</span>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Custo Médio</label>
+                  <input className="form-input" type="number" step="0.01" value={form.custo_medio||''} readOnly
+                    style={{ opacity:.7, cursor:'default' }} placeholder="Calculado automaticamente" />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Última Venda</label>
+                  <input className="form-input" type="date" value={form.ultima_venda||''} readOnly
+                    style={{ opacity:.7, cursor:'default' }} />
+                </div>
+              </>}
+
+              <div className="form-group" style={{ gridColumn:'1/-1' }}>
+                <label className="form-label">Observações</label>
+                <textarea className="form-textarea" rows={2} value={form.obs} onChange={e => f('obs', e.target.value)} />
+              </div>
+            </div>
+          )}
+
+          {/* ── ABA FISCAL (PRODUTO) ── */}
+          {abaModal === 'fiscal' && form.tipo === 'produto' && (
+            <div className="form-grid form-grid-2">
+              <div style={{ gridColumn:'1/-1', background:'rgba(79,142,247,.08)', border:'1px solid rgba(79,142,247,.2)', borderRadius:8, padding:'8px 14px', fontSize:12, color:'var(--text2)', marginBottom:4 }}>
+                ℹ️ Campos utilizados na emissão de NF-e. Preenchimento necessário para integração com API fiscal (Focus NFe, Nuvem Fiscal, etc).
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">NCM <span style={{ fontSize:10, color:'var(--text3)' }}>Nomenclatura Comum Mercosul</span></label>
+                <input className="form-input" value={form.ncm||''} onChange={e => f('ncm', e.target.value)} placeholder="Ex: 8471.30.12" maxLength={10} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">CEST <span style={{ fontSize:10, color:'var(--text3)' }}>Subst. tributária</span></label>
+                <input className="form-input" value={form.cest||''} onChange={e => f('cest', e.target.value)} placeholder="Ex: 21.029.00" maxLength={9} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">CFOP</label>
+                <input className="form-input" value={form.cfop||''} onChange={e => f('cfop', e.target.value)} placeholder="Ex: 5102" maxLength={5} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Origem</label>
+                <select className="form-select" value={form.origem||'0'} onChange={e => f('origem', e.target.value)}>
+                  <option value="0">0 — Nacional</option>
+                  <option value="1">1 — Estrangeira (importação direta)</option>
+                  <option value="2">2 — Estrangeira (adq. mercado interno)</option>
+                  <option value="3">3 — Nacional com + 40% conteúdo importado</option>
+                  <option value="4">4 — Nacional produção conforme processos básicos</option>
+                  <option value="5">5 — Nacional com ≤ 40% conteúdo importado</option>
+                  <option value="6">6 — Estrangeira (importação direta, sem similar)</option>
+                  <option value="7">7 — Estrangeira (adq. interno, sem similar)</option>
+                  <option value="8">8 — Nacional, mercadoria ou bem com Conteúdo de Importação superior a 70%</option>
+                </select>
+              </div>
+
+              <div style={{ gridColumn:'1/-1', height:1, background:'var(--border)', margin:'4px 0' }} />
+              <div style={{ gridColumn:'1/-1', fontSize:12, fontWeight:700, color:'var(--text2)' }}>ICMS</div>
+
+              <div className="form-group">
+                <label className="form-label">CST / CSOSN ICMS</label>
+                <input className="form-input" value={form.cst_icms||''} onChange={e => f('cst_icms', e.target.value)} placeholder="Ex: 00, 40, 101, 400..." maxLength={4} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Alíquota ICMS (%)</label>
+                <input className="form-input" type="number" step="0.01" value={form.aliquota_icms||''} onChange={e => f('aliquota_icms', e.target.value)} placeholder="Ex: 12.00" />
+              </div>
+
+              <div style={{ gridColumn:'1/-1', height:1, background:'var(--border)', margin:'4px 0' }} />
+              <div style={{ gridColumn:'1/-1', fontSize:12, fontWeight:700, color:'var(--text2)' }}>IPI</div>
+
+              <div className="form-group">
+                <label className="form-label">CST IPI</label>
+                <input className="form-input" value={form.ipi_cst||''} onChange={e => f('ipi_cst', e.target.value)} placeholder="Ex: 50, 99..." maxLength={2} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Alíquota IPI (%)</label>
+                <input className="form-input" type="number" step="0.01" value={form.aliquota_ipi||''} onChange={e => f('aliquota_ipi', e.target.value)} placeholder="Ex: 5.00" />
+              </div>
+
+              <div style={{ gridColumn:'1/-1', height:1, background:'var(--border)', margin:'4px 0' }} />
+              <div style={{ gridColumn:'1/-1', fontSize:12, fontWeight:700, color:'var(--text2)' }}>PIS / COFINS</div>
+
+              <div className="form-group">
+                <label className="form-label">CST PIS</label>
+                <input className="form-input" value={form.cst_pis||''} onChange={e => f('cst_pis', e.target.value)} placeholder="Ex: 01, 07..." maxLength={2} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Alíquota PIS (%)</label>
+                <input className="form-input" type="number" step="0.01" value={form.aliquota_pis||''} onChange={e => f('aliquota_pis', e.target.value)} placeholder="Ex: 0.65" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">CST COFINS</label>
+                <input className="form-input" value={form.cst_cofins||''} onChange={e => f('cst_cofins', e.target.value)} placeholder="Ex: 01, 07..." maxLength={2} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Alíquota COFINS (%)</label>
+                <input className="form-input" type="number" step="0.01" value={form.aliquota_cofins||''} onChange={e => f('aliquota_cofins', e.target.value)} placeholder="Ex: 3.00" />
+              </div>
+            </div>
+          )}
+
+          {/* ── ABA FISCAL (SERVIÇO) ── */}
+          {abaModal === 'fiscal' && form.tipo === 'servico' && (
+            <div className="form-grid form-grid-2">
+              <div style={{ gridColumn:'1/-1', background:'rgba(79,142,247,.08)', border:'1px solid rgba(79,142,247,.2)', borderRadius:8, padding:'8px 14px', fontSize:12, color:'var(--text2)', marginBottom:4 }}>
+                ℹ️ Campos utilizados na emissão de NFS-e (nota fiscal de serviço). Varia conforme município.
+              </div>
+              <div className="form-group">
+                <label className="form-label">Código do Serviço <span style={{ fontSize:10, color:'var(--text3)' }}>LC 116/2003</span></label>
+                <input className="form-input" value={form.codigo_servico||''} onChange={e => f('codigo_servico', e.target.value)} placeholder="Ex: 14.01" maxLength={10} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Alíquota ISS (%)</label>
+                <input className="form-input" type="number" step="0.01" value={form.aliquota_iss||''} onChange={e => f('aliquota_iss', e.target.value)} placeholder="Ex: 5.00" />
+              </div>
+              <div className="form-group" style={{ gridColumn:'1/-1', display:'flex', alignItems:'center', gap:10, paddingTop:8 }}>
+                <input type="checkbox" id="iss_retido" checked={!!form.iss_retido} onChange={e => f('iss_retido', e.target.checked)} style={{ width:16, height:16 }} />
+                <label htmlFor="iss_retido" className="form-label" style={{ margin:0, cursor:'pointer' }}>ISS retido na fonte</label>
+              </div>
+              <div style={{ gridColumn:'1/-1', height:1, background:'var(--border)', margin:'4px 0' }} />
+              <div className="form-group">
+                <label className="form-label">CFOP</label>
+                <input className="form-input" value={form.cfop||''} onChange={e => f('cfop', e.target.value)} placeholder="Ex: 5933" maxLength={5} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">CST PIS</label>
+                <input className="form-input" value={form.cst_pis||''} onChange={e => f('cst_pis', e.target.value)} placeholder="Ex: 07" maxLength={2} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">CST COFINS</label>
+                <input className="form-input" value={form.cst_cofins||''} onChange={e => f('cst_cofins', e.target.value)} placeholder="Ex: 07" maxLength={2} />
+              </div>
+            </div>
+          )}
+
+          {/* ── ABA LOGÍSTICA ── */}
+          {abaModal === 'logistica' && (
+            <div className="form-grid form-grid-2">
+              <div style={{ gridColumn:'1/-1', background:'rgba(79,142,247,.08)', border:'1px solid rgba(79,142,247,.2)', borderRadius:8, padding:'8px 14px', fontSize:12, color:'var(--text2)', marginBottom:4 }}>
+                ℹ️ Campos utilizados em NF-e e cálculo de frete (Correios, transportadoras).
+              </div>
+              <div className="form-group">
+                <label className="form-label">Peso Bruto (kg)</label>
+                <input className="form-input" type="number" step="0.001" value={form.peso_bruto||''} onChange={e => f('peso_bruto', e.target.value)} placeholder="0.000" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Peso Líquido (kg)</label>
+                <input className="form-input" type="number" step="0.001" value={form.peso_liquido||''} onChange={e => f('peso_liquido', e.target.value)} placeholder="0.000" />
+              </div>
+              <div style={{ gridColumn:'1/-1', fontSize:12, fontWeight:700, color:'var(--text2)', marginTop:4 }}>Dimensões (cm)</div>
+              <div className="form-group">
+                <label className="form-label">Altura</label>
+                <input className="form-input" type="number" step="0.1" value={form.altura||''} onChange={e => f('altura', e.target.value)} placeholder="0.0" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Largura</label>
+                <input className="form-input" type="number" step="0.1" value={form.largura||''} onChange={e => f('largura', e.target.value)} placeholder="0.0" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Comprimento</label>
+                <input className="form-input" type="number" step="0.1" value={form.comprimento||''} onChange={e => f('comprimento', e.target.value)} placeholder="0.0" />
+              </div>
+              {form.altura && form.largura && form.comprimento && (
+                <div className="form-group" style={{ alignSelf:'flex-end' }}>
+                  <div style={{ background:'var(--bg3)', borderRadius:8, padding:'8px 12px', fontSize:12 }}>
+                    <div style={{ color:'var(--text3)', fontSize:10, marginBottom:2 }}>VOLUME</div>
+                    <div style={{ fontWeight:800, fontFamily:'var(--mono)' }}>
+                      {(Number(form.altura) * Number(form.largura) * Number(form.comprimento) / 1000000).toFixed(4)} m³
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
         </Modal>
       )}
 
