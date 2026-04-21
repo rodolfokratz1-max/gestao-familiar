@@ -80,7 +80,10 @@ export default function FinanceiroContas({ module }) {
   }
 
   const getPagamentosRow = (rowId) => pagamentos.filter(p => p.origem_id === rowId)
-  const totalPagoRow = (rowId) => getPagamentosRow(rowId).reduce((s, p) => s + Number(p.valor || 0), 0)
+  const totalPagoRow = (rowId) => getPagamentosRow(rowId).reduce((s, p) => {
+    const enc = Number(p.juros || 0) + Number(p.multa || 0) - Number(p.desconto || 0)
+    return s + Number(p.valor || 0) - enc
+  }, 0)
   const saldoRow = (row) => Number(row.valor || 0) - totalPagoRow(row.id)
 
   const filtered = rows.filter(r => {

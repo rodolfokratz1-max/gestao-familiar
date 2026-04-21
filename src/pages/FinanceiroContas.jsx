@@ -80,7 +80,10 @@ export default function FinanceiroContas({ module }) {
   }
 
   const getPagamentosRow = (rowId) => pagamentos.filter(p => p.origem_id === rowId)
-  const totalPagoRow = (rowId) => getPagamentosRow(rowId).reduce((s, p) => s + Number(p.valor || 0), 0)
+  const totalPagoRow = (rowId) => getPagamentosRow(rowId).reduce((s, p) => {
+    const enc = Number(p.juros || 0) + Number(p.multa || 0) - Number(p.desconto || 0)
+    return s + Number(p.valor || 0) - enc
+  }, 0)
   const saldoRow = (row) => Number(row.valor || 0) - totalPagoRow(row.id)
 
   const filtered = rows.filter(r => {
@@ -228,15 +231,15 @@ export default function FinanceiroContas({ module }) {
       }
     }
 
-    // Quitação: usa o valor original (saldo) para verificar se a dívida foi quitada
-    const novoTotalPago = totalPagoRow(row.id) + saldo
-    if (novoTotalPago >= Number(row.valor) - 0.01) {
+    // Quitação: totalPagoRow já desconta encargos, soma apenas o valor original de cada pagamento
+    const novoTotalOriginalPago = totalPagoRow(row.id) + saldo
+    const parcelaQuitada = novoTotalOriginalPago >= Number(row.valor) - 0.01
+    if (parcelaQuitada) {
       await supabase.from(cfg.table).update({ [cfg.pagoField]: true }).eq('id', row.id)
     }
 
     // Sincroniza status da Compra vinculada (se existir) com base nas parcelas pagas
     if (cfg.table === 'contas_pagar' && row.origem_id && row.origem_tabela) {
-      // Re-busca todas as parcelas do grupo APÓS o update acima (estado já persistido no banco)
       const { data: todasParcelas } = await supabase
         .from('contas_pagar')
         .select('id, valor, pago')
@@ -244,17 +247,12 @@ export default function FinanceiroContas({ module }) {
         .eq('origem_id', row.origem_id)
         .eq('ativo', true)
       if (todasParcelas && todasParcelas.length > 0) {
-        // Usa o estado real do banco — não precisa de p.id === row.id pois o update já foi feito acima
         const pagas = todasParcelas.filter(p => p.pago).length
-        // Se esta parcela acabou de ser quitada (saldo zerou), ela ainda pode não ter pago=true
-        // Verificamos se ela está no lote e o saldo zerou
-        const estaParcelaQuitada = novoTotalPago >= Number(row.valor) - 0.01
-        const pagasAjustado = estaParcelaQuitada && !todasParcelas.find(p => p.id === row.id)?.pago
+        const pagasAjustado = parcelaQuitada && !todasParcelas.find(p => p.id === row.id)?.pago
           ? pagas + 1
           : pagas
         const total_p = todasParcelas.length
         const novoStatus = pagasAjustado === 0 ? 'pendente' : pagasAjustado >= total_p ? 'pago' : 'parcial'
-        // Atualiza a Compra vinculada
         if (row.origem_tabela === 'compras') {
           await supabase.from('compras').update({ status: novoStatus }).eq('id', row.origem_id)
         } else if (row.origem_tabela === 'entradas_estoque') {
