@@ -233,14 +233,49 @@ export default function EntradaEstoque() {
         const descricao = det.querySelector('xProd')?.textContent || ''
         const codigo    = det.querySelector('cProd')?.textContent || ''
         const qtd       = Number(det.querySelector('qCom')?.textContent || 1)
-        const vUnCom    = Number(det.querySelector('vUnCom')?.textContent || 0) // preço de tabela
-        const vProd     = Number(det.querySelector('vProd')?.textContent || 0)  // valor total real do item
-        const vDesc     = Number(det.querySelector('vDesc')?.textContent || 0)  // desconto do item
-        // Usa vProd (já considera descontos por item) dividido pela qtd
-        // Se vProd for 0 (raro), cai no vUnCom
+        const vUnCom    = Number(det.querySelector('vUnCom')?.textContent || 0)
+        const vProd     = Number(det.querySelector('vProd')?.textContent || 0)
+        const vDesc     = Number(det.querySelector('vDesc')?.textContent || 0)
         const vUnit = vProd > 0 && qtd > 0 ? (vProd - vDesc) / qtd : vUnCom
+
+        // ── Campos fiscais do XML (usados só na criação de produto novo) ──
+        const ncm         = det.querySelector('NCM')?.textContent   || null
+        const cest        = det.querySelector('CEST')?.textContent  || null
+        const cfop        = det.querySelector('CFOP')?.textContent  || null
+        const origem      = det.querySelector('orig')?.textContent  || '0'
+        const gtin        = det.querySelector('cEAN')?.textContent  || null
+        const unidadeXML  = det.querySelector('uCom')?.textContent  || null
+        const pesoB       = Number(det.querySelector('pesoB')?.textContent || 0) || null
+        const pesoL       = Number(det.querySelector('pesoL')?.textContent || 0) || null
+        // ICMS — tenta diferentes grupos (ICMS00, ICMS10, ICMS20, ICMS40, ICMS60, ICMSSN etc)
+        const icmsNode    = det.querySelector('ICMS > *')
+        const cst_icms    = icmsNode?.querySelector('CST,CSOSN')?.textContent || null
+        const aliq_icms   = Number(icmsNode?.querySelector('pICMS')?.textContent || 0) || null
+        // IPI
+        const ipiNode     = det.querySelector('IPI > *')
+        const ipi_cst     = ipiNode?.querySelector('CST')?.textContent  || null
+        const aliq_ipi    = Number(ipiNode?.querySelector('pIPI')?.textContent || 0) || null
+        // PIS
+        const pisNode     = det.querySelector('PIS > *')
+        const cst_pis     = pisNode?.querySelector('CST')?.textContent  || null
+        const aliq_pis    = Number(pisNode?.querySelector('pPIS')?.textContent || 0) || null
+        // COFINS
+        const cofinsNode  = det.querySelector('COFINS > *')
+        const cst_cofins  = cofinsNode?.querySelector('CST')?.textContent  || null
+        const aliq_cofins = Number(cofinsNode?.querySelector('pCOFINS')?.textContent || 0) || null
+
         const prodMatch = produtos.find(p => p.codigo === codigo || p.nome?.toLowerCase() === descricao.toLowerCase())
-        return { descricao, codigo_nf:codigo, qtd, valor_unit:Number(vUnit.toFixed(4)), produto_id:prodMatch?.id||'', produto_nome:prodMatch?.nome||'' }
+        return {
+          descricao, codigo_nf:codigo, qtd, valor_unit:Number(vUnit.toFixed(4)),
+          produto_id:prodMatch?.id||'', produto_nome:prodMatch?.nome||'',
+          // fiscal — só usado se criar produto novo
+          _fiscal: { ncm, cest, cfop, origem, gtin, unidade: unidadeXML,
+            peso_bruto: pesoB, peso_liquido: pesoL,
+            cst_icms, aliquota_icms: aliq_icms,
+            ipi_cst, aliquota_ipi: aliq_ipi,
+            cst_pis, aliquota_pis: aliq_pis,
+            cst_cofins, aliquota_cofins: aliq_cofins }
+        }
       })
       // Calcula desconto global da NF (vDescTotal) e distribui proporcionalmente se houver
       const vNF    = Number(xml.querySelector('vNF')?.textContent || 0)
@@ -366,21 +401,58 @@ export default function EntradaEstoque() {
             const codigo = 'PROD-'+String(nextNum).padStart(3,'0')
             // Tenta inserir com código sequencial
             const custoItem = Number(item.valor_unit)||0
-          const vendaCalc = margemPadrao > 0 ? custoItem / (1 - margemPadrao/100) : 0
-          const { data:novo, error:errInsert } = await supabase.from('produtos').insert({
+            const vendaCalc = margemPadrao > 0 ? custoItem / (1 - margemPadrao/100) : 0
+            const fiscal = item._fiscal || {}
+            const { data:novo, error:errInsert } = await supabase.from('produtos').insert({
               codigo,
-              nome:item.descricao, tipo:'produto',
+              nome: item.descricao, tipo: 'produto',
               preco_custo: custoItem,
               preco_venda: vendaCalc > 0 ? Number(vendaCalc.toFixed(2)) : null,
               margem: margemPadrao > 0 ? margemPadrao : null,
-              estoque:0, estoque_min:0, unidade:'un', ativo:true
+              estoque: 0, estoque_min: 0,
+              unidade: fiscal.unidade || 'un',
+              ativo: true,
+              // campos fiscais vindos do XML — só preenchidos em produto novo
+              gtin:            fiscal.gtin        || null,
+              ncm:             fiscal.ncm         || null,
+              cest:            fiscal.cest        || null,
+              cfop:            fiscal.cfop        || null,
+              origem:          fiscal.origem      || '0',
+              peso_bruto:      fiscal.peso_bruto  || null,
+              peso_liquido:    fiscal.peso_liquido|| null,
+              cst_icms:        fiscal.cst_icms    || null,
+              aliquota_icms:   fiscal.aliquota_icms   || null,
+              ipi_cst:         fiscal.ipi_cst     || null,
+              aliquota_ipi:    fiscal.aliquota_ipi|| null,
+              cst_pis:         fiscal.cst_pis     || null,
+              aliquota_pis:    fiscal.aliquota_pis|| null,
+              cst_cofins:      fiscal.cst_cofins  || null,
+              aliquota_cofins: fiscal.aliquota_cofins || null,
             }).select().single()
-            // Se deu erro de duplicata, tenta com sufixo timestamp
             if (errInsert) {
+              const fiscal2 = item._fiscal || {}
               const { data:novo2 } = await supabase.from('produtos').insert({
                 codigo: `PROD-${Date.now()}`,
-                nome:item.descricao, tipo:'produto',
-                preco_custo:Number(item.valor_unit)||0, estoque:0, estoque_min:0, unidade:'un', ativo:true
+                nome: item.descricao, tipo: 'produto',
+                preco_custo: Number(item.valor_unit)||0,
+                estoque: 0, estoque_min: 0,
+                unidade: fiscal2.unidade || 'un',
+                ativo: true,
+                gtin:            fiscal2.gtin         || null,
+                ncm:             fiscal2.ncm          || null,
+                cest:            fiscal2.cest         || null,
+                cfop:            fiscal2.cfop         || null,
+                origem:          fiscal2.origem       || '0',
+                peso_bruto:      fiscal2.peso_bruto   || null,
+                peso_liquido:    fiscal2.peso_liquido || null,
+                cst_icms:        fiscal2.cst_icms     || null,
+                aliquota_icms:   fiscal2.aliquota_icms    || null,
+                ipi_cst:         fiscal2.ipi_cst      || null,
+                aliquota_ipi:    fiscal2.aliquota_ipi || null,
+                cst_pis:         fiscal2.cst_pis      || null,
+                aliquota_pis:    fiscal2.aliquota_pis || null,
+                cst_cofins:      fiscal2.cst_cofins   || null,
+                aliquota_cofins: fiscal2.aliquota_cofins  || null,
               }).select().single()
               if (novo2) itensProc[idx] = {...item, produto_id:novo2.id, produto_nome:novo2.nome}
             } else if (novo) {
