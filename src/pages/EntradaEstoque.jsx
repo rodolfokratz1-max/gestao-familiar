@@ -8,6 +8,7 @@ import {
   Link, PackagePlus, FileText, ChevronDown, ChevronUp, X,
   History, Eye
 } from 'lucide-react'
+import { bloquear, verificarExclusao } from '../lib/integridade'
 
 const fmt = v => 'R$ ' + Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2})
 const today = () => new Date().toISOString().split('T')[0]
@@ -71,6 +72,14 @@ export default function EntradaEstoque() {
   async function reverterNota(entradaId) {
     const entrada = historico.find(h => h.id === entradaId)
     if (!entrada) { toast('Nota não encontrada','error'); return }
+
+    const { pode, motivos } = await verificarExclusao('entradas_estoque', entrada)
+    if (!pode) {
+      toast(`Não é possível reverter: ${motivos.join('; ')}.`, 'error')
+      setRevertendo(null)
+      return
+    }
+
     setRevertendo(null)
     setProcessando(true)
     let erros = []
@@ -481,6 +490,11 @@ export default function EntradaEstoque() {
       const qtd = itensProc.filter(i=>i.produto_id).length
       const nParcelasConfirm = gerarFin ? (usarDupsXML && dupsXML.length > 0 ? dupsXML.length : Number(fin.parcelas)||1) : 0
       toast(`✅ Entrada confirmada! ${qtd} produto(s) atualizados.${gerarFin?` ${nParcelasConfirm} parcela(s) em Contas a Pagar.`:''} Registrado em Compras.`,'success')
+
+      // Se gerou financeiro, bloqueia a entrada para não permitir reversão acidental
+      if (gerarFin && entrada?.id) {
+        await bloquear('entradas_estoque', entrada.id)
+      }
 
       // Reset
       setNota({numero:'',fornecedor_id:'',fornecedor_nome:'',data_emissao:today(),chave_nfe:'',obs:''})

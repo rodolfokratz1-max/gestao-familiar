@@ -5,6 +5,7 @@ import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { Plus, Search, Pencil, Trash2, Power, Package, Tag, Calculator } from 'lucide-react'
 import { gerarCodigo } from '../lib/codigos'
+import { verificarExclusao } from '../lib/integridade'
 
 const fmt = v => 'R$ ' + Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2})
 const UNIDADES = ['un','kg','g','l','ml','m','m²','cx','pç','hr','dia','mês']
@@ -117,6 +118,12 @@ export default function Produtos() {
     loadAll()
   }
   async function destroy() {
+    const { pode, motivos } = await verificarExclusao('produtos', deleting)
+    if (!pode) {
+      toast(`Não é possível excluir: ${motivos.join('; ')}.`, 'error')
+      setDeleting(null)
+      return
+    }
     await supabase.from('produtos').delete().eq('id', deleting.id)
     toast('Excluído','success'); setDeleting(null); loadAll()
   }

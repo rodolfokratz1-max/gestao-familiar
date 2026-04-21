@@ -4,6 +4,7 @@ import { useToast } from '../contexts/ToastContext'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { Plus, Search, Pencil, Trash2, Power, ShoppingCart, CheckCircle, Package, CreditCard, RefreshCw } from 'lucide-react'
+import { verificarExclusao } from '../lib/integridade'
 
 const fmt = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
 const today = () => new Date().toISOString().split('T')[0]
@@ -222,6 +223,12 @@ export default function Compras() {
   async function toggleAtivo(r) { await supabase.from('compras').update({ ativo: !r.ativo }).eq('id', r.id); load() }
 
   async function destroy() {
+    const { pode, motivos } = await verificarExclusao('compras', deleting)
+    if (!pode) {
+      toast(`Não é possível excluir: ${motivos.join('; ')}.`, 'error')
+      setDeleting(null)
+      return
+    }
     await removerCaixaCompra(deleting.id)
     await supabase.from('compras').delete().eq('id', deleting.id)
     toast('Excluído', 'success'); setDeleting(null); load()

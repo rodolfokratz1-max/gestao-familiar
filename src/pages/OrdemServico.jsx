@@ -9,6 +9,7 @@ import {
   FileText, Package, Wrench, CheckCircle, Clock,
   AlertCircle, XCircle, DollarSign, Eye, Printer
 } from 'lucide-react'
+import { bloquear, verificarExclusao } from '../lib/integridade'
 
 const fmt = v => 'R$ ' + Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2})
 const today = () => new Date().toISOString().split('T')[0]
@@ -171,12 +172,21 @@ export default function OrdemServico() {
     // Atualiza status da OS
     await supabase.from('ordens_servico').update({ status:'recebido', data_recebimento: today() }).eq('id', o.id)
 
+    // Bloqueia a OS pois gerou CR e lançamento no caixa
+    await bloquear('ordens_servico', o.id)
+
     toast(`✅ OS recebida! ${fmt(total)} lançado em Contas a Receber e Caixa`, 'success')
     loadAll()
     if (osSel?.id === o.id) setOsSel(p => ({...p, status:'recebido'}))
   }
 
   async function destroyOs() {
+    const { pode, motivos } = await verificarExclusao('ordens_servico', deletingOs)
+    if (!pode) {
+      toast(`Não é possível excluir: ${motivos.join('; ')}.`, 'error')
+      setDeletingOs(null)
+      return
+    }
     await supabase.from('os_itens').delete().eq('os_id', deletingOs.id)
     await supabase.from('ordens_servico').delete().eq('id', deletingOs.id)
     toast('OS excluída', 'success'); setDeletingOs(null)

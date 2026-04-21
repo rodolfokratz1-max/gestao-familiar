@@ -5,6 +5,7 @@ import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { Plus, Search, Pencil, Trash2, Power, CheckCircle, CreditCard, ChevronDown, ChevronUp } from 'lucide-react'
 import { SelectCategoria } from '../lib/planoContas'
+import { bloquear, tentarDesbloquear, verificarExclusao } from '../lib/integridade'
 
 const fmt = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
 const today = () => new Date().toISOString().split('T')[0]
@@ -260,6 +261,15 @@ export default function FinanceiroContas({ module }) {
       }
     }
 
+    // Bloqueia a conta pagar/receber e a compra vinculada (se existir)
+    await bloquear(cfg.table, row.id)
+    if (row.origem_tabela === 'compras' && row.origem_id) {
+      await bloquear('compras', row.origem_id)
+    }
+    if (row.origem_tabela === 'entradas_estoque' && row.origem_id) {
+      await bloquear('entradas_estoque', row.origem_id)
+    }
+
     toast('Pagamento registrado!', 'success')
     setModalPgto(null)
     setPgtoForm({ valor: '', data: today(), forma_pgto: '', conta_id: '', obs: '', juros: '', multa: '', desconto: '' })
@@ -271,6 +281,12 @@ export default function FinanceiroContas({ module }) {
   }
 
   async function destroy() {
+    const { pode, motivos } = await verificarExclusao(cfg.table, deleting)
+    if (!pode) {
+      toast(`Não é possível excluir: ${motivos.join('; ')}.`, 'error')
+      setDeleting(null)
+      return
+    }
     await supabase.from(cfg.table).delete().eq('id', deleting.id)
     await supabase.from('pagamentos_parciais').delete().eq('origem_id', deleting.id)
     toast('Excluído', 'success'); setDeleting(null); load()

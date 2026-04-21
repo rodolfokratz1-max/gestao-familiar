@@ -6,6 +6,7 @@ import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { Plus, Search, Pencil, Trash2, Power, CheckCircle } from 'lucide-react'
 import { SelectCategoria, SelectCentroCusto } from '../lib/planoContas'
+import { verificarExclusao } from '../lib/integridade'
 
 const fmt = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
 const today = () => new Date().toISOString().split('T')[0]
@@ -152,6 +153,12 @@ export default function Financeiro({ module }) {
   }
 
   async function destroy() {
+    const { pode, motivos } = await verificarExclusao(cfg.table, deleting)
+    if (!pode) {
+      toast(`Não é possível excluir: ${motivos.join('; ')}.`, 'error')
+      setDeleting(null)
+      return
+    }
     await removerCaixa(deleting.id)
     await supabase.from(cfg.table).delete().eq('id', deleting.id)
     toast('Excluído', 'success'); setDeleting(null); load()
