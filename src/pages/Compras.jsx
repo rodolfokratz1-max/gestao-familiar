@@ -24,6 +24,8 @@ export default function Compras() {
   const [form, setForm] = useState(EMPTY)
   const [editing, setEditing] = useState(null)
   const [deleting, setDeleting] = useState(null)
+  const [showArquivados, setShowArquivados] = useState(false)
+  const [itensEntrada, setItensEntrada] = useState([]) // itens readonly de entradas_estoque
 
   // Parcelas vinculadas de cada compra: { [compra_id]: [{id, valor, pago, descricao, vencimento}] }
   const [parcelasMap, setParcelasMap] = useState({})
@@ -98,26 +100,46 @@ export default function Compras() {
     const q = search.toLowerCase()
     const matchS = !q || r.descricao?.toLowerCase().includes(q) || r.fornecedor?.toLowerCase().includes(q)
     const matchF = !filterStatus || statusCalculado(r) === filterStatus
-    return matchS && matchF && r.ativo !== false
+    const matchAtivo = showArquivados ? true : r.ativo !== false
+    return matchS && matchF && matchAtivo
   })
 
   const total = filtered.reduce((s, r) => s + Number(r.valor_total || 0), 0)
   const totalPendente = filtered.filter(r => statusCalculado(r) === 'pendente').reduce((s, r) => s + Number(r.valor_total || 0), 0)
   const totalSaldoAberto = filtered.filter(r => statusCalculado(r) === 'parcial').reduce((s, r) => s + valorPendenteCompra(r.id), 0)
 
-  function openNew() { setForm(EMPTY); setItensCompra([]); setEditing(null); setModal(true) }
-  function openEdit(r) { setForm({ ...r }); setItensCompra(r.itens_compra || []); setEditing(r.id); setModal(true) }
+  function openNew() { setForm(EMPTY); setItensCompra([]); setItensEntrada([]); setEditing(null); setModal(true) }
+  async function openEdit(r) {
+    setForm({ ...r })
+    setItensEntrada([])
+    if (r.origem_tabela === 'entradas_estoque' && r.origem_id) {
+      // Compra importada — busca itens da entrada original para exibição readonly
+      const { data: entrada } = await supabase.from('entradas_estoque').select('itens').eq('id', r.origem_id).single()
+      setItensEntrada(entrada?.itens || [])
+      setItensCompra([])
+    } else {
+      setItensCompra(r.itens_compra || [])
+    }
+    setEditing(r.id)
+    setModal(true)
+  }
 
   async function save() {
     if (!form.descricao?.trim()) return toast('Descrição obrigatória', 'error')
     if (!form.valor_total) return toast('Valor obrigatório', 'error')
 
+    // Compras importadas de EntradaEstoque são readonly — só permite salvar obs
+    const isImportada = editing && rows.find(r => r.id === editing)?.origem_tabela === 'entradas_estoque'
+
     const anterior = editing ? rows.find(r => r.id === editing) : null
     const eraP = anterior?.status === 'pago'
     const agora = form.status === 'pago'
 
-    const payload = { ...form, itens_compra: itensCompra.length ? itensCompra : null }
-    if (itensCompra.length) payload.valor_total = itensCompra.reduce((s, i) => s + Number(i.qtd) * Number(i.valor_unit), 0).toFixed(2)
+    // Compras importadas: salva apenas obs — não altera valor, fornecedor, itens, status
+    const payload = isImportada
+      ? { obs: form.obs }
+      : { ...form, itens_compra: itensCompra.length ? itensCompra : null }
+    if (!isImportada && itensCompra.length) payload.valor_total = itensCompra.reduce((s, i) => s + Number(i.qtd) * Number(i.valor_unit), 0).toFixed(2)
 
     let savedId = editing
     let error
@@ -232,6 +254,10 @@ export default function Compras() {
         <button className="btn btn-secondary" onClick={sincronizarTodos} title="Recalcula status com base nas parcelas pagas">
           <RefreshCw size={14} /> Sincronizar
         </button>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text2)', cursor: 'pointer', userSelect: 'none' }}>
+          <input type="checkbox" checked={showArquivados} onChange={e => setShowArquivados(e.target.checked)} style={{ width: 14, height: 14 }} />
+          Mostrar arquivados
+        </label>
         <button className="btn btn-primary" onClick={openNew}><Plus size={15} /> Nova Compra</button>
       </div>
 
@@ -304,48 +330,66 @@ export default function Compras() {
           )}
       </div>
 
-      {modal && (
-        <Modal title={editing ? 'Editar Compra' : 'Nova Compra'} onClose={() => setModal(false)} onSave={save} size="modal-lg">
+      {modal && (() => {
+        const isImportada = editing && rows.find(r => r.id === editing)?.origem_tabela === 'entradas_estoque'
+        const ro = isImportada // shorthand readonly
+        const roStyle = ro ? { opacity: .65, cursor: 'not-allowed', pointerEvents: 'none' } : {}
+        return (
+        <Modal
+          title={ro ? 'Visualizar Compra (importada de Entrada de Estoque)' : editing ? 'Editar Compra' : 'Nova Compra'}
+          onClose={() => setModal(false)}
+          onSave={save}
+          size="modal-lg"
+        >
+          {ro && (
+            <div style={{ background: 'rgba(79,142,247,.08)', border: '1px solid rgba(79,142,247,.25)', borderRadius: 8, padding: '8px 14px', marginBottom: 14, fontSize: 12, color: 'var(--text2)' }}>
+              ℹ️ Esta compra foi gerada automaticamente por uma <strong>Entrada de Estoque</strong>. Os dados são somente leitura. Apenas o campo <strong>Observações</strong> pode ser editado.
+            </div>
+          )}
           <div className="form-grid form-grid-2">
             <div className="form-group">
               <label className="form-label">Data *</label>
-              <input className="form-input" type="date" value={form.data} onChange={e => f('data', e.target.value)} />
+              <input className="form-input" type="date" value={form.data} onChange={e => f('data', e.target.value)} readOnly={ro} style={roStyle} />
             </div>
             <div className="form-group">
               <label className="form-label">Valor Total {itensCompra.length > 0 ? '(calculado pelos itens)' : '*'}</label>
               <input className="form-input" type="number" step="0.01"
                 value={itensCompra.length > 0 ? itensCompra.reduce((s, i) => s + Number(i.qtd) * Number(i.valor_unit), 0).toFixed(2) : form.valor_total}
                 onChange={e => f('valor_total', e.target.value)}
-                readOnly={itensCompra.length > 0} style={itensCompra.length > 0 ? { opacity: .7 } : {}} placeholder="0,00" />
+                readOnly={ro || itensCompra.length > 0}
+                style={ro || itensCompra.length > 0 ? { opacity: .7 } : {}} placeholder="0,00" />
             </div>
             <div className="form-group" style={{ gridColumn: '1/-1' }}>
               <label className="form-label">Descrição *</label>
-              <input className="form-input" value={form.descricao} onChange={e => f('descricao', e.target.value)} placeholder="O que foi comprado" />
+              <input className="form-input" value={form.descricao} onChange={e => f('descricao', e.target.value)} placeholder="O que foi comprado" readOnly={ro} style={roStyle} />
             </div>
             <div className="form-group">
               <label className="form-label">Fornecedor</label>
-              <select className="form-select" value={form.fornecedor} onChange={e => f('fornecedor', e.target.value)}>
+              <select className="form-select" value={form.fornecedor} onChange={e => f('fornecedor', e.target.value)} disabled={ro} style={roStyle}>
                 <option value="">Selecionar...</option>
                 {fornecedores.map(p => <option key={p.id} value={p.nome}>{p.nome}</option>)}
+                {ro && form.fornecedor && !fornecedores.find(p => p.nome === form.fornecedor) && (
+                  <option value={form.fornecedor}>{form.fornecedor}</option>
+                )}
               </select>
             </div>
             <div className="form-group">
               <label className="form-label">Forma de Pagamento</label>
-              <select className="form-select" value={form.forma_pgto} onChange={e => f('forma_pgto', e.target.value)}>
+              <select className="form-select" value={form.forma_pgto} onChange={e => f('forma_pgto', e.target.value)} disabled={ro} style={roStyle}>
                 <option value="">Selecionar...</option>
                 {['Dinheiro', 'Pix', 'Cartão Crédito', 'Cartão Débito', 'Boleto', 'Transferência'].map(o => <option key={o} value={o}>{o}</option>)}
               </select>
             </div>
             <div className="form-group">
               <label className="form-label">Conta / Carteira</label>
-              <select className="form-select" value={form.conta_id} onChange={e => f('conta_id', e.target.value)}>
+              <select className="form-select" value={form.conta_id} onChange={e => f('conta_id', e.target.value)} disabled={ro} style={roStyle}>
                 <option value="">Selecionar...</option>
                 {contas.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
               </select>
             </div>
             <div className="form-group">
               <label className="form-label">Status</label>
-              <select className="form-select" value={form.status} onChange={e => f('status', e.target.value)}>
+              <select className="form-select" value={form.status} onChange={e => f('status', e.target.value)} disabled={ro} style={roStyle}>
                 <option value="pendente">Pendente</option>
                 <option value="pago">Pago</option>
                 <option value="parcial">Parcial</option>
@@ -353,11 +397,51 @@ export default function Compras() {
               </select>
             </div>
             <div className="form-group" style={{ gridColumn: '1/-1' }}>
-              <label className="form-label">Observações</label>
+              <label className="form-label">Observações {ro ? '(editável)' : ''}</label>
               <textarea className="form-textarea" value={form.obs} onChange={e => f('obs', e.target.value)} />
             </div>
 
-            {produtos.length > 0 && (
+            {/* Itens da Entrada de Estoque (readonly) */}
+            {ro && itensEntrada.length > 0 && (
+              <div style={{ gridColumn: '1/-1' }}>
+                <div style={{ height: 1, background: 'var(--border)', margin: '4px 0 12px' }} />
+                <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Package size={14} color="var(--accent)" /> Itens da nota fiscal
+                </div>
+                <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead><tr style={{ background: 'var(--bg3)' }}>
+                      <th style={{ padding: '7px 10px', fontSize: 10, textAlign: 'left', color: 'var(--text3)', fontWeight: 700, textTransform: 'uppercase' }}>Produto / Descrição</th>
+                      <th style={{ padding: '7px 10px', fontSize: 10, textAlign: 'center', color: 'var(--text3)', fontWeight: 700, textTransform: 'uppercase' }}>Qtd</th>
+                      <th style={{ padding: '7px 10px', fontSize: 10, textAlign: 'right', color: 'var(--text3)', fontWeight: 700, textTransform: 'uppercase' }}>Unit.</th>
+                      <th style={{ padding: '7px 10px', fontSize: 10, textAlign: 'right', color: 'var(--text3)', fontWeight: 700, textTransform: 'uppercase' }}>Total</th>
+                    </tr></thead>
+                    <tbody>
+                      {itensEntrada.map((item, i) => (
+                        <tr key={i} style={{ borderTop: '1px solid var(--border)' }}>
+                          <td style={{ padding: '7px 10px', fontSize: 13 }}>
+                            {item.produto_nome || item.descricao || '—'}
+                            {item.codigo_nf && <span style={{ fontSize: 11, color: 'var(--text3)', marginLeft: 6 }}>{item.codigo_nf}</span>}
+                          </td>
+                          <td style={{ padding: '7px 10px', fontSize: 13, textAlign: 'center' }}>{item.qtd}</td>
+                          <td style={{ padding: '7px 10px', fontSize: 13, textAlign: 'right', fontFamily: 'var(--mono)' }}>{fmt(item.valor_unit)}</td>
+                          <td style={{ padding: '7px 10px', fontSize: 13, textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700 }}>{fmt(Number(item.qtd) * Number(item.valor_unit))}</td>
+                        </tr>
+                      ))}
+                      <tr style={{ borderTop: '2px solid var(--border2)', background: 'var(--bg3)' }}>
+                        <td colSpan={3} style={{ padding: '8px 10px', fontSize: 13, fontWeight: 700, textAlign: 'right' }}>Total</td>
+                        <td style={{ padding: '8px 10px', fontSize: 14, fontWeight: 900, fontFamily: 'var(--mono)', color: 'var(--accent)', textAlign: 'right' }}>
+                          {fmt(itensEntrada.reduce((s, i) => s + Number(i.qtd) * Number(i.valor_unit), 0))}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Itens editáveis — só para compras manuais */}
+            {!ro && produtos.length > 0 && (
               <div style={{ gridColumn: '1/-1' }}>
                 <div style={{ height: 1, background: 'var(--border)', margin: '4px 0 12px' }} />
                 <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -424,7 +508,8 @@ export default function Compras() {
             )}
           </div>
         </Modal>
-      )}
+        )
+      })()}
       {deleting && <ConfirmDialog message={`Excluir "${deleting.descricao}"? O lançamento no Caixa também será removido.`} onConfirm={destroy} onCancel={() => setDeleting(null)} />}
     </div>
   )
