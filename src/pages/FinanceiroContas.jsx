@@ -196,19 +196,18 @@ export default function FinanceiroContas({ module }) {
       console.error('Erro caixa:', eCaixa)
     }
 
-    // Lança encargos separados no caixa (se houver)
-    // Encargos positivos = juros/multa → saída
-    // Encargos negativos = desconto maior que juros/multa → entrada (estorno)
-    if (Math.abs(encargos) > 0.01) {
+    // Lança encargos no caixa apenas se houver juros ou multa (saída extra)
+    // Desconto puro não gera lançamento — já está refletido no valor menor debitado
+    if (juros > 0 || multa > 0) {
       const encargosPayload = {
         data: pgtoForm.data,
-        tipo: encargos > 0 ? 'saida' : 'entrada',
-        descricao: `Encargos (juros/multa/desconto): ${row.descricao}`,
-        valor: Math.abs(encargos),
+        tipo: 'saida',
+        descricao: `Encargos (juros/multa): ${row.descricao}`,
+        valor: juros + multa,
         categoria: 'Encargos Financeiros',
         obs: [
-          juros    > 0 ? `Juros: ${fmt(juros)}`        : '',
-          multa    > 0 ? `Multa: ${fmt(multa)}`        : '',
+          juros > 0 ? `Juros: ${fmt(juros)}`   : '',
+          multa > 0 ? `Multa: ${fmt(multa)}`   : '',
           desconto > 0 ? `Desconto: -${fmt(desconto)}` : '',
         ].filter(Boolean).join(' | ') || null,
         origem_id: row.id,
@@ -350,15 +349,31 @@ export default function FinanceiroContas({ module }) {
                             <button className="icon-btn del" onClick={() => setDeleting(r)}><Trash2 size={14} /></button>
                           </div></td>
                         </tr>
-                        {isExp && pgts.map(pg => (
-                          <tr key={pg.id} style={{ background: 'rgba(52,211,153,.05)' }}>
-                            <td></td>
-                            <td className="text-mono text-muted" style={{ fontSize: 11 }}>{pg.data?.split('-').reverse().join('/')}</td>
-                            <td colSpan={2} style={{ fontSize: 12, color: 'var(--green)' }}>↳ Pagamento: {pg.obs || pg.forma_pgto || '—'}</td>
-                            <td colSpan={2} className="text-mono text-green" style={{ fontSize: 12 }}>{fmt(pg.valor)}</td>
-                            <td colSpan={4} className="text-muted" style={{ fontSize: 12 }}>{pg.forma_pgto || '—'}</td>
-                          </tr>
-                        ))}
+                        {isExp && pgts.map(pg => {
+                          const pgJuros    = Number(pg.juros    || 0)
+                          const pgMulta    = Number(pg.multa    || 0)
+                          const pgDesconto = Number(pg.desconto || 0)
+                          const temEncargos = pgJuros > 0 || pgMulta > 0 || pgDesconto > 0
+                          return (
+                            <tr key={pg.id} style={{ background: 'rgba(52,211,153,.05)' }}>
+                              <td></td>
+                              <td className="text-mono text-muted" style={{ fontSize: 11 }}>{pg.data?.split('-').reverse().join('/')}</td>
+                              <td colSpan={2} style={{ fontSize: 12, color: 'var(--green)' }}>
+                                ↳ Pagamento: {pg.forma_pgto || '—'}
+                                {temEncargos && (
+                                  <span style={{ marginLeft: 8, color: 'var(--text3)', fontSize: 11 }}>
+                                    {pgJuros    > 0 && <span style={{ color: 'var(--red)'    }}> Juros: {fmt(pgJuros)}</span>}
+                                    {pgMulta    > 0 && <span style={{ color: 'var(--red)'    }}> Multa: {fmt(pgMulta)}</span>}
+                                    {pgDesconto > 0 && <span style={{ color: 'var(--green)'  }}> Desconto: -{fmt(pgDesconto)}</span>}
+                                  </span>
+                                )}
+                                {pg.obs && <span style={{ marginLeft: 8, color: 'var(--text3)', fontSize: 11 }}>• {pg.obs}</span>}
+                              </td>
+                              <td colSpan={2} className="text-mono text-green" style={{ fontSize: 12 }}>{fmt(pg.valor)}</td>
+                              <td colSpan={4} className="text-muted" style={{ fontSize: 12 }}>{pg.forma_pgto || '—'}</td>
+                            </tr>
+                          )
+                        })}
                       </>
                     )
                   })}
