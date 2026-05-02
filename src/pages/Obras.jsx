@@ -83,7 +83,13 @@ export default function Obras() {
 
   async function save() {
     if (!form.nome?.trim()) return toast('Nome obrigatório', 'error')
-    const payload = { ...form }
+    const payload = {
+      ...form,
+      cliente_id:       form.cliente_id       || null,
+      valor_contratado: form.valor_contratado  || null,
+      data_inicio:      form.data_inicio       || null,
+      data_fim:         form.data_fim          || null,
+    }
     if (form.cliente_id) {
       const c = clientes.find(x => x.id === form.cliente_id)
       if (c) payload.cliente_nome = c.nome
