@@ -5,9 +5,9 @@ import { mesReferencia, dataVencimento } from '../lib/faturas'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { Plus, Search, Pencil, Trash2, Power, CreditCard, Receipt, ChevronLeft, ChevronRight, Lock, Clock, CheckCircle } from 'lucide-react'
+import { today } from '../lib/utils.js'
 
 const fmt = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
-const today = () => new Date().toISOString().split('T')[0]
 
 const EMPTY_CARTAO = { nome: '', bandeira: '', titular_id: '', titular_nome: '', limite: '', dia_vencimento: '', dia_fechamento: '', obs: '', ativo: true }
 const EMPTY_LANC   = { data: today(), descricao: '', categoria: '', valor: '', parcelado: false, num_parcelas: 2, obs: '' }

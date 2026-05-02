@@ -5,9 +5,9 @@ import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { Plus, Search, Pencil, Trash2, Power, ShoppingCart, CheckCircle, Package, CreditCard, RefreshCw } from 'lucide-react'
 import { verificarExclusao } from '../lib/integridade'
+import { today } from '../lib/utils.js'
 
 const fmt = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
-const today = () => new Date().toISOString().split('T')[0]
 const EMPTY = { data: today(), fornecedor: '', descricao: '', valor_total: '', status: 'pendente', forma_pgto: '', conta_id: '', obs: '', ativo: true }
 
 export default function Compras() {

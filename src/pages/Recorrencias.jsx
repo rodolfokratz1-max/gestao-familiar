@@ -5,10 +5,10 @@ import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { Plus, Search, Pencil, Trash2, Power, RefreshCw, Clock, CheckCircle, AlertCircle } from 'lucide-react'
 import { SelectCategoria } from '../lib/planoContas'
+import { today } from '../lib/utils.js'
 
 const fmt = v => 'R$ ' + Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2})
-const today = () => new Date().toISOString().split('T')[0]
-const todayObj = () => new Date(new Date().toISOString().split('T')[0])
+const todayObj = () => new Date(today())
 
 const PERIODOS = [
   { id:'mensal',     label:'Mensal',     meses:1  },

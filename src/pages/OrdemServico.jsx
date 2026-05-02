@@ -10,9 +10,9 @@ import {
   AlertCircle, XCircle, DollarSign, Eye, Printer
 } from 'lucide-react'
 import { bloquear, verificarExclusao } from '../lib/integridade'
+import { today, fmtDate } from '../lib/utils.js'
 
 const fmt = v => 'R$ ' + Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2})
-const today = () => new Date().toISOString().split('T')[0]
 
 const STATUS = [
   { id:'orcamento',   label:'Orçamento',       cls:'os-orcamento',  icon:'📋' },
@@ -372,7 +372,7 @@ export default function OrdemServico() {
     <div class="cab-os-area">
       <div class="cab-os-label">Ordem de Serviço</div>
       <div class="cab-os-numero">${osSel?.numero}</div>
-      <div class="cab-os-data">Emitida em ${new Date().toLocaleDateString('pt-BR')}</div>
+      <div class="cab-os-data">Emitida em ${fmtDate(today())}</div>
       <div><span class="cab-os-status">${si.icon} ${si.label}</span></div>
     </div>
   </div>
@@ -409,7 +409,7 @@ export default function OrdemServico() {
       </div>
       <div class="bloco-col" style="border-top:1px solid #e2e8f0;border-left:1px solid #e2e8f0">
         <div class="bloco-titulo">Data de Emissão</div>
-        <div class="bloco-valor">${new Date().toLocaleDateString('pt-BR')}</div>
+        <div class="bloco-valor">${fmtDate(today())}</div>
       </div>` : ''}
     </div>
 
@@ -475,7 +475,7 @@ export default function OrdemServico() {
   <!-- RODAPÉ -->
   <div class="rodape">
     <div>${e.rodape_os || 'Obrigado pela preferência!'}</div>
-    <div>${osSel?.numero} · ${new Date().toLocaleDateString('pt-BR')}</div>
+    <div>${osSel?.numero} · ${fmtDate(today())}</div>
   </div>
 
 </div><!-- /page -->

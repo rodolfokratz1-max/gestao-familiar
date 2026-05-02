@@ -7,9 +7,9 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import { Plus, Search, Pencil, Trash2, Power, CheckCircle } from 'lucide-react'
 import { SelectCategoria, SelectCentroCusto } from '../lib/planoContas'
 import { verificarExclusao } from '../lib/integridade'
+import { today } from '../lib/utils.js'
 
 const fmt = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
-const today = () => new Date().toISOString().split('T')[0]
 
 const configs = {
   receitas: {

@@ -9,9 +9,9 @@ import {
   History, Eye
 } from 'lucide-react'
 import { bloquear, verificarExclusao } from '../lib/integridade'
+import { today, fmtDate } from '../lib/utils.js'
 
 const fmt = v => 'R$ ' + Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2})
-const today = () => new Date().toISOString().split('T')[0]
 const FORMAS = ['Boleto','PIX','Cartão Crédito','Cartão Débito','Transferência','Dinheiro','Cheque','Outro']
 
 export default function EntradaEstoque() {
@@ -627,7 +627,7 @@ export default function EntradaEstoque() {
                   <tbody>
                     {historico.map(h=>(
                       <tr key={h.id}>
-                        <td style={{fontSize:12,color:'var(--text2)',whiteSpace:'nowrap'}}>{h.data_emissao?new Date(h.data_emissao+'T12:00:00').toLocaleDateString('pt-BR'):'—'}</td>
+                        <td style={{fontSize:12,color:'var(--text2)',whiteSpace:'nowrap'}}>{fmtDate(h.data_emissao)}</td>
                         <td className="font-bold">{h.numero_nf||'s/n'}</td>
                         <td>{h.fornecedor_nome||'—'}</td>
                         <td><span className="badge badge-blue" style={{fontSize:10}}>{(h.itens||[]).length} itens</span></td>
@@ -656,7 +656,7 @@ export default function EntradaEstoque() {
                 </div>
                 <div className="modal-body">
                   <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16,fontSize:13}}>
-                    <div><span style={{color:'var(--text3)'}}>Data: </span><strong>{notaDetalhe.data_emissao?new Date(notaDetalhe.data_emissao+'T12:00:00').toLocaleDateString('pt-BR'):'—'}</strong></div>
+                    <div><span style={{color:'var(--text3)'}}>Data: </span><strong>{fmtDate(notaDetalhe.data_emissao)}</strong></div>
                     <div><span style={{color:'var(--text3)'}}>Total: </span><strong style={{color:'var(--green)'}}>{fmt(notaDetalhe.total)}</strong></div>
                     {notaDetalhe.chave_nfe && <div style={{gridColumn:'1/-1',fontSize:11,fontFamily:'var(--mono)',color:'var(--text3)',wordBreak:'break-all'}}>Chave: {notaDetalhe.chave_nfe}</div>}
                   </div>
@@ -881,7 +881,7 @@ export default function EntradaEstoque() {
                         {dupsXML.map((d,i) => (
                           <tr key={i} style={{borderBottom:'1px solid var(--border)'}}>
                             <td style={{padding:'8px 14px',color:'var(--text2)'}}>{d.nDup || i+1}</td>
-                            <td style={{padding:'8px 14px',color:'var(--text)'}}>{d.dVenc ? new Date(d.dVenc+'T12:00:00').toLocaleDateString('pt-BR') : '—'}</td>
+                            <td style={{padding:'8px 14px',color:'var(--text)'}}>{fmtDate(d.dVenc)}</td>
                             <td style={{padding:'8px 14px',textAlign:'right',fontWeight:600,color:'var(--text)',fontFamily:'var(--mono)'}}>{fmt(d.vDup)}</td>
                           </tr>
                         ))}
@@ -919,7 +919,7 @@ export default function EntradaEstoque() {
                     {fin.parcelas>1&&(
                       <div style={{gridColumn:'1/-1',background:'var(--bg3)',borderRadius:8,padding:'10px 14px',fontSize:12}}>
                         <strong>{fin.parcelas}x</strong> de <strong style={{color:'var(--accent)',fontFamily:'var(--mono)'}}>{fmt(totalNota/fin.parcelas)}</strong>
-                        {' '}a cada <strong>{fin.intervalo_dias} dias</strong> a partir de {new Date(fin.vencimento1+'T12:00:00').toLocaleDateString('pt-BR')}
+                        {' '}a cada <strong>{fin.intervalo_dias} dias</strong> a partir de {fmtDate(fin.vencimento1)}
                       </div>
                     )}
                   </div>

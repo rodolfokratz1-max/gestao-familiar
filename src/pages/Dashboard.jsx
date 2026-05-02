@@ -2,10 +2,10 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { TrendingUp, TrendingDown, Wallet, HandCoins, CreditCard, AlertCircle, ChevronRight, Target, BarChart2, RefreshCw } from 'lucide-react'
 import { BarChartSVG, PieChartSVG, CHART_COLORS } from '../lib/charts'
+import { today } from '../lib/utils.js'
 
 const fmt = v => 'R$ ' + Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2})
 const fmtK = v => { const n=Number(v||0); return Math.abs(n)>=1000 ? 'R$'+(n/1000).toFixed(0)+'k' : 'R$'+n.toFixed(0) }
-const today = () => new Date().toISOString().split('T')[0]
 export default function Dashboard({ onNavigate }) {
   const [loading, setLoading]     = useState(true)
   const [stats, setStats]         = useState({})

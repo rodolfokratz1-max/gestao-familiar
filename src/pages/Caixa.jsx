@@ -3,9 +3,9 @@ import { supabase } from '../lib/supabase'
 import { useToast } from '../contexts/ToastContext'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { Plus, Search, Pencil, Trash2, ArrowUpCircle, ArrowDownCircle, ArrowLeftRight, X, Landmark } from 'lucide-react'
+import { today } from '../lib/utils.js'
 
 const fmt = v => 'R$ ' + Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2})
-const today = () => new Date().toISOString().split('T')[0]
 
 const FORMAS_PGTO = ['Dinheiro','PIX','Cartão Débito','Cartão Crédito','Boleto','Transferência','Cheque','Outro']
 const EMPTY_TRANSF = { data:today(), contaOrigem:'', contaDestino:'', valor:'', descricao:'Transferência entre contas', obs:'' }

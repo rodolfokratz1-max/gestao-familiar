@@ -8,10 +8,9 @@ import {
   CheckCircle, XCircle, Pencil, RefreshCw, ChevronDown, ChevronUp,
   Clock, User, Calendar, Wallet, Tag, MapPin, Hash
 } from 'lucide-react'
+import { today, fmtDate } from '../lib/utils.js'
 
 const fmt = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
-const fmtDate = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '-'
-const today = () => new Date().toISOString().split('T')[0]
 
 const TIPOS = [
   { id: 'todos',      label: 'Todos',      icon: MessageCircle, color: 'var(--accent)' },

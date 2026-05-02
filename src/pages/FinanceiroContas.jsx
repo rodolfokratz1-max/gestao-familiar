@@ -6,9 +6,9 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import { Plus, Search, Pencil, Trash2, Power, CheckCircle, CreditCard, ChevronDown, ChevronUp } from 'lucide-react'
 import { SelectCategoria } from '../lib/planoContas'
 import { bloquear, tentarDesbloquear, verificarExclusao } from '../lib/integridade'
+import { today } from '../lib/utils.js'
 
 const fmt = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
-const today = () => new Date().toISOString().split('T')[0]
 
 const FORMAS_PGTO = ['Dinheiro','PIX','Cartão de Crédito','Cartão de Débito','Boleto','Transferência','Cheque','Outro']
 

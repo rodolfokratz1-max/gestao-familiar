@@ -4,9 +4,9 @@ import { useToast } from '../contexts/ToastContext'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { Plus, Search, Pencil, Trash2, Power, Wrench } from 'lucide-react'
+import { today } from '../lib/utils.js'
 
 const fmt = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
-const today = () => new Date().toISOString().split('T')[0]
 const EMPTY = { data_abertura: today(), bem: '', tipo: '', descricao: '', responsavel: '', custo: '', status: 'pendente', data_conclusao: '', obs: '', ativo: true }
 
 export default function Manutencoes() {

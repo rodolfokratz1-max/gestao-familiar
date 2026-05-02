@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { BarChartSVG, PieChartSVG, CHART_COLORS } from '../lib/charts'
 import { FileText, TrendingUp, TrendingDown, BarChart2, ArrowLeftRight, Landmark } from 'lucide-react'
+import { fmtDate } from '../lib/utils.js'
 
 const fmt  = v => 'R$ ' + Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2})
 const MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
@@ -296,7 +297,7 @@ export default function Relatorios() {
                           return (
                             <tr key={r.id||Math.random()} style={{opacity:isTransf?0.6:1}}>
                               <td style={{fontSize:12,color:'var(--text2)',whiteSpace:'nowrap'}}>
-                                {r.data?new Date(r.data+'T12:00:00').toLocaleDateString('pt-BR'):'—'}
+                                {fmtDate(r.data)}
                               </td>
                               <td style={{fontWeight:600}}>{r.descricao}</td>
                               <td>{r.categoria?<span className="badge badge-gray" style={{fontSize:11}}>{r.categoria}</span>:'—'}</td>

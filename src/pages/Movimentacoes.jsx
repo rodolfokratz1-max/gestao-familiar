@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { Search, TrendingUp, TrendingDown, ArrowLeftRight } from 'lucide-react'
+import { fmtDate } from '../lib/utils.js'
 
 const fmt = v => 'R$ ' + Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2})
 
@@ -109,7 +110,7 @@ export default function Movimentacoes() {
                     return (
                       <tr key={r.id}>
                         <td style={{ whiteSpace:'nowrap', color:'var(--text2)', fontSize:12 }}>
-                          {r.data ? new Date(r.data+'T12:00:00').toLocaleDateString('pt-BR') : '—'}
+                          {fmtDate(r.data)}
                         </td>
                         <td>
                           <div style={{ fontWeight:600 }}>{r.descricao}</div>
