@@ -1,0 +1,31 @@
+Ajuste no plano anterior antes de criar os arquivos.
+
+O campo pago_por do Modal de Lançamento não será um select 
+fixo — será um select dinâmico que busca da tabela 
+obras_fontes_pagamento (id, nome, ativo) no Supabase.
+
+Ajustes necessários:
+
+1. Em Obras.jsx:
+   - Carregar fontes_pagamento no useEffect (só as ativas)
+   - Select de pago_por usa essas opções dinâmicas
+   - EMPTY_LANC: pago_por: '' 
+
+2. Criar src/pages/ObrasFontes.jsx:
+   - Padrão igual às outras páginas do sistema
+   - Tabela listando as fontes cadastradas
+   - Botão ativar/desativar (não excluir)
+   - Modal para adicionar/editar nome
+   - Sem stats, sem busca complexa — página simples
+
+3. Em App.jsx:
+   - Adicionar ObrasFontes no menu dentro do grupo 
+     Obras, como subitem ou item separado com label 
+     "Fontes de Pagamento"
+   - Ícone: Wallet do lucide-react
+
+Analisa o padrão de uma página simples de cadastro 
+existente no projeto antes de criar, para seguir 
+exatamente o mesmo estilo.
+
+Depois me mostra o plano atualizado antes de executar.

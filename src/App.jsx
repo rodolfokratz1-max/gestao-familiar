@@ -22,6 +22,8 @@ import Movimentacoes from './pages/Movimentacoes'
 import FluxoCaixa from './pages/FluxoCaixa'
 import CentroCusto from './pages/CentroCusto'
 import EntradaEstoque from './pages/EntradaEstoque'
+import Obras from './pages/Obras'
+import ObrasFontes from './pages/ObrasFontes'
 import { VERSION } from './version'
 import ErrorBoundary from './components/ErrorBoundary'
 import {
@@ -29,7 +31,7 @@ import {
   Wallet, ShoppingCart, CreditCard, HandCoins, Menu, X,
   Landmark, BarChart2, LogOut, Shield, ClipboardList,
   Building2, Repeat2, ListTree, ArrowLeftRight, BarChart,
-  Target, PackagePlus, MessageCircle
+  Target, PackagePlus, MessageCircle, HardHat
 } from 'lucide-react'
 
 function getNav() {
@@ -62,6 +64,10 @@ function getNav() {
       { id: 'entrada_estoque', label: 'Entrada de Estoque',  icon: PackagePlus },
       { id: 'inbox_whatsapp',  label: 'Inbox WhatsApp',      icon: MessageCircle },
     ]},
+    { group: 'Obras', items: [
+      { id: 'obras',        label: 'Obras / Projetos',    icon: HardHat },
+      { id: 'obras_fontes', label: 'Fontes de Pagamento', icon: Wallet  },
+    ]},
     { group: 'Sistema', items: [
       { id: 'empresa',  label: 'Dados da Empresa', icon: Building2 },
       { id: 'usuarios', label: 'Usuários',          icon: Shield },
@@ -81,6 +87,7 @@ function getTitle(page) {
     fluxo_caixa:'Fluxo de Caixa', cartoes:'Cartões de Crédito',
     compras:'Compras', os:'Ordens de Serviço',
     entrada_estoque:'Entrada de Estoque (NF)', inbox_whatsapp: 'Inbox WhatsApp',
+    obras:'Obras & Projetos', obras_fontes:'Fontes de Pagamento',
     empresa:'Dados da Empresa', usuarios:'Gerenciar Usuários',
   }
   return map[page] || ''
@@ -107,6 +114,8 @@ function PageContent({ page, onNavigate }) {
   if (page === 'centro_custo')    return <CentroCusto />
   if (page === 'entrada_estoque') return <EntradaEstoque />
   if (page === 'inbox_whatsapp') return <InboxWhatsApp />
+  if (page === 'obras')          return <Obras />
+  if (page === 'obras_fontes')   return <ObrasFontes />
   if (page === 'empresa')         return <Empresa />
   if (page === 'usuarios')        return <Usuarios />
   return null
