@@ -6,7 +6,7 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import {
   Plus, Search, Pencil, Trash2, Power, HardHat,
   CheckCircle, ChevronDown, ChevronUp, Wallet,
-  BarChart2, X, AlertCircle, ArrowDownCircle
+  AlertCircle, Camera, X, TrendingUp, TrendingDown
 } from 'lucide-react'
 import { today, fmtDate } from '../lib/utils.js'
 
@@ -27,7 +27,7 @@ const EMPTY_OBRA = {
 }
 const EMPTY_LANC = {
   tipo: 'despesa', descricao: '', valor: '', fonte_id: '', pago_por: '',
-  reembolsavel: false, data_ref: today(), obs: ''
+  conta_id: '', reembolsavel: false, data_ref: today(), obs: '', imagem_url: ''
 }
 
 export default function Obras() {
@@ -58,12 +58,13 @@ export default function Obras() {
   const [editingLanc, setEditingLanc] = useState(null)
   const [deletingLanc, setDeletingLanc] = useState(null)
   const [savingLanc, setSavingLanc]   = useState(false)
+  const [fotoModal, setFotoModal]     = useState(null)
 
   useEffect(() => {
     load()
     supabase.from('pessoas').select('id,nome').in('tipo', ['cliente', 'ambos']).eq('ativo', true).order('nome')
       .then(({ data }) => setClientes(data || []))
-    supabase.from('obras_fontes_pagamento').select('id,nome,tipo,conta_id').eq('ativo', true).order('nome')
+    supabase.from('obras_fontes_pagamento').select('id,nome,tipo').eq('ativo', true).order('nome')
       .then(({ data }) => setFontes(data || []))
     supabase.from('contas').select('id,nome,saldo_atual').eq('ativo', true).order('nome')
       .then(({ data }) => setContas(data || []))
@@ -93,8 +94,11 @@ export default function Obras() {
     setLoading(false)
   }
 
-  const lancsDaObra = id => lancamentosMap[id] || []
-  const gastoObra   = id => lancsDaObra(id).filter(l => l.tipo === 'despesa').reduce((s, l) => s + Number(l.valor || 0), 0)
+  const lancsDaObra  = id => lancamentosMap[id] || []
+  const gastoObra    = id => lancsDaObra(id).filter(l => l.tipo === 'despesa').reduce((s, l) => s + Number(l.valor || 0), 0)
+  const recebidoObra = id => lancsDaObra(id).filter(l => l.tipo === 'receita').reduce((s, l) => s + Number(l.valor || 0), 0)
+  // Percentual gasto em relação ao contratado (para alerta)
+  const pctGasto = (contratado, gasto) => contratado > 0 ? (gasto / contratado) * 100 : 0
 
   const filtered = rows.filter(r => {
     const q = search.toLowerCase()
@@ -106,7 +110,8 @@ export default function Obras() {
 
   const totalContratado = filtered.reduce((s, r) => s + Number(r.valor_contratado || 0), 0)
   const totalGasto      = filtered.reduce((s, r) => s + gastoObra(r.id), 0)
-  const totalSaldo      = totalContratado - totalGasto
+  const totalRecebido   = filtered.reduce((s, r) => s + recebidoObra(r.id), 0)
+  const totalMargem     = totalRecebido - totalGasto
 
   function openNew()   { setForm(EMPTY_OBRA); setEditing(null); setModal(true) }
   function openEdit(r) { setForm({ ...r }); setEditing(r.id); setModal(true) }
@@ -151,6 +156,13 @@ export default function Obras() {
   // ── LANÇAMENTOS ─────────────────────────────────────────────────────────────
 
   function openNewLanc()   { setFormLanc({ ...EMPTY_LANC }); setEditingLanc(null); setModalLanc(true) }
+  // Quando fonte muda no formulário, pré-preenche conta sugerida
+  function onFonteChange(fonteId) {
+    const fonte = fontes.find(f => f.id === fonteId)
+    fl('fonte_id', fonteId)
+    if (fonte?.conta_id) fl('conta_id', fonte.conta_id)
+    else if (!fonteId) fl('conta_id', '')
+  }
   function openEditLanc(l) { setFormLanc({ ...l }); setEditingLanc(l.id); setModalLanc(true) }
 
   // Retorna a fonte selecionada no formulário
@@ -172,9 +184,11 @@ export default function Obras() {
         valor,
         pago_por:    fonte ? fonte.nome : (formLanc.pago_por || ''),
         fonte_id:    formLanc.fonte_id || null,
+        conta_id:    formLanc.conta_id || null,
         reembolsavel: formLanc.reembolsavel,
         data_ref:    formLanc.data_ref || today(),
         obs:         formLanc.obs || null,
+        imagem_url:  formLanc.imagem_url || null,
       }
 
       let lancId = editingLanc
@@ -194,7 +208,7 @@ export default function Obras() {
       //   - Tem fonte vinculada
       //   - A fonte é do tipo que movimenta caixa (empresa, proprio, dinheiro_cliente)
       //   - A fonte tem uma conta vinculada
-      if (!editingLanc && fonte && FONTES_MOVEM_CAIXA.includes(fonte.tipo) && fonte.conta_id) {
+      if (!editingLanc && fonte && FONTES_MOVEM_CAIXA.includes(fonte.tipo) && formLanc.conta_id) {
         const tipoCaixa = formLanc.tipo === 'despesa' ? 'saida' : 'entrada'
         const { data: caixaRow, error: cErr } = await supabase.from('caixa').insert({
           data:          formLanc.data_ref || today(),
@@ -202,7 +216,7 @@ export default function Obras() {
           descricao:     `[Obra: ${obraSel.nome}] ${formLanc.descricao}`,
           valor,
           categoria:     'Obras',
-          conta_id:      fonte.conta_id,
+          conta_id:      formLanc.conta_id,
           forma_pgto:    'Outro',
           obs:           `Obra: ${obraSel.nome} | Fonte: ${fonte.nome}`,
           origem_tabela: 'obra_lancamentos',
@@ -210,17 +224,14 @@ export default function Obras() {
         }).select().single()
 
         if (!cErr && caixaRow) {
-          // Guarda referência do caixa no lançamento
           await supabase.from('obra_lancamentos').update({ caixa_id: caixaRow.id }).eq('id', lancId)
 
-          // Atualiza saldo da conta
-          const conta = contas.find(c => c.id === fonte.conta_id)
+          const conta = contas.find(c => c.id === formLanc.conta_id)
           if (conta) {
             const saldoAtual = Number(conta.saldo_atual || 0)
             const novoSaldo  = tipoCaixa === 'saida' ? saldoAtual - valor : saldoAtual + valor
-            await supabase.from('contas').update({ saldo_atual: novoSaldo }).eq('id', fonte.conta_id)
-            // Atualiza state local para próximas operações na mesma sessão
-            setContas(prev => prev.map(c => c.id === fonte.conta_id ? { ...c, saldo_atual: novoSaldo } : c))
+            await supabase.from('contas').update({ saldo_atual: novoSaldo }).eq('id', formLanc.conta_id)
+            setContas(prev => prev.map(c => c.id === formLanc.conta_id ? { ...c, saldo_atual: novoSaldo } : c))
           }
         }
       }
@@ -259,21 +270,28 @@ export default function Obras() {
   const f  = (k, v) => setForm(p => ({ ...p, [k]: v }))
   const fl = (k, v) => setFormLanc(p => ({ ...p, [k]: v }))
 
+  // Exposição do modal de foto para PainelDetalhe (filho sem prop drilling)
+  React.useEffect(() => { window.__obrasFotoModal = setFotoModal; return () => { delete window.__obrasFotoModal } }, [setFotoModal])
+
   return (
     <div>
       {/* Stats */}
-      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(3,1fr)', marginBottom: 16 }}>
+      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(4,1fr)', marginBottom: 16 }}>
         <div className="stat-card blue">
           <div className="stat-label">Total Contratos</div>
           <div className="stat-value blue text-mono">{fmt(totalContratado)}</div>
+        </div>
+        <div className="stat-card green">
+          <div className="stat-label">Total Recebido</div>
+          <div className="stat-value green text-mono">{fmt(totalRecebido)}</div>
         </div>
         <div className="stat-card red">
           <div className="stat-label">Total Gastos</div>
           <div className="stat-value red text-mono">{fmt(totalGasto)}</div>
         </div>
-        <div className="stat-card green">
-          <div className="stat-label">Saldo</div>
-          <div className="stat-value green text-mono">{fmt(totalSaldo)}</div>
+        <div className={`stat-card ${totalMargem >= 0 ? 'green' : 'red'}`}>
+          <div className="stat-label">Margem (rec. − gastos)</div>
+          <div className={`stat-value ${totalMargem >= 0 ? 'green' : 'red'} text-mono`}>{fmt(totalMargem)}</div>
         </div>
       </div>
 
@@ -305,15 +323,20 @@ export default function Obras() {
                   <thead>
                     <tr>
                       <th>Nome</th><th>Cliente</th><th>Status</th>
-                      <th>Contratado</th><th>Gasto</th><th>Saldo</th>
+                      <th>Contratado</th><th>Recebido</th><th>Gasto</th><th>Margem</th>
                       <th>Início</th><th>Fim</th><th>Ações</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filtered.map(r => {
-                      const gasto  = gastoObra(r.id)
-                      const saldo  = Number(r.valor_contratado || 0) - gasto
-                      const isOpen = obraSel?.id === r.id
+                      const gasto     = gastoObra(r.id)
+                      const recebido  = recebidoObra(r.id)
+                      const contrat   = Number(r.valor_contratado || 0)
+                      const margem    = recebido - gasto
+                      const pct       = pctGasto(contrat, gasto)
+                      const alerta    = contrat > 0 && pct >= 80
+                      const estourou  = contrat > 0 && gasto > contrat
+                      const isOpen    = obraSel?.id === r.id
                       return (
                         <React.Fragment key={r.id}>
                           <tr
@@ -328,10 +351,17 @@ export default function Obras() {
                             </td>
                             <td className="text-muted">{r.cliente_nome || '—'}</td>
                             <td><span className={`badge ${STATUS_COLOR[r.status] || 'badge-gray'}`}>{STATUS_LABEL[r.status] || r.status}</span></td>
-                            <td className="text-mono font-bold">{r.valor_contratado ? fmt(r.valor_contratado) : '—'}</td>
+                            <td className="text-mono font-bold">
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                {r.valor_contratado ? fmt(r.valor_contratado) : '—'}
+                                {estourou && <span title="Orçamento estourado!" style={{ fontSize: 10, fontWeight: 700, color: '#fff', background: 'var(--red)', borderRadius: 4, padding: '1px 5px' }}>!</span>}
+                                {alerta && !estourou && <span title={`${Math.round(pct)}% do orçamento usado`} style={{ fontSize: 10, fontWeight: 700, color: 'var(--yellow)', border: '1px solid var(--yellow)', borderRadius: 4, padding: '1px 5px' }}>{Math.round(pct)}%</span>}
+                              </div>
+                            </td>
+                            <td className="text-mono" style={{ color: recebido > 0 ? 'var(--green)' : 'var(--text3)', fontSize: 12 }}>{recebido > 0 ? fmt(recebido) : '—'}</td>
                             <td className="text-mono" style={{ color: gasto > 0 ? 'var(--red)' : 'var(--text3)', fontSize: 12 }}>{fmt(gasto)}</td>
-                            <td className="text-mono" style={{ color: saldo >= 0 ? 'var(--green)' : 'var(--red)', fontSize: 12, fontWeight: 700 }}>
-                              {r.valor_contratado ? fmt(saldo) : '—'}
+                            <td className="text-mono" style={{ color: margem >= 0 ? 'var(--green)' : 'var(--red)', fontSize: 12, fontWeight: 700 }}>
+                              {recebido > 0 || gasto > 0 ? fmt(margem) : '—'}
                             </td>
                             <td className="text-muted" style={{ fontSize: 12 }}>{fmtDate(r.data_inicio)}</td>
                             <td className="text-muted" style={{ fontSize: 12 }}>{fmtDate(r.data_fim)}</td>
@@ -347,7 +377,7 @@ export default function Obras() {
                           {/* Painel de detalhe — expande inline */}
                           {isOpen && (
                             <tr>
-                              <td colSpan={9} style={{ padding: 0, background: 'var(--bg2)', borderBottom: '2px solid var(--border)' }}>
+                              <td colSpan={10} style={{ padding: 0, background: 'var(--bg2)', borderBottom: '2px solid var(--border)' }}>
                                 <PainelDetalhe
                                   obra={r}
                                   lancs={lancsDaObra(r.id)}
@@ -440,29 +470,36 @@ export default function Obras() {
             </div>
             <div className="form-group">
               <label className="form-label">Fonte de Pagamento</label>
-              <select className="form-select" value={formLanc.fonte_id} onChange={e => fl('fonte_id', e.target.value)}>
+              <select className="form-select" value={formLanc.fonte_id} onChange={e => onFonteChange(e.target.value)}>
                 <option value="">Selecionar...</option>
                 {fontes.map(fp => (
                   <option key={fp.id} value={fp.id}>{fp.nome}</option>
                 ))}
               </select>
-              {/* Aviso se fonte não movimenta caixa */}
               {fonteAtual && fonteAtual.tipo === FONTE_NAO_CAIXA && (
                 <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--yellow)' }}>
                   <AlertCircle size={12} /> Cartão do cliente — não gera lançamento no caixa
                 </div>
               )}
-              {fonteAtual && FONTES_MOVEM_CAIXA.includes(fonteAtual.tipo) && !fonteAtual.conta_id && (
-                <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--yellow)' }}>
-                  <AlertCircle size={12} /> Fonte sem conta vinculada — configure em Fontes de Pagamento
-                </div>
-              )}
-              {fonteAtual && FONTES_MOVEM_CAIXA.includes(fonteAtual.tipo) && fonteAtual.conta_id && (
-                <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--green)' }}>
-                  <CheckCircle size={12} /> Vai gerar lançamento no caixa automaticamente
-                </div>
-              )}
             </div>
+            {/* Conta — só aparece quando a fonte movimenta caixa */}
+            {fonteAtual && FONTES_MOVEM_CAIXA.includes(fonteAtual.tipo) && (
+              <div className="form-group">
+                <label className="form-label">Conta *</label>
+                <select className="form-select" value={formLanc.conta_id} onChange={e => fl('conta_id', e.target.value)}>
+                  <option value="">Selecionar conta...</option>
+                  {contas.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                </select>
+                {formLanc.conta_id
+                  ? <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--green)' }}>
+                      <CheckCircle size={12} /> Vai gerar lançamento no caixa automaticamente
+                    </div>
+                  : <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--yellow)' }}>
+                      <AlertCircle size={12} /> Selecione a conta para registrar no caixa
+                    </div>
+                }
+              </div>
+            )}
             <div className="form-group">
               <label className="form-label">Data</label>
               <input className="form-input" type="date" value={formLanc.data_ref} onChange={e => fl('data_ref', e.target.value)} />
@@ -472,6 +509,11 @@ export default function Obras() {
                 <input type="checkbox" checked={formLanc.reembolsavel} onChange={e => fl('reembolsavel', e.target.checked)} style={{ width: 15, height: 15 }} />
                 Reembolsável (cliente deve ressarcir)
               </label>
+            </div>
+            <div className="form-group" style={{ gridColumn: '1/-1' }}>
+              <label className="form-label">URL do Comprovante (foto)</label>
+              <input className="form-input" value={formLanc.imagem_url || ''} onChange={e => fl('imagem_url', e.target.value)}
+                placeholder="URL da imagem do comprovante (opcional)" />
             </div>
             <div className="form-group" style={{ gridColumn: '1/-1' }}>
               <label className="form-label">Observações</label>
@@ -490,6 +532,20 @@ export default function Obras() {
         <ConfirmDialog
           message={`Excluir o lançamento "${deletingLanc.descricao}"?${deletingLanc.caixa_id ? '\n\nAtenção: o lançamento correspondente no Caixa também será removido e o saldo da conta será revertido.' : ''}`}
           onConfirm={destroyLanc} onCancel={() => setDeletingLanc(null)} />
+      )}
+
+      {/* Modal lightbox foto/comprovante */}
+      {fotoModal && (
+        <div onClick={() => setFotoModal(null)}
+          style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div onClick={e => e.stopPropagation()} style={{ position: 'relative' }}>
+            <button onClick={() => setFotoModal(null)}
+              style={{ position: 'absolute', top: -12, right: -12, zIndex: 1, width: 32, height: 32, borderRadius: '50%', background: 'var(--bg2)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+              <X size={15} />
+            </button>
+            <img src={fotoModal} alt="Comprovante" style={{ maxWidth: '85vw', maxHeight: '85vh', borderRadius: 12, objectFit: 'contain' }} />
+          </div>
+        </div>
       )}
     </div>
   )
@@ -558,9 +614,9 @@ function PainelDetalhe({ obra, lancs, fontes, tab, onTab, onNewLanc, onEditLanc,
             : <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ background: 'var(--bg3)' }}>
-                    {['Tipo', 'Descrição', 'Valor', 'Fonte / Pago por', 'Reemb.', 'Caixa', 'Data', ''].map((h, i) => (
+                    {['Tipo', 'Descrição', 'Valor', 'Fonte / Pago por', 'Reemb.', 'Foto', 'Caixa', 'Data', ''].map((h, i) => (
                       <th key={i} style={{
-                        padding: '7px 10px', fontSize: 10, textAlign: i === 2 ? 'right' : i === 4 || i === 5 ? 'center' : 'left',
+                        padding: '7px 10px', fontSize: 10, textAlign: i === 2 ? 'right' : i === 4 || i === 5 || i === 6 ? 'center' : 'left',
                         color: 'var(--text3)', fontWeight: 700, textTransform: 'uppercase'
                       }}>{h}</th>
                     ))}
@@ -583,6 +639,14 @@ function PainelDetalhe({ obra, lancs, fontes, tab, onTab, onNewLanc, onEditLanc,
                         {l.reembolsavel
                           ? <CheckCircle size={13} color="var(--green)" />
                           : <span style={{ color: 'var(--text3)' }}>—</span>}
+                      </td>
+                      <td style={{ padding: '7px 10px', textAlign: 'center' }}>
+                        {l.imagem_url
+                          ? <button onClick={() => window.__obrasFotoModal?.(l.imagem_url)}
+                              style={{ background: 'rgba(79,142,247,.1)', border: 'none', borderRadius: 6, padding: '3px 7px', cursor: 'pointer', color: 'var(--accent)', display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11 }}>
+                              <Camera size={11} /> Ver
+                            </button>
+                          : <span style={{ color: 'var(--text3)', fontSize: 10 }}>—</span>}
                       </td>
                       <td style={{ padding: '7px 10px', textAlign: 'center' }}>
                         {l.caixa_id

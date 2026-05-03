@@ -2,14 +2,14 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useToast } from '../contexts/ToastContext'
 import Modal from '../components/Modal'
-import { Plus, Pencil, Power, Wallet, AlertCircle, CheckCircle } from 'lucide-react'
+import { Plus, Pencil, Power, Wallet, AlertCircle, CheckCircle, Landmark } from 'lucide-react'
 
 const TIPOS_FONTE = [
-  { value: 'empresa',           label: 'Empresa',            desc: 'Gera saída no caixa da empresa' },
-  { value: 'proprio',           label: 'Próprio',            desc: 'Gera saída no caixa pessoal' },
-  { value: 'dinheiro_cliente',  label: 'Dinheiro do Cliente', desc: 'Gera entrada/saída no caixa (adiantamento)' },
-  { value: 'cartao_cliente',    label: 'Cartão do Cliente',  desc: 'NÃO movimenta o caixa' },
-  { value: 'outro',             label: 'Outro',              desc: 'Sem integração com caixa' },
+  { value: 'empresa',          label: 'Empresa',             desc: 'Gera saída no caixa — conta escolhida no lançamento' },
+  { value: 'proprio',          label: 'Próprio',             desc: 'Gera saída no caixa — conta escolhida no lançamento' },
+  { value: 'dinheiro_cliente', label: 'Dinheiro do Cliente', desc: 'Gera entrada/saída no caixa — conta escolhida no lançamento' },
+  { value: 'cartao_cliente',   label: 'Cartão do Cliente',   desc: 'NÃO movimenta o caixa' },
+  { value: 'outro',            label: 'Outro',               desc: 'Sem integração com caixa' },
 ]
 
 const TIPOS_MOVEM_CAIXA = ['empresa', 'proprio', 'dinheiro_cliente']
@@ -19,11 +19,12 @@ const EMPTY = { nome: '', tipo: 'empresa', conta_id: '', ativo: true }
 export default function ObrasFontes() {
   const toast = useToast()
   const [rows, setRows]       = useState([])
-  const [contas, setContas]   = useState([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal]     = useState(false)
   const [editing, setEditing] = useState(null)
   const [form, setForm]       = useState(EMPTY)
+
+  const [contas, setContas] = useState([])
 
   useEffect(() => {
     load()
@@ -63,8 +64,6 @@ export default function ObrasFontes() {
 
   const tipoLabel = t => TIPOS_FONTE.find(x => x.value === t)?.label || t
   const moveCaixa = t => TIPOS_MOVEM_CAIXA.includes(t)
-  const nomeConta = id => contas.find(c => c.id === id)?.nome || '—'
-
   const f = (k, v) => setForm(p => ({ ...p, [k]: v }))
   const tipoAtual = TIPOS_FONTE.find(t => t.value === form.tipo)
 
@@ -74,8 +73,8 @@ export default function ObrasFontes() {
     <div>
       <div style={{ marginBottom: 12, padding: '10px 14px', background: 'rgba(79,142,247,.07)', border: '1px solid rgba(79,142,247,.2)', borderRadius: 8, fontSize: 12, color: 'var(--text2)' }}>
         <strong style={{ color: 'var(--accent)' }}>Como funciona:</strong>{' '}
-        Fontes do tipo <em>Empresa</em>, <em>Próprio</em> ou <em>Dinheiro do Cliente</em> geram lançamentos automáticos no Caixa quando você registra uma despesa/receita na Obra.
-        <em>Cartão do Cliente</em> não movimenta o caixa — apenas registra o gasto na obra.
+        A fonte define <em>quem paga</em> (Empresa, Cliente, Próprio).
+        A conta bancária é escolhida em cada lançamento — assim um PIX do cliente pode cair em qualquer conta, sem precisar cadastrar uma fonte por conta.
       </div>
 
       <div className="toolbar">
@@ -92,7 +91,7 @@ export default function ObrasFontes() {
                   <tr>
                     <th>Nome</th>
                     <th>Tipo</th>
-                    <th>Conta vinculada</th>
+                    <th>Conta sugerida</th>
                     <th style={{ textAlign: 'center' }}>Movimenta Caixa</th>
                     <th style={{ textAlign: 'center' }}>Situação</th>
                     <th>Ações</th>
@@ -109,9 +108,10 @@ export default function ObrasFontes() {
                       </td>
                       <td style={{ fontSize: 12, color: 'var(--text2)' }}>
                         {moveCaixa(r.tipo)
-                          ? (r.conta_id ? nomeConta(r.conta_id) : <span style={{ color: 'var(--yellow)', fontSize: 11 }}>⚠ Sem conta</span>)
-                          : <span style={{ color: 'var(--text3)' }}>—</span>
-                        }
+                          ? (r.conta_id
+                              ? <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><Landmark size={11} />{contas.find(c => c.id === r.conta_id)?.nome || '—'}</span>
+                              : <span style={{ color: 'var(--text3)', fontStyle: 'italic', fontSize: 11 }}>Sem sugestão</span>)
+                          : <span style={{ color: 'var(--text3)' }}>—</span>}
                       </td>
                       <td style={{ textAlign: 'center' }}>
                         {moveCaixa(r.tipo)
@@ -145,13 +145,10 @@ export default function ObrasFontes() {
               <input className="form-input" value={form.nome} onChange={e => f('nome', e.target.value)}
                 placeholder="Ex: Empresa, Pessoal, João..." autoFocus />
             </div>
-
             <div className="form-group">
               <label className="form-label">Tipo</label>
-              <select className="form-select" value={form.tipo} onChange={e => f('tipo', e.target.value)}>
-                {TIPOS_FONTE.map(t => (
-                  <option key={t.value} value={t.value}>{t.label}</option>
-                ))}
+              <select className="form-select" value={form.tipo} onChange={e => { f('tipo', e.target.value); if (!TIPOS_MOVEM_CAIXA.includes(e.target.value)) f('conta_id', '') }}>
+                {TIPOS_FONTE.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
               </select>
               {tipoAtual && (
                 <div style={{ marginTop: 6, fontSize: 11, color: moveCaixa(form.tipo) ? 'var(--green)' : 'var(--text3)', display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -160,17 +157,15 @@ export default function ObrasFontes() {
                 </div>
               )}
             </div>
-
-            {/* Conta vinculada — só exibe quando o tipo movimenta caixa */}
             {TIPOS_MOVEM_CAIXA.includes(form.tipo) && (
               <div className="form-group">
-                <label className="form-label">Conta vinculada</label>
+                <label className="form-label">Conta sugerida (padrão no lançamento)</label>
                 <select className="form-select" value={form.conta_id} onChange={e => f('conta_id', e.target.value)}>
-                  <option value="">Selecionar conta...</option>
+                  <option value="">Sem sugestão</option>
                   {contas.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
                 </select>
-                <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 5 }}>
-                  Os lançamentos desta fonte serão creditados/debitados nesta conta do Caixa.
+                <div style={{ marginTop: 5, fontSize: 11, color: 'var(--text3)' }}>
+                  Será pré-selecionada no lançamento — pode ser trocada caso a caso.
                 </div>
               </div>
             )}
