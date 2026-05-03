@@ -9,6 +9,7 @@ import {
   AlertCircle, Camera, X, TrendingUp, TrendingDown
 } from 'lucide-react'
 import { today, fmtDate } from '../lib/utils.js'
+import UploadComprovante from '../components/UploadComprovante'
 
 const fmt = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
 
@@ -511,9 +512,11 @@ export default function Obras() {
               </label>
             </div>
             <div className="form-group" style={{ gridColumn: '1/-1' }}>
-              <label className="form-label">URL do Comprovante (foto)</label>
-              <input className="form-input" value={formLanc.imagem_url || ''} onChange={e => fl('imagem_url', e.target.value)}
-                placeholder="URL da imagem do comprovante (opcional)" />
+              <UploadComprovante
+                value={formLanc.imagem_url || ''}
+                onChange={url => fl('imagem_url', url)}
+                pasta="obras"
+              />
             </div>
             <div className="form-group" style={{ gridColumn: '1/-1' }}>
               <label className="form-label">Observações</label>
