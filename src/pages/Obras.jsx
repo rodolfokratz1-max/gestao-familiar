@@ -28,7 +28,7 @@ const EMPTY_OBRA = {
 }
 const EMPTY_LANC = {
   tipo: 'despesa', descricao: '', valor: '', fonte_id: '', pago_por: '',
-  conta_id: '', reembolsavel: false, data_ref: today(), obs: '', imagem_url: ''
+  conta_id: '', reembolsavel: false, data_ref: today(), obs: '', imagens_url: []
 }
 
 export default function Obras() {
@@ -59,7 +59,8 @@ export default function Obras() {
   const [editingLanc, setEditingLanc] = useState(null)
   const [deletingLanc, setDeletingLanc] = useState(null)
   const [savingLanc, setSavingLanc]   = useState(false)
-  const [fotoModal, setFotoModal]     = useState(null)
+  const [fotoModal, setFotoModal]     = useState(null)  // string | string[]
+  const [fotoIdx, setFotoIdx]           = useState(0)
 
   useEffect(() => {
     load()
@@ -190,7 +191,11 @@ export default function Obras() {
       }
     })
   }
-  function openEditLanc(l) { setFormLanc({ ...l }); setEditingLanc(l.id); setModalLanc(true) }
+  function openEditLanc(l) {
+    setFormLanc({ ...l, imagens_url: Array.isArray(l.imagens_url) ? l.imagens_url : (l.imagens_url ? [l.imagens_url] : []) })
+    setEditingLanc(l.id)
+    setModalLanc(true)
+  }
 
   // Retorna a fonte selecionada no formulário
   const fonteAtual = fontes.find(f => f.id === formLanc.fonte_id)
@@ -215,7 +220,7 @@ export default function Obras() {
         reembolsavel: formLanc.reembolsavel,
         data_ref:    formLanc.data_ref || today(),
         obs:         formLanc.obs || null,
-        imagem_url:  formLanc.imagem_url || null,
+        imagens_url: formLanc.imagens_url || [],
       }
 
       let lancId = editingLanc
@@ -336,6 +341,23 @@ export default function Obras() {
               setContas(prev => prev.map(c => c.id === formLanc.conta_id ? { ...c, saldo_atual: novoSaldo } : c))
             }
           }
+
+          // ── Receita com PIX/Espécie → gera C/R já quitado ─────────────────
+          // Garante rastreabilidade: aparece em Contas Recebidas vinculado à obra
+          if (formLanc.tipo === 'receita' && ['proprio', 'dinheiro_cliente'].includes(fonte.tipo)) {
+            await supabase.from('contas_receber').insert({
+              descricao:    `[Obra: ${obraSel.nome}] ${formLanc.descricao}`,
+              valor,
+              data_emissao: formLanc.data_ref || today(),
+              vencimento:   formLanc.data_ref || today(),
+              data_pgto:    formLanc.data_ref || today(),
+              status:       'pago',
+              cliente_id:   obraSel.cliente_id || null,
+              obs:          `Recebimento via ${fonte.nome} | Obra: ${obraSel.nome}`,
+              origem_tabela:'obra_lancamentos',
+              origem_id:    lancId,
+            })
+          }
         }
       }
 
@@ -374,7 +396,10 @@ export default function Obras() {
   const fl = (k, v) => setFormLanc(p => ({ ...p, [k]: v }))
 
   // Exposição do modal de foto para PainelDetalhe (filho sem prop drilling)
-  React.useEffect(() => { window.__obrasFotoModal = setFotoModal; return () => { delete window.__obrasFotoModal } }, [setFotoModal])
+  React.useEffect(() => {
+    window.__obrasFotoModal = (fotos) => { setFotoIdx(0); setFotoModal(fotos) }
+    return () => { delete window.__obrasFotoModal }
+  }, [])
 
   return (
     <div>
@@ -620,9 +645,10 @@ export default function Obras() {
             </div>
             <div className="form-group" style={{ gridColumn: '1/-1' }}>
               <UploadComprovante
-                value={formLanc.imagem_url || ''}
-                onChange={url => fl('imagem_url', url)}
+                value={formLanc.imagens_url || []}
+                onChange={urls => fl('imagens_url', urls)}
                 pasta="obras"
+                maxFotos={5}
               />
             </div>
             <div className="form-group" style={{ gridColumn: '1/-1' }}>
@@ -644,19 +670,50 @@ export default function Obras() {
           onConfirm={destroyLanc} onCancel={() => setDeletingLanc(null)} />
       )}
 
-      {/* Modal lightbox foto/comprovante */}
-      {fotoModal && (
-        <div onClick={() => setFotoModal(null)}
-          style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-          <div onClick={e => e.stopPropagation()} style={{ position: 'relative' }}>
-            <button onClick={() => setFotoModal(null)}
-              style={{ position: 'absolute', top: -12, right: -12, zIndex: 1, width: 32, height: 32, borderRadius: '50%', background: 'var(--bg2)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-              <X size={15} />
-            </button>
-            <img src={fotoModal} alt="Comprovante" style={{ maxWidth: '85vw', maxHeight: '85vh', borderRadius: 12, objectFit: 'contain' }} />
+      {/* Modal lightbox foto/comprovante — suporta galeria de até 5 fotos */}
+      {fotoModal && (() => {
+        const fotos = Array.isArray(fotoModal) ? fotoModal : [fotoModal]
+        const idx   = Math.min(fotoIdx, fotos.length - 1)
+        return (
+          <div onClick={() => { setFotoModal(null); setFotoIdx(0) }}
+            style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,.9)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+            <div onClick={e => e.stopPropagation()} style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+              {/* Fechar */}
+              <button onClick={() => { setFotoModal(null); setFotoIdx(0) }}
+                style={{ position: 'absolute', top: -14, right: -14, zIndex: 1, width: 32, height: 32, borderRadius: '50%', background: 'var(--bg2)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                <X size={15} />
+              </button>
+              {/* Imagem */}
+              <img src={fotos[idx]} alt={`Comprovante ${idx + 1}`}
+                style={{ maxWidth: '82vw', maxHeight: '78vh', borderRadius: 12, objectFit: 'contain' }} />
+              {/* Navegação — só aparece se houver mais de 1 foto */}
+              {fotos.length > 1 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <button onClick={() => setFotoIdx(i => Math.max(0, i - 1))} disabled={idx === 0}
+                    style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: idx === 0 ? 'var(--text3)' : 'var(--text)', cursor: idx === 0 ? 'default' : 'pointer', fontSize: 13 }}>
+                    ‹ Ant.
+                  </button>
+                  <span style={{ fontSize: 12, color: 'var(--text3)' }}>{idx + 1} / {fotos.length}</span>
+                  <button onClick={() => setFotoIdx(i => Math.min(fotos.length - 1, i + 1))} disabled={idx === fotos.length - 1}
+                    style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: idx === fotos.length - 1 ? 'var(--text3)' : 'var(--text)', cursor: idx === fotos.length - 1 ? 'default' : 'pointer', fontSize: 13 }}>
+                    Próx. ›
+                  </button>
+                </div>
+              )}
+              {/* Thumbnails */}
+              {fotos.length > 1 && (
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {fotos.map((f, i) => (
+                    <img key={i} src={f} alt={`Foto ${i+1}`} onClick={() => setFotoIdx(i)}
+                      style={{ width: 52, height: 52, objectFit: 'cover', borderRadius: 6, cursor: 'pointer',
+                        border: i === idx ? '2px solid var(--accent)' : '2px solid transparent', opacity: i === idx ? 1 : 0.6 }} />
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
     </div>
   )
 }
@@ -751,12 +808,15 @@ function PainelDetalhe({ obra, lancs, fontes, tab, onTab, onNewLanc, onEditLanc,
                           : <span style={{ color: 'var(--text3)' }}>—</span>}
                       </td>
                       <td style={{ padding: '7px 10px', textAlign: 'center' }}>
-                        {l.imagem_url
-                          ? <button onClick={() => window.__obrasFotoModal?.(l.imagem_url)}
-                              style={{ background: 'rgba(79,142,247,.1)', border: 'none', borderRadius: 6, padding: '3px 7px', cursor: 'pointer', color: 'var(--accent)', display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11 }}>
-                              <Camera size={11} /> Ver
-                            </button>
-                          : <span style={{ color: 'var(--text3)', fontSize: 10 }}>—</span>}
+                        {(() => {
+                          const fotos = Array.isArray(l.imagens_url) ? l.imagens_url : (l.imagens_url ? [l.imagens_url] : [])
+                          return fotos.length > 0
+                            ? <button onClick={() => window.__obrasFotoModal?.(fotos)}
+                                style={{ background: 'rgba(79,142,247,.1)', border: 'none', borderRadius: 6, padding: '3px 7px', cursor: 'pointer', color: 'var(--accent)', display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11 }}>
+                                <Camera size={11} /> {fotos.length}
+                              </button>
+                            : <span style={{ color: 'var(--text3)', fontSize: 10 }}>—</span>
+                        })()}
                       </td>
                       <td style={{ padding: '7px 10px', textAlign: 'center' }}>
                         {l.caixa_id

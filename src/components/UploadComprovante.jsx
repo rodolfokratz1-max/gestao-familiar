@@ -1,135 +1,189 @@
 /**
  * UploadComprovante
- * Componente reutilizável para upload de foto/comprovante para o Supabase Storage.
+ * Upload de até maxFotos imagens para o Supabase Storage bucket "comprovantes".
  *
- * Setup necessário (uma vez só):
- *   1. Supabase → Storage → New bucket → nome: "comprovantes" → Public: ON
- *   2. Supabase → Storage → Policies → comprovantes:
- *      INSERT: authenticated  (ou anon se quiser aberto)
- *      SELECT: public
+ * Setup (uma vez só no Supabase):
+ *   Storage → New bucket → nome: "comprovantes" → Public: ON
+ *   Storage → Policies → comprovantes → INSERT: authenticated → true
  *
- * Uso:
- *   <UploadComprovante
- *     value={formLanc.imagem_url}
- *     onChange={url => fl('imagem_url', url)}
- *     pasta="obras"          // subpasta dentro do bucket (opcional)
- *   />
- *
- * Quando migrar para self-hosted: só muda VITE_SUPABASE_URL no .env.
- * O código não muda nada.
+ * Props:
+ *   value    : string[]   — array de URLs atual
+ *   onChange : (string[]) => void
+ *   pasta    : string     — subpasta dentro do bucket (ex: "obras")
+ *   maxFotos : number     — máximo de fotos (padrão 5)
+ *   label    : string
  */
 
 import { useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
-import { Camera, Upload, X, Loader, CheckCircle, AlertCircle } from 'lucide-react'
+import { Camera, Upload, X, Loader, AlertCircle, Image } from 'lucide-react'
 
-const BUCKET = 'comprovantes'
+const BUCKET  = 'comprovantes'
 const MAX_MB  = 5
 
-export default function UploadComprovante({ value, onChange, pasta = 'geral', label = 'Comprovante (foto)' }) {
+export default function UploadComprovante({
+  value    = [],
+  onChange,
+  pasta    = 'geral',
+  maxFotos = 5,
+  label    = 'Comprovantes / Fotos',
+}) {
   const [uploading, setUploading] = useState(false)
   const [erro, setErro]           = useState('')
+  const [preview, setPreview]     = useState(null)   // URL para lightbox inline
   const inputRef = useRef()
 
-  async function handleFile(e) {
-    const file = e.target.files?.[0]
-    if (!file) return
+  // Garante que value seja sempre array
+  const fotos = Array.isArray(value) ? value : (value ? [value] : [])
+  const podeAdicionar = fotos.length < maxFotos
+
+  async function handleFiles(e) {
+    const files = Array.from(e.target.files || [])
+    if (!files.length) return
 
     setErro('')
 
-    // Valida tipo
-    if (!file.type.startsWith('image/')) {
-      setErro('Apenas imagens são aceitas (JPG, PNG, WEBP...)')
-      return
+    // Valida quantas ainda cabem
+    const vagasRestantes = maxFotos - fotos.length
+    const filesToUpload  = files.slice(0, vagasRestantes)
+
+    if (files.length > vagasRestantes) {
+      setErro(`Limite de ${maxFotos} fotos. Apenas ${vagasRestantes} foram enviadas.`)
     }
 
-    // Valida tamanho
-    if (file.size > MAX_MB * 1024 * 1024) {
-      setErro(`Tamanho máximo: ${MAX_MB}MB`)
-      return
+    // Valida cada arquivo
+    for (const file of filesToUpload) {
+      if (!file.type.startsWith('image/')) {
+        setErro('Apenas imagens são aceitas (JPG, PNG, WEBP...)')
+        return
+      }
+      if (file.size > MAX_MB * 1024 * 1024) {
+        setErro(`Tamanho máximo por foto: ${MAX_MB}MB`)
+        return
+      }
     }
 
     setUploading(true)
     try {
-      // Nome único: pasta/timestamp-nomerandom.ext
-      const ext  = file.name.split('.').pop()
-      const nome = `${pasta}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
-
-      const { error: upErr } = await supabase.storage
-        .from(BUCKET)
-        .upload(nome, file, { cacheControl: '3600', upsert: false })
-
-      if (upErr) { setErro(upErr.message); return }
-
-      // Monta URL pública
-      const { data } = supabase.storage.from(BUCKET).getPublicUrl(nome)
-      onChange(data.publicUrl)
+      const novasUrls = []
+      for (const file of filesToUpload) {
+        const ext  = file.name.split('.').pop()
+        const nome = `${pasta}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+        const { error: upErr } = await supabase.storage
+          .from(BUCKET)
+          .upload(nome, file, { cacheControl: '3600', upsert: false })
+        if (upErr) { setErro(upErr.message); break }
+        const { data } = supabase.storage.from(BUCKET).getPublicUrl(nome)
+        novasUrls.push(data.publicUrl)
+      }
+      if (novasUrls.length > 0) {
+        onChange([...fotos, ...novasUrls])
+      }
     } catch (e) {
       setErro('Erro inesperado: ' + e.message)
     } finally {
       setUploading(false)
-      // Limpa o input para permitir selecionar o mesmo arquivo novamente
       if (inputRef.current) inputRef.current.value = ''
     }
   }
 
-  function remover() {
-    onChange('')
-    setErro('')
-    // Não deleta do Storage para manter histórico — o arquivo fica órfão mas preservado
+  function remover(idx) {
+    const novas = fotos.filter((_, i) => i !== idx)
+    onChange(novas)
+    if (preview === fotos[idx]) setPreview(null)
   }
 
   return (
     <div>
       <label style={{
         fontSize: 11, color: 'var(--text3)', fontWeight: 600,
-        display: 'block', marginBottom: 6,
+        display: 'block', marginBottom: 8,
         textTransform: 'uppercase', letterSpacing: '.5px'
       }}>
         {label}
+        <span style={{ marginLeft: 6, fontWeight: 400, textTransform: 'none' }}>
+          ({fotos.length}/{maxFotos})
+        </span>
       </label>
 
-      {/* Área principal */}
-      {value ? (
-        // Preview da imagem já carregada
-        <div style={{ position: 'relative', display: 'inline-block' }}>
-          <img
-            src={value}
-            alt="Comprovante"
-            style={{
-              maxHeight: 140, maxWidth: '100%', borderRadius: 8,
-              border: '1px solid var(--border)', objectFit: 'cover',
-              display: 'block'
-            }}
-          />
-          {/* Botão remover */}
-          <button
-            type="button"
-            onClick={remover}
-            title="Remover imagem"
-            style={{
-              position: 'absolute', top: -8, right: -8,
-              width: 24, height: 24, borderRadius: '50%',
-              background: 'var(--red)', border: 'none',
+      {/* Grid de fotos existentes */}
+      {fotos.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
+          {fotos.map((url, idx) => (
+            <div key={idx} style={{ position: 'relative' }}>
+              <img
+                src={url}
+                alt={`Foto ${idx + 1}`}
+                onClick={() => setPreview(url)}
+                style={{
+                  width: 80, height: 80, objectFit: 'cover',
+                  borderRadius: 8, border: '1px solid var(--border)',
+                  cursor: 'pointer', display: 'block',
+                  transition: 'opacity .15s',
+                }}
+                onMouseEnter={e => e.currentTarget.style.opacity = '.8'}
+                onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+              />
+              {/* Botão remover */}
+              <button
+                type="button"
+                onClick={() => remover(idx)}
+                title="Remover"
+                style={{
+                  position: 'absolute', top: -6, right: -6,
+                  width: 20, height: 20, borderRadius: '50%',
+                  background: 'var(--red)', border: 'none',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  cursor: 'pointer', color: '#fff',
+                }}>
+                <X size={10} />
+              </button>
+              {/* Número */}
+              <div style={{
+                position: 'absolute', bottom: 3, left: 3,
+                fontSize: 9, fontWeight: 700, color: '#fff',
+                background: 'rgba(0,0,0,.5)', borderRadius: 3, padding: '1px 4px',
+              }}>{idx + 1}</div>
+            </div>
+          ))}
+
+          {/* Slot para adicionar mais — dentro do grid */}
+          {podeAdicionar && !uploading && (
+            <button
+              type="button"
+              onClick={() => inputRef.current?.click()}
+              style={{
+                width: 80, height: 80, borderRadius: 8,
+                border: '2px dashed var(--border)',
+                background: 'var(--bg3)',
+                display: 'flex', flexDirection: 'column',
+                alignItems: 'center', justifyContent: 'center',
+                gap: 4, cursor: 'pointer', color: 'var(--text3)',
+                fontSize: 10, transition: 'border-color .15s',
+              }}
+              onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--accent)'}
+              onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}
+            >
+              <Camera size={16} />
+              <span>Adicionar</span>
+            </button>
+          )}
+
+          {/* Spinner dentro do grid durante upload */}
+          {uploading && (
+            <div style={{
+              width: 80, height: 80, borderRadius: 8,
+              background: 'var(--bg3)', border: '1px solid var(--border)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              cursor: 'pointer', color: '#fff', boxShadow: '0 2px 4px rgba(0,0,0,.2)'
             }}>
-            <X size={12} />
-          </button>
-          {/* Troca */}
-          <button
-            type="button"
-            onClick={() => inputRef.current?.click()}
-            style={{
-              marginTop: 6, display: 'flex', alignItems: 'center', gap: 5,
-              fontSize: 11, color: 'var(--accent)', background: 'none',
-              border: 'none', cursor: 'pointer', padding: 0
-            }}>
-            <Camera size={12} /> Trocar foto
-          </button>
+              <Loader size={20} style={{ animation: 'spin 1s linear infinite', color: 'var(--accent)' }} />
+            </div>
+          )}
         </div>
-      ) : (
-        // Zona de upload
+      )}
+
+      {/* Zona de upload inicial (quando não há fotos) */}
+      {fotos.length === 0 && (
         <button
           type="button"
           onClick={() => inputRef.current?.click()}
@@ -147,12 +201,11 @@ export default function UploadComprovante({ value, onChange, pasta = 'geral', la
         >
           {uploading
             ? <Loader size={20} style={{ animation: 'spin 1s linear infinite' }} />
-            : <Upload size={20} />
-          }
+            : <Upload size={20} />}
           <span style={{ fontSize: 12, fontWeight: 500 }}>
-            {uploading ? 'Enviando...' : 'Clique para selecionar ou tirar foto'}
+            {uploading ? 'Enviando...' : `Clique para adicionar fotos (máx. ${maxFotos})`}
           </span>
-          <span style={{ fontSize: 10 }}>JPG, PNG, WEBP — máx. {MAX_MB}MB</span>
+          <span style={{ fontSize: 10 }}>JPG, PNG, WEBP — máx. {MAX_MB}MB cada · No celular abre a câmera</span>
         </button>
       )}
 
@@ -163,15 +216,42 @@ export default function UploadComprovante({ value, onChange, pasta = 'geral', la
         </div>
       )}
 
-      {/* Input file oculto — aceita câmera no mobile */}
+      {/* Input file oculto — múltiplo, câmera no mobile */}
       <input
         ref={inputRef}
         type="file"
         accept="image/*"
-        capture="environment"
-        onChange={handleFile}
+        multiple
+        onChange={handleFiles}
         style={{ display: 'none' }}
       />
+
+      {/* Lightbox inline */}
+      {preview && (
+        <div
+          onClick={() => setPreview(null)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 1100,
+            background: 'rgba(0,0,0,.88)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 20,
+          }}>
+          <div onClick={e => e.stopPropagation()} style={{ position: 'relative' }}>
+            <button onClick={() => setPreview(null)}
+              style={{
+                position: 'absolute', top: -12, right: -12, zIndex: 1,
+                width: 30, height: 30, borderRadius: '50%',
+                background: 'var(--bg2)', border: '1px solid var(--border)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer',
+              }}>
+              <X size={14} />
+            </button>
+            <img src={preview} alt="Preview"
+              style={{ maxWidth: '85vw', maxHeight: '85vh', borderRadius: 10, objectFit: 'contain' }} />
+          </div>
+        </div>
+      )}
 
       <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
     </div>
