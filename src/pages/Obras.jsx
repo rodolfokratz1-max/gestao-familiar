@@ -65,7 +65,7 @@ export default function Obras() {
     load()
     supabase.from('pessoas').select('id,nome').in('tipo', ['cliente', 'ambos']).eq('ativo', true).order('nome')
       .then(({ data }) => setClientes(data || []))
-    supabase.from('obras_fontes_pagamento').select('id,nome,tipo').eq('ativo', true).order('nome')
+    supabase.from('obras_fontes_pagamento').select('id,nome,tipo,direcao,conta_id').eq('ativo', true).order('nome')
       .then(({ data }) => setFontes(data || []))
     supabase.from('contas').select('id,nome,saldo_atual').eq('ativo', true).order('nome')
       .then(({ data }) => setContas(data || []))
@@ -160,9 +160,35 @@ export default function Obras() {
   // Quando fonte muda no formulário, pré-preenche conta sugerida
   function onFonteChange(fonteId) {
     const fonte = fontes.find(f => f.id === fonteId)
-    fl('fonte_id', fonteId)
-    if (fonte?.conta_id) fl('conta_id', fonte.conta_id)
-    else if (!fonteId) fl('conta_id', '')
+    setFormLanc(prev => ({
+      ...prev,
+      fonte_id: fonteId,
+      conta_id: fonte?.conta_id || '',
+    }))
+  }
+
+  // Fontes filtradas conforme o tipo do lançamento (despesa ou receita)
+  const fontesDisponiveis = fontes.filter(f => {
+    if (!f.direcao || f.direcao === 'ambos') return true
+    if (formLanc.tipo === 'despesa') return f.direcao === 'saida'
+    if (formLanc.tipo === 'receita') return f.direcao === 'entrada'
+    return true
+  })
+
+  // Quando muda o tipo do lançamento, limpa a fonte se ela não é compatível
+  function onTipoChange(tipo) {
+    setFormLanc(prev => {
+      const fonteOk = fontes.find(f => f.id === prev.fonte_id)
+      const compativel = !fonteOk || !fonteOk.direcao || fonteOk.direcao === 'ambos'
+        || (tipo === 'despesa' && fonteOk.direcao === 'saida')
+        || (tipo === 'receita' && fonteOk.direcao === 'entrada')
+      return {
+        ...prev,
+        tipo,
+        fonte_id: compativel ? prev.fonte_id : '',
+        conta_id: compativel ? prev.conta_id : '',
+      }
+    })
   }
   function openEditLanc(l) { setFormLanc({ ...l }); setEditingLanc(l.id); setModalLanc(true) }
 
@@ -195,44 +221,120 @@ export default function Obras() {
       let lancId = editingLanc
 
       if (editingLanc) {
+        // ── Edição: atualiza o lançamento e sincroniza o caixa ───────────────
         const { error } = await supabase.from('obra_lancamentos').update(payload).eq('id', editingLanc)
         if (error) { toast(error.message, 'error'); setSavingLanc(false); return }
+
+        // Busca o lançamento anterior para saber o que havia no caixa
+        const lancAnterior = Object.values(lancamentosMap).flat().find(l => l.id === editingLanc)
+        const caixaIdAnterior = lancAnterior?.caixa_id || null
+
+        const novaFonteMoveCaixa = fonte && FONTES_MOVEM_CAIXA.includes(fonte.tipo) && formLanc.conta_id
+        const tipoCaixa = formLanc.tipo === 'despesa' ? 'saida' : 'entrada'
+
+        if (caixaIdAnterior) {
+          // Havia lançamento no caixa — busca para reverter saldo
+          const { data: caixaAnt } = await supabase.from('caixa').select('valor,tipo,conta_id').eq('id', caixaIdAnterior).single()
+
+          if (novaFonteMoveCaixa) {
+            // Ainda deve ir ao caixa: atualiza o lançamento existente
+            await supabase.from('caixa').update({
+              data:       formLanc.data_ref || today(),
+              tipo:       tipoCaixa,
+              descricao:  `[Obra: ${obraSel.nome}] ${formLanc.descricao}`,
+              valor,
+              conta_id:   formLanc.conta_id,
+              obs:        `Obra: ${obraSel.nome} | Fonte: ${fonte.nome}`,
+            }).eq('id', caixaIdAnterior)
+
+            // Reverte saldo antigo e aplica novo (mesmo que seja a mesma conta)
+            if (caixaAnt) {
+              const contaAnt = contas.find(c => c.id === caixaAnt.conta_id)
+              if (contaAnt) {
+                const deltaReverter = caixaAnt.tipo === 'saida' ? Number(caixaAnt.valor) : -Number(caixaAnt.valor)
+                const saldoRevertido = Number(contaAnt.saldo_atual || 0) + deltaReverter
+                await supabase.from('contas').update({ saldo_atual: saldoRevertido }).eq('id', caixaAnt.conta_id)
+                setContas(prev => prev.map(c => c.id === caixaAnt.conta_id ? { ...c, saldo_atual: saldoRevertido } : c))
+              }
+              // Aplica novo saldo na (possivelmente nova) conta
+              const contaNova = contas.find(c => c.id === formLanc.conta_id)
+              if (contaNova) {
+                const saldoBase = Number(contaNova.saldo_atual || 0)
+                // Se mesma conta, já foi revertida acima — busca saldo atualizado
+                const saldoAtual = caixaAnt.conta_id === formLanc.conta_id ? saldoBase + (caixaAnt.tipo === 'saida' ? Number(caixaAnt.valor) : -Number(caixaAnt.valor)) : saldoBase
+                const novoSaldo = tipoCaixa === 'saida' ? saldoAtual - valor : saldoAtual + valor
+                await supabase.from('contas').update({ saldo_atual: novoSaldo }).eq('id', formLanc.conta_id)
+                setContas(prev => prev.map(c => c.id === formLanc.conta_id ? { ...c, saldo_atual: novoSaldo } : c))
+              }
+            }
+          } else {
+            // Mudou para fonte que não movimenta caixa: remove o lançamento do caixa
+            await supabase.from('caixa').delete().eq('id', caixaIdAnterior)
+            await supabase.from('obra_lancamentos').update({ caixa_id: null }).eq('id', editingLanc)
+            // Reverte saldo
+            if (caixaAnt) {
+              const contaAnt = contas.find(c => c.id === caixaAnt.conta_id)
+              if (contaAnt) {
+                const delta = caixaAnt.tipo === 'saida' ? Number(caixaAnt.valor) : -Number(caixaAnt.valor)
+                const novoSaldo = Number(contaAnt.saldo_atual || 0) + delta
+                await supabase.from('contas').update({ saldo_atual: novoSaldo }).eq('id', caixaAnt.conta_id)
+                setContas(prev => prev.map(c => c.id === caixaAnt.conta_id ? { ...c, saldo_atual: novoSaldo } : c))
+              }
+            }
+          }
+        } else if (novaFonteMoveCaixa) {
+          // Não havia caixa antes, mas agora deve ter: cria
+          const { data: caixaRow } = await supabase.from('caixa').insert({
+            data:          formLanc.data_ref || today(),
+            tipo:          tipoCaixa,
+            descricao:     `[Obra: ${obraSel.nome}] ${formLanc.descricao}`,
+            valor,
+            categoria:     'Obras',
+            conta_id:      formLanc.conta_id,
+            forma_pgto:    'Outro',
+            obs:           `Obra: ${obraSel.nome} | Fonte: ${fonte.nome}`,
+            origem_tabela: 'obra_lancamentos',
+            origem_id:     editingLanc,
+          }).select().single()
+          if (caixaRow) {
+            await supabase.from('obra_lancamentos').update({ caixa_id: caixaRow.id }).eq('id', editingLanc)
+            const conta = contas.find(c => c.id === formLanc.conta_id)
+            if (conta) {
+              const novoSaldo = tipoCaixa === 'saida' ? Number(conta.saldo_atual || 0) - valor : Number(conta.saldo_atual || 0) + valor
+              await supabase.from('contas').update({ saldo_atual: novoSaldo }).eq('id', formLanc.conta_id)
+              setContas(prev => prev.map(c => c.id === formLanc.conta_id ? { ...c, saldo_atual: novoSaldo } : c))
+            }
+          }
+        }
+
       } else {
+        // ── Novo lançamento ───────────────────────────────────────────────────
         const { data, error } = await supabase.from('obra_lancamentos').insert(payload).select().single()
         if (error) { toast(error.message, 'error'); setSavingLanc(false); return }
         lancId = data.id
-      }
 
-      // ── Integração com caixa ──────────────────────────────────────────────
-      // Só gera lançamento no caixa quando:
-      //   - É um novo lançamento (não edição)
-      //   - Tem fonte vinculada
-      //   - A fonte é do tipo que movimenta caixa (empresa, proprio, dinheiro_cliente)
-      //   - A fonte tem uma conta vinculada
-      if (!editingLanc && fonte && FONTES_MOVEM_CAIXA.includes(fonte.tipo) && formLanc.conta_id) {
-        const tipoCaixa = formLanc.tipo === 'despesa' ? 'saida' : 'entrada'
-        const { data: caixaRow, error: cErr } = await supabase.from('caixa').insert({
-          data:          formLanc.data_ref || today(),
-          tipo:          tipoCaixa,
-          descricao:     `[Obra: ${obraSel.nome}] ${formLanc.descricao}`,
-          valor,
-          categoria:     'Obras',
-          conta_id:      formLanc.conta_id,
-          forma_pgto:    'Outro',
-          obs:           `Obra: ${obraSel.nome} | Fonte: ${fonte.nome}`,
-          origem_tabela: 'obra_lancamentos',
-          origem_id:     lancId,
-        }).select().single()
-
-        if (!cErr && caixaRow) {
-          await supabase.from('obra_lancamentos').update({ caixa_id: caixaRow.id }).eq('id', lancId)
-
-          const conta = contas.find(c => c.id === formLanc.conta_id)
-          if (conta) {
-            const saldoAtual = Number(conta.saldo_atual || 0)
-            const novoSaldo  = tipoCaixa === 'saida' ? saldoAtual - valor : saldoAtual + valor
-            await supabase.from('contas').update({ saldo_atual: novoSaldo }).eq('id', formLanc.conta_id)
-            setContas(prev => prev.map(c => c.id === formLanc.conta_id ? { ...c, saldo_atual: novoSaldo } : c))
+        if (fonte && FONTES_MOVEM_CAIXA.includes(fonte.tipo) && formLanc.conta_id) {
+          const tipoCaixa = formLanc.tipo === 'despesa' ? 'saida' : 'entrada'
+          const { data: caixaRow } = await supabase.from('caixa').insert({
+            data:          formLanc.data_ref || today(),
+            tipo:          tipoCaixa,
+            descricao:     `[Obra: ${obraSel.nome}] ${formLanc.descricao}`,
+            valor,
+            categoria:     'Obras',
+            conta_id:      formLanc.conta_id,
+            forma_pgto:    'Outro',
+            obs:           `Obra: ${obraSel.nome} | Fonte: ${fonte.nome}`,
+            origem_tabela: 'obra_lancamentos',
+            origem_id:     lancId,
+          }).select().single()
+          if (caixaRow) {
+            await supabase.from('obra_lancamentos').update({ caixa_id: caixaRow.id }).eq('id', lancId)
+            const conta = contas.find(c => c.id === formLanc.conta_id)
+            if (conta) {
+              const novoSaldo = tipoCaixa === 'saida' ? Number(conta.saldo_atual || 0) - valor : Number(conta.saldo_atual || 0) + valor
+              await supabase.from('contas').update({ saldo_atual: novoSaldo }).eq('id', formLanc.conta_id)
+              setContas(prev => prev.map(c => c.id === formLanc.conta_id ? { ...c, saldo_atual: novoSaldo } : c))
+            }
           }
         }
       }
@@ -454,7 +556,7 @@ export default function Obras() {
           <div className="form-grid form-grid-2">
             <div className="form-group">
               <label className="form-label">Tipo *</label>
-              <select className="form-select" value={formLanc.tipo} onChange={e => fl('tipo', e.target.value)}>
+              <select className="form-select" value={formLanc.tipo} onChange={e => onTipoChange(e.target.value)}>
                 <option value="despesa">Despesa</option>
                 <option value="receita">Receita</option>
               </select>
@@ -473,10 +575,15 @@ export default function Obras() {
               <label className="form-label">Fonte de Pagamento</label>
               <select className="form-select" value={formLanc.fonte_id} onChange={e => onFonteChange(e.target.value)}>
                 <option value="">Selecionar...</option>
-                {fontes.map(fp => (
+                {fontesDisponiveis.map(fp => (
                   <option key={fp.id} value={fp.id}>{fp.nome}</option>
                 ))}
               </select>
+              {!formLanc.fonte_id && fontes.length !== fontesDisponiveis.length && (
+                <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--yellow)' }}>
+                  <AlertCircle size={12} /> Fonte anterior incompatível com {formLanc.tipo === 'despesa' ? 'despesa' : 'receita'} — selecione outra
+                </div>
+              )}
               {fonteAtual && fonteAtual.tipo === FONTE_NAO_CAIXA && (
                 <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--yellow)' }}>
                   <AlertCircle size={12} /> Cartão do cliente — não gera lançamento no caixa

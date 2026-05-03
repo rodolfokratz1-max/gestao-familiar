@@ -14,7 +14,7 @@ const TIPOS_FONTE = [
 
 const TIPOS_MOVEM_CAIXA = ['empresa', 'proprio', 'dinheiro_cliente']
 
-const EMPTY = { nome: '', tipo: 'empresa', conta_id: '', ativo: true }
+const EMPTY = { nome: '', tipo: 'empresa', direcao: 'saida', conta_id: '', ativo: true }
 
 export default function ObrasFontes() {
   const toast = useToast()
@@ -40,13 +40,14 @@ export default function ObrasFontes() {
   }
 
   function openNew()   { setForm(EMPTY); setEditing(null); setModal(true) }
-  function openEdit(r) { setForm({ ...r, conta_id: r.conta_id || '' }); setEditing(r.id); setModal(true) }
+  function openEdit(r) { setForm({ ...r, conta_id: r.conta_id || '', direcao: r.direcao || 'ambos' }); setEditing(r.id); setModal(true) }
 
   async function save() {
     if (!form.nome?.trim()) return toast('Nome obrigatório', 'error')
     const payload = {
       nome:     form.nome,
       tipo:     form.tipo || 'outro',
+      direcao:  form.direcao || 'ambos',
       conta_id: TIPOS_MOVEM_CAIXA.includes(form.tipo) ? (form.conta_id || null) : null,
       ativo:    form.ativo !== false,
     }
@@ -91,6 +92,7 @@ export default function ObrasFontes() {
                   <tr>
                     <th>Nome</th>
                     <th>Tipo</th>
+                    <th>Direção</th>
                     <th>Conta sugerida</th>
                     <th style={{ textAlign: 'center' }}>Movimenta Caixa</th>
                     <th style={{ textAlign: 'center' }}>Situação</th>
@@ -105,6 +107,13 @@ export default function ObrasFontes() {
                         <span className={`badge ${moveCaixa(r.tipo) ? 'badge-blue' : 'badge-gray'}`} style={{ fontSize: 10 }}>
                           {tipoLabel(r.tipo)}
                         </span>
+                      </td>
+                      <td>
+                        {r.direcao === 'saida'
+                          ? <span className="badge badge-red"   style={{ fontSize: 10 }}>Saída</span>
+                          : r.direcao === 'entrada'
+                          ? <span className="badge badge-green" style={{ fontSize: 10 }}>Entrada</span>
+                          : <span className="badge badge-gray"  style={{ fontSize: 10 }}>Ambos</span>}
                       </td>
                       <td style={{ fontSize: 12, color: 'var(--text2)' }}>
                         {moveCaixa(r.tipo)
@@ -156,6 +165,17 @@ export default function ObrasFontes() {
                   {tipoAtual.desc}
                 </div>
               )}
+            </div>
+            <div className="form-group">
+              <label className="form-label">Direção</label>
+              <select className="form-select" value={form.direcao || 'ambos'} onChange={e => f('direcao', e.target.value)}>
+                <option value="saida">Saída — aparece só em despesas</option>
+                <option value="entrada">Entrada — aparece só em receitas</option>
+                <option value="ambos">Ambos — aparece em qualquer tipo</option>
+              </select>
+              <div style={{ marginTop: 5, fontSize: 11, color: 'var(--text3)' }}>
+                Filtra a fonte conforme o tipo do lançamento (despesa ou receita).
+              </div>
             </div>
             {TIPOS_MOVEM_CAIXA.includes(form.tipo) && (
               <div className="form-group">
