@@ -31,7 +31,8 @@ export default function UploadComprovante({
   const [uploading, setUploading] = useState(false)
   const [erro, setErro]           = useState('')
   const [preview, setPreview]     = useState(null)   // URL para lightbox inline
-  const inputRef = useRef()
+  const inputRef    = useRef()  // galeria (multiple)
+  const cameraRef   = useRef()  // câmera direta (capture)
 
   // Garante que value seja sempre array
   const fotos = Array.isArray(value) ? value : (value ? [value] : [])
@@ -147,26 +148,42 @@ export default function UploadComprovante({
             </div>
           ))}
 
-          {/* Slot para adicionar mais — dentro do grid */}
+          {/* Slots para adicionar — câmera e galeria separados */}
           {podeAdicionar && !uploading && (
-            <button
-              type="button"
-              onClick={() => inputRef.current?.click()}
-              style={{
-                width: 80, height: 80, borderRadius: 8,
-                border: '2px dashed var(--border)',
-                background: 'var(--bg3)',
-                display: 'flex', flexDirection: 'column',
-                alignItems: 'center', justifyContent: 'center',
-                gap: 4, cursor: 'pointer', color: 'var(--text3)',
-                fontSize: 10, transition: 'border-color .15s',
-              }}
-              onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--accent)'}
-              onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}
-            >
-              <Camera size={16} />
-              <span>Adicionar</span>
-            </button>
+            <>
+              {/* Câmera direta */}
+              <button type="button" onClick={() => cameraRef.current?.click()}
+                title="Tirar foto"
+                style={{
+                  width: 80, height: 80, borderRadius: 8,
+                  border: '2px dashed var(--border)', background: 'var(--bg3)',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center',
+                  justifyContent: 'center', gap: 4, cursor: 'pointer',
+                  color: 'var(--accent)', fontSize: 10, transition: 'border-color .15s',
+                }}
+                onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--accent)'}
+                onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}
+              >
+                <Camera size={18} />
+                <span>Câmera</span>
+              </button>
+              {/* Galeria */}
+              <button type="button" onClick={() => inputRef.current?.click()}
+                title="Escolher da galeria"
+                style={{
+                  width: 80, height: 80, borderRadius: 8,
+                  border: '2px dashed var(--border)', background: 'var(--bg3)',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center',
+                  justifyContent: 'center', gap: 4, cursor: 'pointer',
+                  color: 'var(--text3)', fontSize: 10, transition: 'border-color .15s',
+                }}
+                onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--accent)'}
+                onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}
+              >
+                <Upload size={16} />
+                <span>Galeria</span>
+              </button>
+            </>
           )}
 
           {/* Spinner dentro do grid durante upload */}
@@ -184,29 +201,44 @@ export default function UploadComprovante({
 
       {/* Zona de upload inicial (quando não há fotos) */}
       {fotos.length === 0 && (
-        <button
-          type="button"
-          onClick={() => inputRef.current?.click()}
-          disabled={uploading}
-          style={{
-            width: '100%', padding: '14px 16px',
-            border: `2px dashed ${erro ? 'var(--red)' : 'var(--border)'}`,
-            borderRadius: 10, background: 'var(--bg3)',
-            cursor: uploading ? 'default' : 'pointer',
-            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
-            color: 'var(--text3)', transition: 'border-color .15s',
-          }}
-          onMouseEnter={e => { if (!uploading) e.currentTarget.style.borderColor = 'var(--accent)' }}
-          onMouseLeave={e => { e.currentTarget.style.borderColor = erro ? 'var(--red)' : 'var(--border)' }}
-        >
-          {uploading
-            ? <Loader size={20} style={{ animation: 'spin 1s linear infinite' }} />
-            : <Upload size={20} />}
-          <span style={{ fontSize: 12, fontWeight: 500 }}>
-            {uploading ? 'Enviando...' : `Clique para adicionar fotos (máx. ${maxFotos})`}
-          </span>
-          <span style={{ fontSize: 10 }}>JPG, PNG, WEBP — máx. {MAX_MB}MB cada · No celular abre a câmera</span>
-        </button>
+        uploading
+          ? <div style={{ padding: '20px', display: 'flex', justifyContent: 'center' }}>
+              <Loader size={22} style={{ animation: 'spin 1s linear infinite', color: 'var(--accent)' }} />
+            </div>
+          : <div style={{ display: 'flex', gap: 10 }}>
+              {/* Câmera — input sem multiple, com capture */}
+              <button type="button" onClick={() => cameraRef.current?.click()}
+                style={{
+                  flex: 1, padding: '14px 10px',
+                  border: `2px dashed ${erro ? 'var(--red)' : 'var(--border)'}`,
+                  borderRadius: 10, background: 'var(--bg3)', cursor: 'pointer',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+                  color: 'var(--accent)', transition: 'border-color .15s',
+                }}
+                onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--accent)'}
+                onMouseLeave={e => e.currentTarget.style.borderColor = erro ? 'var(--red)' : 'var(--border)'}
+              >
+                <Camera size={22} />
+                <span style={{ fontSize: 12, fontWeight: 600 }}>Tirar Foto</span>
+                <span style={{ fontSize: 10, color: 'var(--text3)' }}>Abre a câmera</span>
+              </button>
+              {/* Galeria — input multiple */}
+              <button type="button" onClick={() => inputRef.current?.click()}
+                style={{
+                  flex: 1, padding: '14px 10px',
+                  border: `2px dashed ${erro ? 'var(--red)' : 'var(--border)'}`,
+                  borderRadius: 10, background: 'var(--bg3)', cursor: 'pointer',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+                  color: 'var(--text3)', transition: 'border-color .15s',
+                }}
+                onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--accent)'}
+                onMouseLeave={e => e.currentTarget.style.borderColor = erro ? 'var(--red)' : 'var(--border)'}
+              >
+                <Upload size={22} />
+                <span style={{ fontSize: 12, fontWeight: 600 }}>Da Galeria</span>
+                <span style={{ fontSize: 10, color: 'var(--text3)' }}>JPG, PNG, WEBP · {MAX_MB}MB máx.</span>
+              </button>
+            </div>
       )}
 
       {/* Mensagem de erro */}
@@ -216,12 +248,21 @@ export default function UploadComprovante({
         </div>
       )}
 
-      {/* Input file oculto — múltiplo, câmera no mobile */}
+      {/* Input galeria — múltiplo, sem capture */}
       <input
         ref={inputRef}
         type="file"
         accept="image/*"
         multiple
+        onChange={handleFiles}
+        style={{ display: 'none' }}
+      />
+      {/* Input câmera — sem multiple, com capture (os dois juntos são incompatíveis no mobile) */}
+      <input
+        ref={cameraRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
         onChange={handleFiles}
         style={{ display: 'none' }}
       />
