@@ -1,9 +1,13 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { useToast } from '../contexts/ToastContext'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
-import { Plus, Search, Pencil, Trash2, Power, HardHat, CheckCircle, ChevronDown, ChevronUp } from 'lucide-react'
+import {
+  Plus, Search, Pencil, Trash2, Power, HardHat,
+  CheckCircle, ChevronDown, ChevronUp, Wallet,
+  BarChart2, X, AlertCircle, ArrowDownCircle
+} from 'lucide-react'
 import { today, fmtDate } from '../lib/utils.js'
 
 const fmt = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
@@ -12,35 +16,57 @@ const STATUS_OBRA  = ['planejamento', 'em_andamento', 'concluida', 'cancelada']
 const STATUS_LABEL = { planejamento: 'Planejamento', em_andamento: 'Em Andamento', concluida: 'Concluída', cancelada: 'Cancelada' }
 const STATUS_COLOR = { planejamento: 'badge-blue', em_andamento: 'badge-yellow', concluida: 'badge-green', cancelada: 'badge-red' }
 
-const EMPTY_OBRA = { nome: '', cliente_id: '', cliente_nome: '', status: 'planejamento', valor_contratado: '', data_inicio: today(), data_fim: '', obs: '' }
-const EMPTY_LANC = { tipo: 'despesa', descricao: '', valor: '', pago_por: '', reembolsavel: false, data_ref: today(), obs: '' }
+// Fontes que movimentam o caixa real (saída de dinheiro da empresa/pessoa)
+const FONTES_MOVEM_CAIXA = ['empresa', 'proprio', 'dinheiro_cliente']
+// Cartão do cliente NÃO entra no caixa
+const FONTE_NAO_CAIXA = 'cartao_cliente'
+
+const EMPTY_OBRA = {
+  nome: '', cliente_id: '', cliente_nome: '', status: 'planejamento',
+  valor_contratado: '', data_inicio: today(), data_fim: '', obs: ''
+}
+const EMPTY_LANC = {
+  tipo: 'despesa', descricao: '', valor: '', fonte_id: '', pago_por: '',
+  reembolsavel: false, data_ref: today(), obs: ''
+}
 
 export default function Obras() {
   const toast = useToast()
-  const [rows, setRows]                   = useState([])
+  const [rows, setRows]                     = useState([])
   const [lancamentosMap, setLancamentosMap] = useState({})
-  const [clientes, setClientes]           = useState([])
-  const [fontesPagamento, setFontesPagamento] = useState([])
-  const [loading, setLoading]             = useState(true)
-  const [search, setSearch]               = useState('')
-  const [filterStatus, setFilterStatus]   = useState('')
+  const [clientes, setClientes]             = useState([])
+  const [fontes, setFontes]                 = useState([])
+  const [contas, setContas]                 = useState([])
+  const [loading, setLoading]               = useState(true)
+  const [search, setSearch]                 = useState('')
+  const [filterStatus, setFilterStatus]     = useState('')
   const [showArquivados, setShowArquivados] = useState(false)
-  const [modal, setModal]                 = useState(false)
-  const [form, setForm]                   = useState(EMPTY_OBRA)
-  const [editing, setEditing]             = useState(null)
-  const [deleting, setDeleting]           = useState(null)
-  const [obraSel, setObraSel]             = useState(null)
-  const [modalLanc, setModalLanc]         = useState(false)
-  const [formLanc, setFormLanc]           = useState(EMPTY_LANC)
-  const [editingLanc, setEditingLanc]     = useState(null)
-  const [deletingLanc, setDeletingLanc]   = useState(null)
+
+  // Modal obra
+  const [modal, setModal]     = useState(false)
+  const [form, setForm]       = useState(EMPTY_OBRA)
+  const [editing, setEditing] = useState(null)
+  const [deleting, setDeleting] = useState(null)
+
+  // Detalhe da obra
+  const [obraSel, setObraSel]       = useState(null)
+  const [tabDetalhe, setTabDetalhe] = useState('lancamentos') // 'lancamentos' | 'relatorio'
+
+  // Modal lançamento
+  const [modalLanc, setModalLanc]     = useState(false)
+  const [formLanc, setFormLanc]       = useState(EMPTY_LANC)
+  const [editingLanc, setEditingLanc] = useState(null)
+  const [deletingLanc, setDeletingLanc] = useState(null)
+  const [savingLanc, setSavingLanc]   = useState(false)
 
   useEffect(() => {
     load()
     supabase.from('pessoas').select('id,nome').in('tipo', ['cliente', 'ambos']).eq('ativo', true).order('nome')
       .then(({ data }) => setClientes(data || []))
-    supabase.from('obras_fontes_pagamento').select('id,nome').eq('ativo', true).order('nome')
-      .then(({ data }) => setFontesPagamento(data || []))
+    supabase.from('obras_fontes_pagamento').select('id,nome,tipo,conta_id').eq('ativo', true).order('nome')
+      .then(({ data }) => setFontes(data || []))
+    supabase.from('contas').select('id,nome,saldo_atual').eq('ativo', true).order('nome')
+      .then(({ data }) => setContas(data || []))
   }, [])
 
   async function load() {
@@ -50,7 +76,11 @@ export default function Obras() {
     setRows(obras || [])
     if ((obras || []).length > 0) {
       const ids = obras.map(o => o.id)
-      const { data: lancs } = await supabase.from('obra_lancamentos').select('*').in('obra_id', ids).order('data_ref', { ascending: false })
+      const { data: lancs } = await supabase
+        .from('obra_lancamentos')
+        .select('*')
+        .in('obra_id', ids)
+        .order('data_ref', { ascending: false })
       const mapa = {}
       for (const l of (lancs || [])) {
         if (!mapa[l.obra_id]) mapa[l.obra_id] = []
@@ -78,7 +108,7 @@ export default function Obras() {
   const totalGasto      = filtered.reduce((s, r) => s + gastoObra(r.id), 0)
   const totalSaldo      = totalContratado - totalGasto
 
-  function openNew()  { setForm(EMPTY_OBRA); setEditing(null); setModal(true) }
+  function openNew()   { setForm(EMPTY_OBRA); setEditing(null); setModal(true) }
   function openEdit(r) { setForm({ ...r }); setEditing(r.id); setModal(true) }
 
   async function save() {
@@ -113,24 +143,116 @@ export default function Obras() {
     toast('Excluído', 'success'); setDeleting(null); load()
   }
 
-  function selectObra(r) { setObraSel(prev => prev?.id === r.id ? null : r) }
+  function selectObra(r) {
+    if (obraSel?.id === r.id) { setObraSel(null) }
+    else { setObraSel(r); setTabDetalhe('lancamentos') }
+  }
 
-  function openNewLanc()   { setFormLanc(EMPTY_LANC); setEditingLanc(null); setModalLanc(true) }
+  // ── LANÇAMENTOS ─────────────────────────────────────────────────────────────
+
+  function openNewLanc()   { setFormLanc({ ...EMPTY_LANC }); setEditingLanc(null); setModalLanc(true) }
   function openEditLanc(l) { setFormLanc({ ...l }); setEditingLanc(l.id); setModalLanc(true) }
+
+  // Retorna a fonte selecionada no formulário
+  const fonteAtual = fontes.find(f => f.id === formLanc.fonte_id)
 
   async function saveLanc() {
     if (!formLanc.descricao?.trim()) return toast('Descrição obrigatória', 'error')
-    if (!formLanc.valor)             return toast('Valor obrigatório', 'error')
-    const payload = { ...formLanc, obra_id: obraSel.id }
-    let error
-    if (editingLanc) ({ error } = await supabase.from('obra_lancamentos').update(payload).eq('id', editingLanc))
-    else             ({ error } = await supabase.from('obra_lancamentos').insert(payload))
-    if (error) { toast(error.message, 'error'); return }
-    toast('Salvo!', 'success'); setModalLanc(false); load()
+    if (!formLanc.valor || Number(formLanc.valor) <= 0) return toast('Valor deve ser maior que zero', 'error')
+
+    setSavingLanc(true)
+    try {
+      const valor = Number(String(formLanc.valor).replace(',', '.'))
+      const fonte = fontes.find(f => f.id === formLanc.fonte_id)
+
+      const payload = {
+        obra_id:     obraSel.id,
+        tipo:        formLanc.tipo,
+        descricao:   formLanc.descricao,
+        valor,
+        pago_por:    fonte ? fonte.nome : (formLanc.pago_por || ''),
+        fonte_id:    formLanc.fonte_id || null,
+        reembolsavel: formLanc.reembolsavel,
+        data_ref:    formLanc.data_ref || today(),
+        obs:         formLanc.obs || null,
+      }
+
+      let lancId = editingLanc
+
+      if (editingLanc) {
+        const { error } = await supabase.from('obra_lancamentos').update(payload).eq('id', editingLanc)
+        if (error) { toast(error.message, 'error'); setSavingLanc(false); return }
+      } else {
+        const { data, error } = await supabase.from('obra_lancamentos').insert(payload).select().single()
+        if (error) { toast(error.message, 'error'); setSavingLanc(false); return }
+        lancId = data.id
+      }
+
+      // ── Integração com caixa ──────────────────────────────────────────────
+      // Só gera lançamento no caixa quando:
+      //   - É um novo lançamento (não edição)
+      //   - Tem fonte vinculada
+      //   - A fonte é do tipo que movimenta caixa (empresa, proprio, dinheiro_cliente)
+      //   - A fonte tem uma conta vinculada
+      if (!editingLanc && fonte && FONTES_MOVEM_CAIXA.includes(fonte.tipo) && fonte.conta_id) {
+        const tipoCaixa = formLanc.tipo === 'despesa' ? 'saida' : 'entrada'
+        const { data: caixaRow, error: cErr } = await supabase.from('caixa').insert({
+          data:          formLanc.data_ref || today(),
+          tipo:          tipoCaixa,
+          descricao:     `[Obra: ${obraSel.nome}] ${formLanc.descricao}`,
+          valor,
+          categoria:     'Obras',
+          conta_id:      fonte.conta_id,
+          forma_pgto:    'Outro',
+          obs:           `Obra: ${obraSel.nome} | Fonte: ${fonte.nome}`,
+          origem_tabela: 'obra_lancamentos',
+          origem_id:     lancId,
+        }).select().single()
+
+        if (!cErr && caixaRow) {
+          // Guarda referência do caixa no lançamento
+          await supabase.from('obra_lancamentos').update({ caixa_id: caixaRow.id }).eq('id', lancId)
+
+          // Atualiza saldo da conta
+          const conta = contas.find(c => c.id === fonte.conta_id)
+          if (conta) {
+            const saldoAtual = Number(conta.saldo_atual || 0)
+            const novoSaldo  = tipoCaixa === 'saida' ? saldoAtual - valor : saldoAtual + valor
+            await supabase.from('contas').update({ saldo_atual: novoSaldo }).eq('id', fonte.conta_id)
+            // Atualiza state local para próximas operações na mesma sessão
+            setContas(prev => prev.map(c => c.id === fonte.conta_id ? { ...c, saldo_atual: novoSaldo } : c))
+          }
+        }
+      }
+
+      toast('Lançamento salvo!', 'success')
+      setModalLanc(false)
+      load()
+    } catch (e) {
+      toast('Erro inesperado: ' + e.message, 'error')
+    } finally {
+      setSavingLanc(false)
+    }
   }
 
   async function destroyLanc() {
-    await supabase.from('obra_lancamentos').delete().eq('id', deletingLanc.id)
+    const lanc = deletingLanc
+    // Se tinha caixa vinculado, reverte
+    if (lanc.caixa_id) {
+      const { data: caixaRow } = await supabase.from('caixa').select('valor,tipo,conta_id').eq('id', lanc.caixa_id).single()
+      if (caixaRow) {
+        await supabase.from('caixa').delete().eq('id', lanc.caixa_id)
+        // Reverte saldo da conta
+        const conta = contas.find(c => c.id === caixaRow.conta_id)
+        if (conta) {
+          const delta = caixaRow.tipo === 'saida' ? Number(caixaRow.valor) : -Number(caixaRow.valor)
+          const novoSaldo = Number(conta.saldo_atual || 0) + delta
+          await supabase.from('contas').update({ saldo_atual: novoSaldo }).eq('id', caixaRow.conta_id)
+          setContas(prev => prev.map(c => c.id === caixaRow.conta_id ? { ...c, saldo_atual: novoSaldo } : c))
+        }
+      }
+    }
+    await supabase.from('obra_lancamentos').delete().eq('id', lanc.id)
     toast('Excluído', 'success'); setDeletingLanc(null); load()
   }
 
@@ -141,9 +263,18 @@ export default function Obras() {
     <div>
       {/* Stats */}
       <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(3,1fr)', marginBottom: 16 }}>
-        <div className="stat-card blue"><div className="stat-label">Total Contratos</div><div className="stat-value blue text-mono">{fmt(totalContratado)}</div></div>
-        <div className="stat-card red"><div className="stat-label">Total Gastos</div><div className="stat-value red text-mono">{fmt(totalGasto)}</div></div>
-        <div className="stat-card green"><div className="stat-label">Saldo</div><div className="stat-value green text-mono">{fmt(totalSaldo)}</div></div>
+        <div className="stat-card blue">
+          <div className="stat-label">Total Contratos</div>
+          <div className="stat-value blue text-mono">{fmt(totalContratado)}</div>
+        </div>
+        <div className="stat-card red">
+          <div className="stat-label">Total Gastos</div>
+          <div className="stat-value red text-mono">{fmt(totalGasto)}</div>
+        </div>
+        <div className="stat-card green">
+          <div className="stat-label">Saldo</div>
+          <div className="stat-value green text-mono">{fmt(totalSaldo)}</div>
+        </div>
       </div>
 
       {/* Toolbar */}
@@ -183,7 +314,6 @@ export default function Obras() {
                       const gasto  = gastoObra(r.id)
                       const saldo  = Number(r.valor_contratado || 0) - gasto
                       const isOpen = obraSel?.id === r.id
-                      const lancs  = lancsDaObra(r.id)
                       return (
                         <React.Fragment key={r.id}>
                           <tr
@@ -192,9 +322,7 @@ export default function Obras() {
                           >
                             <td className="font-bold">
                               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                {isOpen
-                                  ? <ChevronUp size={13} color="var(--accent)" />
-                                  : <ChevronDown size={13} color="var(--text3)" />}
+                                {isOpen ? <ChevronUp size={13} color="var(--accent)" /> : <ChevronDown size={13} color="var(--text3)" />}
                                 {r.nome}
                               </div>
                             </td>
@@ -216,61 +344,20 @@ export default function Obras() {
                             </td>
                           </tr>
 
-                          {/* Painel de lançamentos — expande inline */}
+                          {/* Painel de detalhe — expande inline */}
                           {isOpen && (
                             <tr>
                               <td colSpan={9} style={{ padding: 0, background: 'var(--bg2)', borderBottom: '2px solid var(--border)' }}>
-                                <div style={{ padding: '14px 20px' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                                    <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--accent)' }}>
-                                      Lançamentos — {r.nome}
-                                    </div>
-                                    <button className="btn btn-primary btn-sm" onClick={openNewLanc}>
-                                      <Plus size={13} /> Novo Lançamento
-                                    </button>
-                                  </div>
-
-                                  {lancs.length === 0
-                                    ? <div style={{ color: 'var(--text3)', fontSize: 13, padding: '4px 0' }}>Nenhum lançamento registrado.</div>
-                                    : <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                                        <thead>
-                                          <tr style={{ background: 'var(--bg3)' }}>
-                                            {['Tipo','Descrição','Valor','Pago por','Reemb.','Data',''].map((h, i) => (
-                                              <th key={i} style={{ padding: '7px 10px', fontSize: 10, textAlign: i === 2 ? 'right' : i === 4 ? 'center' : 'left', color: 'var(--text3)', fontWeight: 700, textTransform: 'uppercase' }}>{h}</th>
-                                            ))}
-                                          </tr>
-                                        </thead>
-                                        <tbody>
-                                          {lancs.map(l => (
-                                            <tr key={l.id} style={{ borderTop: '1px solid var(--border)' }}>
-                                              <td style={{ padding: '7px 10px' }}>
-                                                <span className={`badge ${l.tipo === 'despesa' ? 'badge-red' : 'badge-green'}`} style={{ fontSize: 10 }}>
-                                                  {l.tipo === 'despesa' ? 'Despesa' : 'Receita'}
-                                                </span>
-                                              </td>
-                                              <td style={{ padding: '7px 10px', fontSize: 13, fontWeight: 600 }}>{l.descricao}</td>
-                                              <td style={{ padding: '7px 10px', fontSize: 13, textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700, color: l.tipo === 'despesa' ? 'var(--red)' : 'var(--green)' }}>
-                                                {fmt(l.valor)}
-                                              </td>
-                                              <td style={{ padding: '7px 10px', fontSize: 12, color: 'var(--text2)' }}>{l.pago_por || '—'}</td>
-                                              <td style={{ padding: '7px 10px', textAlign: 'center' }}>
-                                                {l.reembolsavel
-                                                  ? <CheckCircle size={13} color="var(--green)" />
-                                                  : <span style={{ color: 'var(--text3)' }}>—</span>}
-                                              </td>
-                                              <td style={{ padding: '7px 10px', fontSize: 12, color: 'var(--text2)' }}>{fmtDate(l.data_ref)}</td>
-                                              <td style={{ padding: '4px 10px' }}>
-                                                <div className="action-btns">
-                                                  <button className="icon-btn edit" onClick={() => openEditLanc(l)}><Pencil size={13} /></button>
-                                                  <button className="icon-btn del"  onClick={() => setDeletingLanc(l)}><Trash2 size={13} /></button>
-                                                </div>
-                                              </td>
-                                            </tr>
-                                          ))}
-                                        </tbody>
-                                      </table>
-                                  }
-                                </div>
+                                <PainelDetalhe
+                                  obra={r}
+                                  lancs={lancsDaObra(r.id)}
+                                  fontes={fontes}
+                                  tab={tabDetalhe}
+                                  onTab={setTabDetalhe}
+                                  onNewLanc={openNewLanc}
+                                  onEditLanc={openEditLanc}
+                                  onDeleteLanc={setDeletingLanc}
+                                />
                               </td>
                             </tr>
                           )}
@@ -328,7 +415,11 @@ export default function Obras() {
 
       {/* Modal Lançamento */}
       {modalLanc && (
-        <Modal title={editingLanc ? 'Editar Lançamento' : 'Novo Lançamento'} onClose={() => setModalLanc(false)} onSave={saveLanc}>
+        <Modal
+          title={editingLanc ? 'Editar Lançamento' : 'Novo Lançamento'}
+          onClose={() => setModalLanc(false)}
+          onSave={saveLanc}
+        >
           <div className="form-grid form-grid-2">
             <div className="form-group">
               <label className="form-label">Tipo *</label>
@@ -338,7 +429,7 @@ export default function Obras() {
               </select>
             </div>
             <div className="form-group">
-              <label className="form-label">Valor *</label>
+              <label className="form-label">Valor (R$) *</label>
               <input className="form-input" type="number" step="0.01" value={formLanc.valor}
                 onChange={e => fl('valor', e.target.value)} placeholder="0,00" />
             </div>
@@ -348,20 +439,38 @@ export default function Obras() {
                 placeholder="Ex: Material elétrico, Mão de obra..." autoFocus />
             </div>
             <div className="form-group">
-              <label className="form-label">Pago por</label>
-              <select className="form-select" value={formLanc.pago_por} onChange={e => fl('pago_por', e.target.value)}>
+              <label className="form-label">Fonte de Pagamento</label>
+              <select className="form-select" value={formLanc.fonte_id} onChange={e => fl('fonte_id', e.target.value)}>
                 <option value="">Selecionar...</option>
-                {fontesPagamento.map(fp => <option key={fp.id} value={fp.nome}>{fp.nome}</option>)}
+                {fontes.map(fp => (
+                  <option key={fp.id} value={fp.id}>{fp.nome}</option>
+                ))}
               </select>
+              {/* Aviso se fonte não movimenta caixa */}
+              {fonteAtual && fonteAtual.tipo === FONTE_NAO_CAIXA && (
+                <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--yellow)' }}>
+                  <AlertCircle size={12} /> Cartão do cliente — não gera lançamento no caixa
+                </div>
+              )}
+              {fonteAtual && FONTES_MOVEM_CAIXA.includes(fonteAtual.tipo) && !fonteAtual.conta_id && (
+                <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--yellow)' }}>
+                  <AlertCircle size={12} /> Fonte sem conta vinculada — configure em Fontes de Pagamento
+                </div>
+              )}
+              {fonteAtual && FONTES_MOVEM_CAIXA.includes(fonteAtual.tipo) && fonteAtual.conta_id && (
+                <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--green)' }}>
+                  <CheckCircle size={12} /> Vai gerar lançamento no caixa automaticamente
+                </div>
+              )}
             </div>
             <div className="form-group">
-              <label className="form-label">Data de Referência</label>
+              <label className="form-label">Data</label>
               <input className="form-input" type="date" value={formLanc.data_ref} onChange={e => fl('data_ref', e.target.value)} />
             </div>
             <div className="form-group" style={{ gridColumn: '1/-1' }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
                 <input type="checkbox" checked={formLanc.reembolsavel} onChange={e => fl('reembolsavel', e.target.checked)} style={{ width: 15, height: 15 }} />
-                Reembolsável
+                Reembolsável (cliente deve ressarcir)
               </label>
             </div>
             <div className="form-group" style={{ gridColumn: '1/-1' }}>
@@ -379,9 +488,214 @@ export default function Obras() {
       )}
       {deletingLanc && (
         <ConfirmDialog
-          message={`Excluir o lançamento "${deletingLanc.descricao}"?`}
+          message={`Excluir o lançamento "${deletingLanc.descricao}"?${deletingLanc.caixa_id ? '\n\nAtenção: o lançamento correspondente no Caixa também será removido e o saldo da conta será revertido.' : ''}`}
           onConfirm={destroyLanc} onCancel={() => setDeletingLanc(null)} />
       )}
+    </div>
+  )
+}
+
+// ── Painel de detalhe da obra (lançamentos + relatório) ──────────────────────
+
+function PainelDetalhe({ obra, lancs, fontes, tab, onTab, onNewLanc, onEditLanc, onDeleteLanc }) {
+  const fmt = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
+
+  // Agrupa lançamentos por fonte de pagamento para o relatório
+  const relatorio = useMemo(() => {
+    const grupos = {}
+    for (const l of lancs) {
+      const chave = l.pago_por || 'Sem fonte'
+      if (!grupos[chave]) grupos[chave] = { nome: chave, despesas: 0, receitas: 0, reembolsavel: 0, lancamentos: [] }
+      if (l.tipo === 'despesa') grupos[chave].despesas += Number(l.valor || 0)
+      else                      grupos[chave].receitas  += Number(l.valor || 0)
+      if (l.reembolsavel)       grupos[chave].reembolsavel += Number(l.valor || 0)
+      grupos[chave].lancamentos.push(l)
+    }
+    return Object.values(grupos)
+  }, [lancs])
+
+  const totalDespesas    = lancs.filter(l => l.tipo === 'despesa').reduce((s, l) => s + Number(l.valor || 0), 0)
+  const totalReceitas    = lancs.filter(l => l.tipo === 'receita').reduce((s, l) => s + Number(l.valor || 0), 0)
+  const totalReembolsavel = lancs.filter(l => l.reembolsavel).reduce((s, l) => s + Number(l.valor || 0), 0)
+  const valorContratado  = Number(obra.valor_contratado || 0)
+  const saldoObra        = valorContratado - totalDespesas
+
+  return (
+    <div style={{ padding: '14px 20px' }}>
+      {/* Header do painel */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--accent)' }}>
+          {obra.nome}
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {/* Tabs */}
+          <div style={{ display: 'flex', gap: 4, background: 'var(--bg3)', borderRadius: 8, padding: 3 }}>
+            {[
+              { id: 'lancamentos', label: 'Lançamentos' },
+              { id: 'relatorio',   label: 'Relatório Final' },
+            ].map(t => (
+              <button key={t.id} onClick={() => onTab(t.id)}
+                style={{
+                  padding: '5px 12px', borderRadius: 6, border: 'none', cursor: 'pointer',
+                  fontSize: 12, fontWeight: 600, transition: 'all .15s',
+                  background: tab === t.id ? 'var(--accent)' : 'transparent',
+                  color: tab === t.id ? '#fff' : 'var(--text2)',
+                }}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <button className="btn btn-primary btn-sm" onClick={onNewLanc}>
+            <Plus size={13} /> Novo Lançamento
+          </button>
+        </div>
+      </div>
+
+      {tab === 'lancamentos' && (
+        <>
+          {lancs.length === 0
+            ? <div style={{ color: 'var(--text3)', fontSize: 13, padding: '4px 0' }}>Nenhum lançamento registrado.</div>
+            : <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ background: 'var(--bg3)' }}>
+                    {['Tipo', 'Descrição', 'Valor', 'Fonte / Pago por', 'Reemb.', 'Caixa', 'Data', ''].map((h, i) => (
+                      <th key={i} style={{
+                        padding: '7px 10px', fontSize: 10, textAlign: i === 2 ? 'right' : i === 4 || i === 5 ? 'center' : 'left',
+                        color: 'var(--text3)', fontWeight: 700, textTransform: 'uppercase'
+                      }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {lancs.map(l => (
+                    <tr key={l.id} style={{ borderTop: '1px solid var(--border)' }}>
+                      <td style={{ padding: '7px 10px' }}>
+                        <span className={`badge ${l.tipo === 'despesa' ? 'badge-red' : 'badge-green'}`} style={{ fontSize: 10 }}>
+                          {l.tipo === 'despesa' ? 'Despesa' : 'Receita'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '7px 10px', fontSize: 13, fontWeight: 600 }}>{l.descricao}</td>
+                      <td style={{ padding: '7px 10px', fontSize: 13, textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700, color: l.tipo === 'despesa' ? 'var(--red)' : 'var(--green)' }}>
+                        {fmt(l.valor)}
+                      </td>
+                      <td style={{ padding: '7px 10px', fontSize: 12, color: 'var(--text2)' }}>{l.pago_por || '—'}</td>
+                      <td style={{ padding: '7px 10px', textAlign: 'center' }}>
+                        {l.reembolsavel
+                          ? <CheckCircle size={13} color="var(--green)" />
+                          : <span style={{ color: 'var(--text3)' }}>—</span>}
+                      </td>
+                      <td style={{ padding: '7px 10px', textAlign: 'center' }}>
+                        {l.caixa_id
+                          ? <span title="Lançado no caixa" style={{ color: 'var(--green)', fontSize: 10, fontWeight: 700 }}>✓ Caixa</span>
+                          : <span style={{ color: 'var(--text3)', fontSize: 10 }}>—</span>}
+                      </td>
+                      <td style={{ padding: '7px 10px', fontSize: 12, color: 'var(--text2)' }}>{fmtDate(l.data_ref)}</td>
+                      <td style={{ padding: '4px 10px' }}>
+                        <div className="action-btns">
+                          <button className="icon-btn edit" onClick={() => onEditLanc(l)}><Pencil size={13} /></button>
+                          <button className="icon-btn del"  onClick={() => onDeleteLanc(l)}><Trash2 size={13} /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+          }
+        </>
+      )}
+
+      {tab === 'relatorio' && (
+        <div>
+          {/* Sumário geral */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10, marginBottom: 16 }}>
+            <RelatCard label="Contratado" value={valorContratado} color="var(--accent)" />
+            <RelatCard label="Total despesas" value={totalDespesas} color="var(--red)" />
+            <RelatCard label="Total receitas" value={totalReceitas} color="var(--green)" />
+            <RelatCard label="Saldo da obra" value={saldoObra} color={saldoObra >= 0 ? 'var(--green)' : 'var(--red)'} />
+          </div>
+
+          {totalReembolsavel > 0 && (
+            <div style={{ marginBottom: 14, padding: '10px 14px', background: 'rgba(251,191,36,.08)', border: '1px solid rgba(251,191,36,.25)', borderRadius: 8, fontSize: 13 }}>
+              <strong style={{ color: 'var(--yellow)' }}>Reembolsável pelo cliente:</strong>{' '}
+              <span style={{ fontFamily: 'var(--mono)', fontWeight: 700 }}>{fmt(totalReembolsavel)}</span>
+            </div>
+          )}
+
+          {/* Por fonte de pagamento */}
+          <div style={{ fontWeight: 700, fontSize: 12, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 8 }}>
+            Por Fonte de Pagamento
+          </div>
+
+          {relatorio.length === 0
+            ? <div style={{ color: 'var(--text3)', fontSize: 13 }}>Nenhum lançamento registrado.</div>
+            : <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {relatorio.map((g, i) => (
+                  <div key={i} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <div style={{ fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <Wallet size={13} color="var(--accent)" />
+                        {g.nome}
+                      </div>
+                      <div style={{ display: 'flex', gap: 14, fontSize: 12 }}>
+                        {g.despesas > 0 && (
+                          <span style={{ color: 'var(--red)', fontFamily: 'var(--mono)', fontWeight: 700 }}>
+                            − {fmt(g.despesas)}
+                          </span>
+                        )}
+                        {g.receitas > 0 && (
+                          <span style={{ color: 'var(--green)', fontFamily: 'var(--mono)', fontWeight: 700 }}>
+                            + {fmt(g.receitas)}
+                          </span>
+                        )}
+                        {g.reembolsavel > 0 && (
+                          <span style={{ color: 'var(--yellow)', fontSize: 11 }}>
+                            reemb.: {fmt(g.reembolsavel)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {/* Mini-lista de lançamentos do grupo */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                      {g.lancamentos.map(l => (
+                        <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text2)', paddingLeft: 6 }}>
+                          <span>{fmtDate(l.data_ref)} — {l.descricao}{l.reembolsavel ? ' ♻' : ''}</span>
+                          <span style={{ fontFamily: 'var(--mono)', color: l.tipo === 'despesa' ? 'var(--red)' : 'var(--green)' }}>
+                            {l.tipo === 'despesa' ? '−' : '+'} {fmt(l.valor)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+          }
+
+          {/* Acerto final */}
+          {valorContratado > 0 && (
+            <div style={{ marginTop: 16, padding: '12px 16px', background: saldoObra >= 0 ? 'rgba(52,211,153,.07)' : 'rgba(248,113,113,.07)', border: `1px solid ${saldoObra >= 0 ? 'rgba(52,211,153,.25)' : 'rgba(248,113,113,.25)'}`, borderRadius: 8 }}>
+              <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 4 }}>Acerto final</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ fontSize: 12, color: 'var(--text2)' }}>
+                  Contratado {fmt(valorContratado)} − Gastos {fmt(totalDespesas)}
+                </div>
+                <div style={{ fontFamily: 'var(--mono)', fontWeight: 700, fontSize: 16, color: saldoObra >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                  {saldoObra >= 0 ? '+' : ''}{fmt(saldoObra)}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function RelatCard({ label, value, color }) {
+  const fmt = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
+  return (
+    <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+      <div style={{ fontSize: 10, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 4 }}>{label}</div>
+      <div style={{ fontFamily: 'var(--mono)', fontWeight: 700, fontSize: 14, color }}>{fmt(value)}</div>
     </div>
   )
 }
