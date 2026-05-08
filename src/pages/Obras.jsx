@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { today, fmtDate } from '../lib/utils.js'
 import UploadComprovante from '../components/UploadComprovante'
+import { imprimirRelatorioObra } from '../lib/relatorioObra'
 
 const fmt = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
 
@@ -38,6 +39,7 @@ export default function Obras() {
   const [clientes, setClientes]             = useState([])
   const [fontes, setFontes]                 = useState([])
   const [contas, setContas]                 = useState([])
+  const [empresa, setEmpresa]               = useState(null)
   const [loading, setLoading]               = useState(true)
   const [search, setSearch]                 = useState('')
   const [filterStatus, setFilterStatus]     = useState('')
@@ -70,6 +72,8 @@ export default function Obras() {
       .then(({ data }) => setFontes(data || []))
     supabase.from('contas').select('id,nome,saldo_atual').eq('ativo', true).order('nome')
       .then(({ data }) => setContas(data || []))
+    supabase.from('empresa').select('*').eq('ativo', true).limit(1).single()
+      .then(({ data }) => setEmpresa(data || null))
   }, [])
 
   async function load() {
@@ -510,6 +514,7 @@ export default function Obras() {
                                   obra={r}
                                   lancs={lancsDaObra(r.id)}
                                   fontes={fontes}
+                                  empresa={empresa}
                                   tab={tabDetalhe}
                                   onTab={setTabDetalhe}
                                   onNewLanc={openNewLanc}
@@ -720,7 +725,7 @@ export default function Obras() {
 
 // ── Painel de detalhe da obra (lançamentos + relatório) ──────────────────────
 
-function PainelDetalhe({ obra, lancs, fontes, tab, onTab, onNewLanc, onEditLanc, onDeleteLanc }) {
+function PainelDetalhe({ obra, lancs, fontes, empresa, tab, onTab, onNewLanc, onEditLanc, onDeleteLanc }) {
   const fmt = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
 
   // Agrupa lançamentos por fonte de pagamento para o relatório
@@ -770,6 +775,13 @@ function PainelDetalhe({ obra, lancs, fontes, tab, onTab, onNewLanc, onEditLanc,
           </div>
           <button className="btn btn-primary btn-sm" onClick={onNewLanc}>
             <Plus size={13} /> Novo Lançamento
+          </button>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => imprimirRelatorioObra({ obra, lancamentos: lancs, empresa })}
+            title="Imprimir / Salvar PDF"
+            style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            🖨️ Imprimir
           </button>
         </div>
       </div>
