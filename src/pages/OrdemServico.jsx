@@ -55,7 +55,7 @@ export default function OrdemServico() {
   const [formItem, setFormItem] = useState(EMPTY_ITEM)
   const [confirmReceberOs, setConfirmReceberOs] = useState(null)
 
-  useEffect(() => { loadAll() }, [])
+  useEffect(() => { if (entidadeAtiva?.id) loadAll() }, [entidadeAtiva?.id])
   useEffect(() => { if (osSel) loadItens(osSel.id) }, [osSel])
 
   async function loadAll() {

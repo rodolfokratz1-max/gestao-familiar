@@ -15,7 +15,7 @@ export default function Movimentacoes() {
   const [dataIni, setDataIni] = useState('')
   const [dataFim, setDataFim] = useState('')
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { if (entidadeAtiva?.id) load() }, [entidadeAtiva?.id])
 
   async function load() {
     setLoading(true)

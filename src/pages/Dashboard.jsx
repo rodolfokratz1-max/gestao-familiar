@@ -20,7 +20,7 @@ export default function Dashboard({ onNavigate }) {
   const [vencendoHoje, setVencendoHoje]   = useState({ pagar:0, receber:0 })
   const [vencendo7d, setVencendo7d]       = useState({ pagar:0, receber:0 })
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { if (entidadeAtiva?.id) load() }, [entidadeAtiva?.id])
 
   async function load() {
     setLoading(true)

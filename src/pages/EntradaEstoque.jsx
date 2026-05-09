@@ -50,8 +50,8 @@ export default function EntradaEstoque() {
   const [margemPadrao, setMargemPadrao] = useState(0)
   const [revertendo, setRevertendo] = useState(null)
 
-  useEffect(() => { loadAuxiliar() }, [])
-  useEffect(() => { if (aba === 'historico') loadHistorico() }, [aba])
+  useEffect(() => { if (entidadeAtiva?.id) loadAuxiliar() }, [entidadeAtiva?.id])
+  useEffect(() => { if (aba === 'historico' && entidadeAtiva?.id) loadHistorico() }, [aba, entidadeAtiva?.id])
 
   async function loadAuxiliar() {
     const [{ data: p }, { data: f }, { data: c }, empData] = await Promise.all([

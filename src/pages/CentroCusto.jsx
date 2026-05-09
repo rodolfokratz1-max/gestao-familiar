@@ -20,7 +20,7 @@ export default function CentroCusto() {
   const [form, setForm]       = useState(EMPTY)
   const [deleting, setDeleting] = useState(null)
 
-  useEffect(() => { loadAll() }, [])
+  useEffect(() => { if (entidadeAtiva?.id) loadAll() }, [entidadeAtiva?.id])
 
   async function loadAll() {
     setLoading(true)

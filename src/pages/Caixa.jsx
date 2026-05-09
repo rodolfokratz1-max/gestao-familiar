@@ -32,7 +32,7 @@ export default function Caixa() {
   const [editingLanc, setEditingLanc] = useState(null)
   const [formLanc, setFormLanc]       = useState(EMPTY_LANC)
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { if (entidadeAtiva?.id) load() }, [entidadeAtiva?.id])
 
   async function load() {
     setLoading(true)

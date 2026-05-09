@@ -38,7 +38,7 @@ export default function Cartoes() {
   const [deletingCartao, setDeletingCartao] = useState(null)
   const [deletingLanc, setDeletingLanc]     = useState(null)
 
-  useEffect(() => { loadAll() }, [])
+  useEffect(() => { if (entidadeAtiva?.id) loadAll() }, [entidadeAtiva?.id])
   useEffect(() => { if (cartaoSel) loadLancamentos() }, [cartaoSel, mesRef])
 
   async function loadAll() {

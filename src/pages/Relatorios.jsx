@@ -27,7 +27,7 @@ export default function Relatorios() {
     supabase.from('contas').select('id,nome,tipo').eq('ativo',true).eq('entidade_id', entidadeAtiva?.id).order('nome').then(({data})=>setContas(data||[]))
   }, [])
 
-  useEffect(() => { loadDados() }, [aba, ano, mesIni, mesFim, filterConta])
+  useEffect(() => { if (entidadeAtiva?.id) loadDados() }, [aba, ano, mesIni, mesFim, filterConta, entidadeAtiva?.id])
 
   async function loadDados() {
     setLoading(true)

@@ -34,7 +34,7 @@ export default function Pessoas() {
   const [deleting, setDeleting] = useState(null)
   const [secao, setSecao] = useState('dados') // dados | endereco | contato
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { if (entidadeAtiva?.id) load() }, [entidadeAtiva?.id])
 
   async function load() {
     setLoading(true)

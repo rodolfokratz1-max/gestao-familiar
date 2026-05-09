@@ -34,6 +34,7 @@ export default function Compras() {
   const [parcelasMap, setParcelasMap] = useState({})
 
   useEffect(() => {
+    if (!entidadeAtiva?.id) return
     load()
     supabase.from('pessoas').select('id,nome').in('tipo', ['fornecedor', 'ambos']).eq('ativo', true).eq('entidade_id', entidadeAtiva?.id).then(({ data }) => setFornecedores(data || []))
     supabase.from('contas').select('id,nome').eq('ativo', true).eq('entidade_id', entidadeAtiva?.id).order('nome').then(({ data }) => setContas(data || []))

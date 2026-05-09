@@ -19,7 +19,7 @@ export default function FluxoCaixa() {
   useEffect(() => {
     supabase.from('contas').select('id,nome').eq('ativo',true).eq('entidade_id', entidadeAtiva?.id).order('nome').then(({data})=>setContas(data||[]))
   }, [])
-  useEffect(() => { load() }, [ano, filterConta])
+  useEffect(() => { if (entidadeAtiva?.id) load() }, [ano, filterConta, entidadeAtiva?.id])
 
   async function load() {
     setLoading(true)

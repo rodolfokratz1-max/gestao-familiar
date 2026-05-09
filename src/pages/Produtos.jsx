@@ -50,7 +50,7 @@ export default function Produtos() {
   const [deletingCat, setDeletingCat]   = useState(null)
   const [showCats, setShowCats]         = useState(false)
 
-  useEffect(() => { loadAll() }, [])
+  useEffect(() => { if (entidadeAtiva?.id) loadAll() }, [entidadeAtiva?.id])
 
   async function loadAll() {
     setLoading(true)

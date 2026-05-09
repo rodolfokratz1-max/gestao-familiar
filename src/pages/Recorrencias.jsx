@@ -43,7 +43,7 @@ export default function Recorrencias() {
   const [form, setForm] = useState(EMPTY)
   const [search, setSearch] = useState('')
 
-  useEffect(() => { loadAll() }, [])
+  useEffect(() => { if (entidadeAtiva?.id) loadAll() }, [entidadeAtiva?.id])
 
   async function loadAll() {
     setLoading(true)

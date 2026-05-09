@@ -23,7 +23,7 @@ export default function Contas() {
   const [editing, setEditing] = useState(null)
   const [deleting, setDeleting] = useState(null)
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { if (entidadeAtiva?.id) load() }, [entidadeAtiva?.id])
 
   async function load() {
     setLoading(true)
