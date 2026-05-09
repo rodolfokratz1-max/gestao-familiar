@@ -115,6 +115,7 @@ export default function Caixa() {
   function openEditLanc(r) { setFormLanc({...r, conta_id:r.conta_id||'', forma_pgto:r.forma_pgto||''}); setEditingLanc(r.id); setModalLanc(true) }
 
   async function saveLanc() {
+    if (!entidadeAtiva?.id) return toast('Selecione uma entidade antes de salvar', 'error')
     if (!formLanc.descricao?.trim()) return toast('Descrição obrigatória','error')
     if (!formLanc.valor)             return toast('Valor obrigatório','error')
 

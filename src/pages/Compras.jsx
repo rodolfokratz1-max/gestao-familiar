@@ -130,6 +130,7 @@ export default function Compras() {
   }
 
   async function save() {
+    if (!entidadeAtiva?.id) return toast('Selecione uma entidade antes de salvar', 'error')
     if (!form.descricao?.trim()) return toast('Descrição obrigatória', 'error')
     if (!form.valor_total) return toast('Valor obrigatório', 'error')
 

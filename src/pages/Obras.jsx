@@ -127,6 +127,7 @@ export default function Obras() {
   function openEdit(r) { setForm({ ...r }); setEditing(r.id); setModal(true) }
 
   async function save() {
+    if (!entidadeAtiva?.id) return toast('Selecione uma entidade antes de salvar', 'error')
     if (!form.nome?.trim()) return toast('Nome obrigatório', 'error')
     const payload = {
       ...form,
@@ -209,6 +210,7 @@ export default function Obras() {
   const fonteAtual = fontes.find(f => f.id === formLanc.fonte_id)
 
   async function saveLanc() {
+    if (!entidadeAtiva?.id) return toast('Selecione uma entidade antes de salvar', 'error')
     if (!formLanc.descricao?.trim()) return toast('Descrição obrigatória', 'error')
     if (!formLanc.valor || Number(formLanc.valor) <= 0) return toast('Valor deve ser maior que zero', 'error')
 

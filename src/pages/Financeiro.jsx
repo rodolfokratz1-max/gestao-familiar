@@ -70,6 +70,7 @@ export default function Financeiro({ module }) {
   function openEdit(r) { setForm({ ...r }); setEditing(r.id); setModal(true) }
 
   async function save() {
+    if (!entidadeAtiva?.id) return toast('Selecione uma entidade antes de salvar', 'error')
     if (!form.descricao?.trim()) return toast('Descrição é obrigatória', 'error')
     if (!form.valor) return toast('Valor é obrigatório', 'error')
 

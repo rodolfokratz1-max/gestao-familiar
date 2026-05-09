@@ -108,6 +108,7 @@ export default function Produtos() {
   function openEdit(r) { setForm({ ...EMPTY_PROD, ...r, margem: r.preco_custo && r.preco_venda ? calcMargem(r.preco_custo, r.preco_venda) : '' }); setEditing(r.id); setAbaModal('geral'); setModal(true) }
 
   async function save() {
+    if (!entidadeAtiva?.id) return toast('Selecione uma entidade antes de salvar', 'error')
     if (!form.nome.trim()) return toast('Nome é obrigatório', 'error')
     if (!form.codigo.trim()) return toast('Código é obrigatório', 'error')
     const payload = {

@@ -64,6 +64,7 @@ export default function Pessoas() {
   }
 
   async function save() {
+    if (!entidadeAtiva?.id) return toast('Selecione uma entidade antes de salvar', 'error')
     if (!form.nome.trim()) return toast('Nome é obrigatório', 'error')
     if (!form.codigo.trim()) return toast('Código é obrigatório', 'error')
     let error

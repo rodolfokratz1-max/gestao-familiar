@@ -108,6 +108,7 @@ export default function FinanceiroContas({ module }) {
   function openEdit(r) { setForm({ ...r, parcelado: false, num_parcelas: 2 }); setEditing(r.id); setModal(true) }
 
   async function save() {
+    if (!entidadeAtiva?.id) return toast('Selecione uma entidade antes de salvar', 'error')
     if (!form.descricao?.trim()) return toast('Descrição é obrigatória', 'error')
     if (!form.valor) return toast('Valor é obrigatório', 'error')
 
