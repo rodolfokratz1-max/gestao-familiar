@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import { useEntidade } from '../contexts/EntidadeContext'
 import { BarChartSVG } from '../lib/charts'
 
 const fmt  = v => 'R$ ' + Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2})
@@ -15,7 +16,8 @@ export default function FluxoCaixa() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    supabase.from('contas').select('id,nome').eq('ativo',true).order('nome').then(({data})=>setContas(data||[]))
+    supabase.from('contas').select('id,nome').eq('ativo',true).order('nome').then(({data})
+        .eq('entidade_id', entidadeAtiva?.id)=>setContas(data||[]))
   }, [])
   useEffect(() => { load() }, [ano, filterConta])
 

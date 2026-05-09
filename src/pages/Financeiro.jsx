@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../contexts/ToastContext'
+import { useEntidade } from '../contexts/EntidadeContext'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { Plus, Search, Pencil, Trash2, Power, CheckCircle } from 'lucide-react'
@@ -30,6 +31,7 @@ export default function Financeiro({ module }) {
   const cfg = configs[module]
   const { user } = useAuth()
   const toast = useToast()
+  const { entidadeAtiva } = useEntidade()
   const [rows, setRows] = useState([])
   const [contas, setContas] = useState([])
   const [loading, setLoading] = useState(true)
@@ -46,7 +48,8 @@ export default function Financeiro({ module }) {
     setLoading(true)
     const [{ data: r }, { data: c }] = await Promise.all([
       supabase.from(cfg.table).select('*').order('data', { ascending: false }),
-      supabase.from('contas').select('id,nome,tipo').eq('ativo', true).order('nome'),
+      supabase.from('contas').select(
+        .eq('entidade_id', entidadeAtiva?.id)'id,nome,tipo').eq('ativo', true).order('nome'),
     ])
     setRows(r || [])
     setContas(c || [])
@@ -95,7 +98,7 @@ export default function Financeiro({ module }) {
   }
 
   async function lancarCaixa(r) {
-    await supabase.from('caixa').insert({
+    await supabase.from('caixa').insert({entidade_id: entidadeAtiva?.id, 
       data: r.data || today(),
       tipo: cfg.caixaTipo,
       descricao: r.descricao,
@@ -112,7 +115,8 @@ export default function Financeiro({ module }) {
       const { data: ct } = await supabase.from('contas').select('saldo_atual').eq('id', r.conta_id).single()
       if (ct) {
         const delta = cfg.caixaTipo === 'entrada' ? Number(r.valor) : -Number(r.valor)
-        await supabase.from('contas').update({ saldo_atual: Number(ct.saldo_atual || 0) + delta }).eq('id', r.conta_id)
+        await supabase.from('contas').update({ saldo_atual: Number(ct.saldo_atual || 0)
+        .eq('entidade_id', entidadeAtiva?.id) + delta }).eq('id', r.conta_id)
       }
     }
   }
@@ -124,7 +128,8 @@ export default function Financeiro({ module }) {
       const { data: ct } = await supabase.from('contas').select('saldo_atual').eq('id', cx.conta_id).single()
       if (ct) {
         const delta = cfg.caixaTipo === 'entrada' ? -Number(cx.valor) : Number(cx.valor)
-        await supabase.from('contas').update({ saldo_atual: Number(ct.saldo_atual || 0) + delta }).eq('id', cx.conta_id)
+        await supabase.from('contas').update({ saldo_atual: Number(ct.saldo_atual || 0)
+        .eq('entidade_id', entidadeAtiva?.id) + delta }).eq('id', cx.conta_id)
       }
     }
     await supabase.from('caixa').delete().eq('origem_id', origemId).eq('origem_tabela', cfg.table)

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import { useEntidade } from '../contexts/EntidadeContext'
 import { TrendingUp, TrendingDown, Wallet, HandCoins, CreditCard, AlertCircle, ChevronRight, Target, BarChart2, RefreshCw } from 'lucide-react'
 import { BarChartSVG, PieChartSVG, CHART_COLORS } from '../lib/charts'
 import { today } from '../lib/utils.js'
@@ -53,7 +54,12 @@ export default function Dashboard({ onNavigate }) {
 
     // Vencendo hoje e em 7 dias
     setVencendoHoje({
-      pagar: apagarData.filter(r=>r.vencimento===td).reduce((s,r)=>s+Number(r.valor),0),
+      pagar: apagarData.filter(r=>r.vencimento===td).reduce((s,r)
+        .eq('entidade_id', entidadeAtiva?.id)
+        .eq('entidade_id', entidadeAtiva?.id)
+        .eq('entidade_id', entidadeAtiva?.id)
+        .eq('entidade_id', entidadeAtiva?.id)
+        .eq('entidade_id', entidadeAtiva?.id)=>s+Number(r.valor),0),
       receber: areceberData.filter(r=>r.vencimento===td).reduce((s,r)=>s+Number(r.valor),0),
     })
     setVencendo7d({
@@ -193,7 +199,9 @@ export default function Dashboard({ onNavigate }) {
           </div>
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:12}}>
             {centros.map(cc=>(
-              <div key={cc.id} style={{background:'var(--bg3)',borderRadius:10,padding:'12px 14px',border:'1px solid var(--border)'}}>
+              <div key={cc.id} style={{background:'var(--bg3)
+        .eq('entidade_id', entidadeAtiva?.id)
+        .eq('entidade_id', entidadeAtiva?.id)',borderRadius:10,padding:'12px 14px',border:'1px solid var(--border)'}}>
                 <div style={{fontWeight:700,fontSize:13,marginBottom:8}}>{cc.nome}</div>
                 <div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:3}}>
                   <span style={{color:'var(--text2)'}}>Receita</span>

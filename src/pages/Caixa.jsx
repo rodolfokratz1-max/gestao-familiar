@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useToast } from '../contexts/ToastContext'
+import { useEntidade } from '../contexts/EntidadeContext'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { Plus, Search, Pencil, Trash2, ArrowUpCircle, ArrowDownCircle, ArrowLeftRight, X, Landmark } from 'lucide-react'
 import { today } from '../lib/utils.js'
@@ -13,6 +14,7 @@ const EMPTY_LANC   = { data:today(), tipo:'entrada', descricao:'', valor:'', cat
 
 export default function Caixa() {
   const toast = useToast()
+  const { entidadeAtiva } = useEntidade()
   const [rows, setRows]         = useState([])
   const [contas, setContas]     = useState([])
   const [loading, setLoading]   = useState(true)
@@ -36,7 +38,8 @@ export default function Caixa() {
     setLoading(true)
     const [{ data: caixaData }, { data: contasData }] = await Promise.all([
       supabase.from('caixa').select('*').order('data',{ascending:false}).order('created_at',{ascending:false}),
-      supabase.from('contas').select('id,nome,tipo,saldo_atual').eq('ativo',true).order('nome'),
+      supabase.from('contas').select(
+        .eq('entidade_id', entidadeAtiva?.id)'id,nome,tipo,saldo_atual').eq('ativo',true).order('nome'),
     ])
     setRows(caixaData || [])
     setContas(contasData || [])
@@ -74,8 +77,10 @@ export default function Caixa() {
     const v = Number(valor)
 
     const [{ data: origData }, { data: destData }] = await Promise.all([
-      supabase.from('contas').select('nome,saldo_atual').eq('id',contaOrigem).single(),
-      supabase.from('contas').select('nome,saldo_atual').eq('id',contaDestino).single(),
+      supabase.from('contas').select(
+        .eq('entidade_id', entidadeAtiva?.id)'nome,saldo_atual').eq('id',contaOrigem).single(),
+      supabase.from('contas').select(
+        .eq('entidade_id', entidadeAtiva?.id)'nome,saldo_atual').eq('id',contaDestino).single(),
     ])
     if (!origData) return toast('Conta de origem não encontrada','error')
     if (!destData) return toast('Conta de destino não encontrada','error')
@@ -83,14 +88,14 @@ export default function Caixa() {
     const saldoOrig = Number(origData.saldo_atual||0)
     if (saldoOrig < v) return toast(`Saldo insuficiente em "${origData.nome}". Disponível: ${fmt(saldoOrig)}`,'error')
 
-    const { error: e1 } = await supabase.from('caixa').insert({
+    const { error: e1 } = await supabase.from('caixa').insert({entidade_id: entidadeAtiva?.id, 
       data, tipo:'saida', valor:v, categoria:'Transferência',
       descricao:`${descricao} → ${destData.nome}`,
       conta_id:contaOrigem, obs:obs||null, origem_tabela:'transferencia',
     })
     if (e1) return toast('Erro ao lançar saída: '+e1.message,'error')
 
-    const { error: e2 } = await supabase.from('caixa').insert({
+    const { error: e2 } = await supabase.from('caixa').insert({entidade_id: entidadeAtiva?.id, 
       data, tipo:'entrada', valor:v, categoria:'Transferência',
       descricao:`${descricao} ← ${origData.nome}`,
       conta_id:contaDestino, obs:obs||null, origem_tabela:'transferencia',
@@ -138,7 +143,8 @@ export default function Caixa() {
         const { data: ct } = await supabase.from('contas').select('saldo_atual').eq('id',formLanc.conta_id).single()
         if (ct) {
           const delta = formLanc.tipo === 'entrada' ? Number(formLanc.valor) : -Number(formLanc.valor)
-          await supabase.from('contas').update({ saldo_atual: Number(ct.saldo_atual||0)+delta }).eq('id',formLanc.conta_id)
+          await supabase.from('contas').update({ saldo_atual: Number(ct.saldo_atual||0)
+        .eq('entidade_id', entidadeAtiva?.id)+delta }).eq('id',formLanc.conta_id)
         }
       }
     }
@@ -161,7 +167,8 @@ export default function Caixa() {
   return (
     <div>
       {/* Cards de saldo por conta */}
-      <div className="stats-grid" style={{marginBottom:12,gridTemplateColumns:'repeat(auto-fill,minmax(160px,1fr))'}}>
+      <div className="stats-grid" style={{marginBottom:12,gridTemplateColumns:'repeat(auto-fill,minmax(160px,1fr)
+        .eq('entidade_id', entidadeAtiva?.id))'}}>
         {contas.map(c=>(
           <div key={c.id}
             className={`stat-card ${filterConta===c.id?'blue':''}`}

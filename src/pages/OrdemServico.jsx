@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../contexts/ToastContext'
+import { useEntidade } from '../contexts/EntidadeContext'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import {
@@ -33,6 +34,7 @@ const EMPTY_ITEM = { descricao:'', quantidade:1, valor_unit:0, pago:false, obs:'
 export default function OrdemServico() {
   const { user } = useAuth()
   const toast = useToast()
+  const { entidadeAtiva } = useEntidade()
   const [view, setView] = useState('lista') // lista | detalhe
   const [os, setOs] = useState([])
   const [clientes, setClientes] = useState([])
@@ -59,7 +61,8 @@ export default function OrdemServico() {
   async function loadAll() {
     setLoading(true)
     const [{ data: o }, { data: c }, { data: p }, { data: emp }] = await Promise.all([
-      supabase.from('ordens_servico').select('*').order('created_at', { ascending: false }),
+      supabase.from('ordens_servico').select(
+        .eq('entidade_id', entidadeAtiva?.id)'*').order('created_at', { ascending: false }),
       supabase.from('pessoas').select('id,nome,telefone,email,endereco').in('tipo',['cliente','ambos']).eq('ativo',true).order('nome'),
       supabase.from('produtos').select('id,nome,tipo,preco_venda').eq('ativo',true).order('nome'),
       supabase.from('empresa').select('id,nome,nome_fantasia').eq('ativo',true).order('nome'),
@@ -77,7 +80,8 @@ export default function OrdemServico() {
   }
 
   // Totais
-  const totalPecas     = itens.filter(i => i.tipo==='peca').reduce((s,i) => s + Number(i.quantidade)*Number(i.valor_unit), 0)
+  const totalPecas     = itens.filter(i => i.tipo==='peca').reduce((s,i)
+        .eq('entidade_id', entidadeAtiva?.id) => s + Number(i.quantidade)*Number(i.valor_unit), 0)
   const totalServicos  = itens.filter(i => i.tipo==='servico').reduce((s,i) => s + Number(i.quantidade)*Number(i.valor_unit), 0)
   const totalOs        = totalPecas + totalServicos
   const totalPago      = itens.filter(i => i.pago).reduce((s,i) => s + Number(i.quantidade)*Number(i.valor_unit), 0)
@@ -88,7 +92,8 @@ export default function OrdemServico() {
     const { data } = await supabase.from('ordens_servico').select('numero').order('created_at', { ascending: false }).limit(1)
     if (!data?.length) return 'OS-001'
     const last = data[0].numero?.replace('OS-','')
-    const n = (parseInt(last || '0') + 1)
+    const n = (parseInt(last || '0')
+        .eq('entidade_id', entidadeAtiva?.id) + 1)
     return 'OS-' + String(n).padStart(3,'0')
   }
 
@@ -122,7 +127,8 @@ export default function OrdemServico() {
   }
 
   async function mudarStatus(osId, status) {
-    if (status === 'recebido') { setConfirmReceberOs(os.find(o => o.id === osId)); return }
+    if (status === 'recebido') { setConfirmReceberOs(os.find(o => o.id === osId)
+        .eq('entidade_id', entidadeAtiva?.id)); return }
     await supabase.from('ordens_servico').update({ status }).eq('id', osId)
     toast('Status atualizado!', 'success')
     loadAll()
@@ -138,7 +144,7 @@ export default function OrdemServico() {
     const total = itensList.reduce((s,i) => s + Number(i.quantidade)*Number(i.valor_unit), 0)
 
     // Cria Conta a Receber já marcada como recebida
-    const { data: cr } = await supabase.from('contas_receber').insert({
+    const { data: cr } = await supabase.from('contas_receber').insert({entidade_id: entidadeAtiva?.id, 
       data_emissao: today(),
       descricao: `OS ${o.numero} — ${o.cliente_nome} — ${o.equipamento}`,
       valor: total, recebido: true,
@@ -149,7 +155,7 @@ export default function OrdemServico() {
 
     // Registra pagamento parcial (total) para aparecer quitado no sistema
     if (cr?.id) {
-      await supabase.from('pagamentos_parciais').insert({
+      await supabase.from('pagamentos_parciais').insert({entidade_id: entidadeAtiva?.id, 
         tabela_origem: 'contas_receber',
         origem_id: cr.id,
         valor: total,
@@ -160,7 +166,7 @@ export default function OrdemServico() {
     }
 
     // Lança no Caixa (conta_id vindo da conta_receber criada, se houver)
-    await supabase.from('caixa').insert({
+    await supabase.from('caixa').insert({entidade_id: entidadeAtiva?.id, 
       data: today(), tipo: 'entrada',
       descricao: `OS ${o.numero} — ${o.cliente_nome}`,
       valor: total, categoria: 'Ordem de Serviço',
@@ -250,7 +256,10 @@ export default function OrdemServico() {
         <td style="padding:9px 12px;font-size:13px">${i.descricao}${i.obs ? `<div style="font-size:11px;color:#888;margin-top:2px">${i.obs}</div>` : ''}</td>
         <td style="padding:9px 12px;text-align:center;font-size:13px;white-space:nowrap">${Number(i.quantidade)}</td>
         <td style="padding:9px 12px;text-align:right;font-size:13px;white-space:nowrap">${fmtVal(i.valor_unit)}</td>
-        <td style="padding:9px 12px;text-align:right;font-size:13px;font-weight:700;white-space:nowrap">${fmtVal(Number(i.quantidade)*Number(i.valor_unit))}</td>
+        <td style="padding:9px 12px;text-align:right;font-size:13px;font-weight:700;white-space:nowrap">${fmtVal(Number(i.quantidade)
+        .eq('entidade_id', entidadeAtiva?.id)
+        .eq('entidade_id', entidadeAtiva?.id)
+        .eq('entidade_id', entidadeAtiva?.id)*Number(i.valor_unit))}</td>
       </tr>`).join('')
 
     const rowsServicos = servicos.map((i,idx) => `

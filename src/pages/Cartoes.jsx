@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useToast } from '../contexts/ToastContext'
+import { useEntidade } from '../contexts/EntidadeContext'
 import { mesReferencia, dataVencimento } from '../lib/faturas'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
@@ -15,6 +16,7 @@ const bandeiras    = ['Visa','Mastercard','Elo','American Express','Hipercard','
 
 export default function Cartoes() {
   const toast = useToast()
+  const { entidadeAtiva } = useEntidade()
   const [view, setView] = useState('cartoes')
   const [cartoes, setCartoes] = useState([])
   const [membros, setMembros] = useState([])
@@ -69,7 +71,10 @@ export default function Cartoes() {
   const faturaAtual = faturas.find(f => f.cartao_id === cartaoSel?.id && f.mes_ref === mesRef)
   const faturaFechada = !!faturaAtual
   const totalFatura = lancamentos.reduce((s, r) => s + Number(r.valor_total || 0), 0)
-  const percLimite = cartaoSel ? Math.min(100, (totalFatura / Number(cartaoSel.limite || 1)) * 100) : 0
+  const percLimite = cartaoSel ? Math.min(100, (totalFatura / Number(cartaoSel.limite || 1)
+        .eq('entidade_id', entidadeAtiva?.id)
+        .eq('entidade_id', entidadeAtiva?.id)
+        .eq('entidade_id', entidadeAtiva?.id)) * 100) : 0
 
   function mudaMes(delta) {
     const [ano, mes] = mesRef.split('-').map(Number)
@@ -91,7 +96,7 @@ export default function Cartoes() {
     const nomeM = new Date(Number(anoRef), Number(mesNum)-1, 1).toLocaleString('pt-BR', { month: 'long', year: 'numeric' })
 
     // Cria registro de fatura fechada
-    const { data: fat, error: e1 } = await supabase.from('faturas_cartao').insert({
+    const { data: fat, error: e1 } = await supabase.from('faturas_cartao').insert({entidade_id: entidadeAtiva?.id, 
       cartao_id: cartao.id, cartao_nome: cartao.nome,
       mes_ref: mesRef, total: totalFatura,
       vencimento: venc, status: 'fechada',
@@ -99,7 +104,7 @@ export default function Cartoes() {
     if (e1) { toast(e1.message, 'error'); return }
 
     // Gera UMA conta a pagar
-    await supabase.from('contas_pagar').insert({
+    await supabase.from('contas_pagar').insert({entidade_id: entidadeAtiva?.id, 
       data_emissao: today(),
       descricao: `Fatura ${cartao.nome} — ${nomeM}`,
       valor: totalFatura, vencimento: venc,

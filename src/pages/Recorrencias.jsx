@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useToast } from '../contexts/ToastContext'
+import { useEntidade } from '../contexts/EntidadeContext'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { Plus, Search, Pencil, Trash2, Power, RefreshCw, Clock, CheckCircle, AlertCircle } from 'lucide-react'
@@ -29,6 +30,7 @@ const EMPTY = {
 
 export default function Recorrencias() {
   const toast = useToast()
+  const { entidadeAtiva } = useEntidade()
   const [rows, setRows] = useState([])
   const [contas, setContas] = useState([])
   const [loading, setLoading] = useState(true)
@@ -65,7 +67,7 @@ export default function Recorrencias() {
     if (!form.nome?.trim()) return toast('Nome obrigatório', 'error')
     if (!form.valor || Number(form.valor) <= 0) return toast('Valor deve ser maior que zero', 'error')
     if (!form.dia_vencimento || form.dia_vencimento < 1 || form.dia_vencimento > 31) return toast('Dia de vencimento inválido', 'error')
-    const payload = {
+    const payload = { entidade_id: entidadeAtiva?.id,
       ...form,
       valor: Number(form.valor),
       data_fim: form.data_fim || null,
@@ -112,7 +114,9 @@ export default function Recorrencias() {
         const mesRef = new Date(agora.getFullYear(), agora.getMonth() + i, 1)
 
         // Checa se está dentro do intervalo da recorrência
-        if (mesRef < new Date(inicio.getFullYear(), inicio.getMonth(), 1)) continue
+        if (mesRef < new Date(inicio.getFullYear()
+        .eq('entidade_id', entidadeAtiva?.id)
+        .eq('entidade_id', entidadeAtiva?.id), inicio.getMonth(), 1)) continue
         if (fim && mesRef > new Date(fim.getFullYear(), fim.getMonth(), 1)) continue
 
         // Calcula data de vencimento para esse mês

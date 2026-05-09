@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useToast } from '../contexts/ToastContext'
+import { useEntidade } from '../contexts/EntidadeContext'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { Plus, Search, Pencil, Trash2, Power, Package, Tag, Calculator } from 'lucide-react'
@@ -28,6 +29,7 @@ const EMPTY_CAT = { nome:'', tipo:'produto', descricao:'' }
 
 export default function Produtos() {
   const toast = useToast()
+  const { entidadeAtiva } = useEntidade()
   const [rows, setRows]       = useState([])
   const [cats, setCats]       = useState([])
   const [loading, setLoading] = useState(true)
@@ -107,7 +109,7 @@ export default function Produtos() {
   async function save() {
     if (!form.nome.trim()) return toast('Nome é obrigatório', 'error')
     if (!form.codigo.trim()) return toast('Código é obrigatório', 'error')
-    const payload = {
+    const payload = { entidade_id: entidadeAtiva?.id,
       ...form,
       preco_custo:    form.preco_custo    || null,
       preco_venda:    form.preco_venda    || null,
@@ -212,7 +214,8 @@ export default function Produtos() {
             <button className="btn btn-sm btn-primary" onClick={openNewCat}><Plus size={13} /> Nova</button>
           </div>
           {cats.length === 0
-            ? <div style={{ color:'var(--text3)', fontSize:13 }}>Nenhuma categoria. Crie para organizar seus produtos.</div>
+            ? <div style={{ color:'var(--text3)
+        .eq('entidade_id', entidadeAtiva?.id)', fontSize:13 }}>Nenhuma categoria. Crie para organizar seus produtos.</div>
             : <div style={{ display:'flex', flexWrap:'wrap', gap:8, marginTop:4 }}>
                 {cats.map(c => (
                   <div key={c.id} style={{ display:'flex', alignItems:'center', gap:6, background:'var(--bg3)', border:'1px solid var(--border)', borderRadius:8, padding:'5px 10px' }}>

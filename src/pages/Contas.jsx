@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { gerarCodigo } from '../lib/codigos'
 import { useToast } from '../contexts/ToastContext'
+import { useEntidade } from '../contexts/EntidadeContext'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { Plus, Search, Pencil, Trash2, Power, Landmark } from 'lucide-react'
@@ -13,6 +14,7 @@ const EMPTY = { codigo: '', nome: '', tipo: 'Conta Corrente', banco: '', agencia
 
 export default function Contas() {
   const toast = useToast()
+  const { entidadeAtiva } = useEntidade()
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -33,6 +35,7 @@ export default function Contas() {
 
   const filtered = rows.filter(r => {
     const q = search.toLowerCase()
+        .eq('entidade_id', entidadeAtiva?.id)
     return !q || r.nome?.toLowerCase().includes(q) || r.banco?.toLowerCase().includes(q) || r.tipo?.toLowerCase().includes(q)
   })
 
@@ -49,7 +52,7 @@ export default function Contas() {
 
   async function save() {
     if (!form.nome?.trim()) return toast('Nome é obrigatório', 'error')
-    const payload = { ...form, saldo_inicial: form.saldo_inicial || 0, saldo_atual: editing ? form.saldo_atual : (form.saldo_inicial || 0) }
+    const payload = { ...form, entidade_id: entidadeAtiva?.id, saldo_inicial: form.saldo_inicial || 0, saldo_atual: editing ? form.saldo_atual : (form.saldo_inicial || 0) }
     let error
     if (editing) ({ error } = await supabase.from('contas').update(payload).eq('id', editing))
     else ({ error } = await supabase.from('contas').insert(payload))

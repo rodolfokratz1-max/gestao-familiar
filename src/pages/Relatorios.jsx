@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import { useEntidade } from '../contexts/EntidadeContext'
 import { BarChartSVG, PieChartSVG, CHART_COLORS } from '../lib/charts'
 import { FileText, TrendingUp, TrendingDown, BarChart2, ArrowLeftRight, Landmark } from 'lucide-react'
 import { fmtDate } from '../lib/utils.js'
@@ -22,7 +23,8 @@ export default function Relatorios() {
 
   // Carrega contas uma só vez
   useEffect(() => {
-    supabase.from('contas').select('id,nome,tipo').eq('ativo',true).order('nome').then(({data})=>setContas(data||[]))
+    supabase.from('contas').select('id,nome,tipo').eq('ativo',true).order('nome').then(({data})
+        .eq('entidade_id', entidadeAtiva?.id)=>setContas(data||[]))
   }, [])
 
   useEffect(() => { loadDados() }, [aba, ano, mesIni, mesFim, filterConta])
@@ -40,7 +42,8 @@ export default function Relatorios() {
       if (filterConta) q = q.eq('conta_id', filterConta)
       const { data: caixaRaw } = await q
       const caixa = semTransferencia(caixaRaw)
-      const meses = MESES.map((label,i) => {
+      const meses = MESES.map((label,i)
+        .eq('entidade_id', entidadeAtiva?.id) => {
         const m = String(i+1).padStart(2,'0')
         const d = caixa.filter(r=>r.data?.startsWith(`${ano}-${m}`))
         const receita = d.filter(r=>r.tipo==='entrada').reduce((s,r)=>s+Number(r.valor),0)
@@ -58,7 +61,8 @@ export default function Relatorios() {
       const { data: raw } = await q
       const saidas = semTransferencia(raw)
       const map = {}
-      saidas.forEach(r=>{ const k=r.categoria||'Sem categoria'; map[k]=(map[k]||0)+Number(r.valor) })
+      saidas.forEach(r=>{ const k=r.categoria||'Sem categoria'; map[k]=(map[k]||0)
+        .eq('entidade_id', entidadeAtiva?.id)+Number(r.valor) })
       const lista = Object.entries(map).sort((a,b)=>b[1]-a[1]).map(([name,value])=>({name,value}))
       setDados({ lista, total:lista.reduce((s,x)=>s+x.value,0) })
     }
@@ -69,7 +73,8 @@ export default function Relatorios() {
       const { data: raw } = await q
       const entradas = semTransferencia(raw)
       const map = {}
-      entradas.forEach(r=>{ const k=r.categoria||'Sem categoria'; map[k]=(map[k]||0)+Number(r.valor) })
+      entradas.forEach(r=>{ const k=r.categoria||'Sem categoria'; map[k]=(map[k]||0)
+        .eq('entidade_id', entidadeAtiva?.id)+Number(r.valor) })
       const lista = Object.entries(map).sort((a,b)=>b[1]-a[1]).map(([name,value])=>({name,value}))
       setDados({ lista, total:lista.reduce((s,x)=>s+x.value,0) })
     }
@@ -83,7 +88,8 @@ export default function Relatorios() {
       const caixaSemTransf = semTransferencia(caixaRaw)
       const transferencias  = (caixaRaw||[]).filter(r=>r.categoria==='Transferência'||r.origem_tabela==='transferencia')
 
-      const totalE   = caixaSemTransf.filter(r=>r.tipo==='entrada').reduce((s,r)=>s+Number(r.valor),0)
+      const totalE   = caixaSemTransf.filter(r=>r.tipo==='entrada').reduce((s,r)
+        .eq('entidade_id', entidadeAtiva?.id)=>s+Number(r.valor),0)
       const totalS   = caixaSemTransf.filter(r=>r.tipo==='saida').reduce((s,r)=>s+Number(r.valor),0)
       const totalTrf = transferencias.filter(r=>r.tipo==='saida').reduce((s,r)=>s+Number(r.valor),0)
 

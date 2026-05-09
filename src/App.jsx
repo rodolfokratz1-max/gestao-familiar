@@ -24,6 +24,7 @@ import FluxoCaixa from './pages/FluxoCaixa'
 import CentroCusto from './pages/CentroCusto'
 import EntradaEstoque from './pages/EntradaEstoque'
 import Obras from './pages/Obras'
+import Entidades from './pages/Entidades'
 import ObrasFontes from './pages/ObrasFontes'
 import { VERSION } from './version'
 import { EntidadeProvider, useEntidade } from './contexts/EntidadeContext'
@@ -120,7 +121,7 @@ function PageContent({ page, onNavigate }) {
   if (page === 'inbox_whatsapp') return <InboxWhatsApp />
   if (page === 'obras')          return <Obras />
   if (page === 'obras_fontes')   return <ObrasFontes />
-  if (page === 'entidades')       return <div style={{padding:20}}><h2>Entidades — em breve</h2></div>
+  if (page === 'entidades')       return <Entidades />
   if (page === 'empresa')         return <Empresa />
   if (page === 'usuarios')        return <Usuarios />
   return null

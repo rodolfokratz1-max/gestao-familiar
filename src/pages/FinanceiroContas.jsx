@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useToast } from '../contexts/ToastContext'
+import { useEntidade } from '../contexts/EntidadeContext'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { Plus, Search, Pencil, Trash2, Power, CheckCircle, CreditCard, ChevronDown, ChevronUp } from 'lucide-react'
@@ -43,6 +44,7 @@ const emptyForm = () => ({
 export default function FinanceiroContas({ module }) {
   const cfg = configs[module]
   const toast = useToast()
+  const { entidadeAtiva } = useEntidade()
   const [rows, setRows] = useState([])
   const [pagamentos, setPagamentos] = useState([]) // pagamentos parciais
   const [pessoas, setPessoas] = useState([])
@@ -67,7 +69,8 @@ export default function FinanceiroContas({ module }) {
     setLoading(true)
     const [{ data: r }, { data: p }, { data: c }, { data: m }, { data: pgs }] = await Promise.all([
       supabase.from(cfg.table).select('*').order('data_emissao', { ascending: false }),
-      supabase.from('pessoas').select('id,nome,tipo').in('tipo', cfg.pessoaTipo).eq('ativo', true).order('nome'),
+      supabase.from('pessoas').select(
+        .eq('entidade_id', entidadeAtiva?.id)'id,nome,tipo').in('tipo', cfg.pessoaTipo).eq('ativo', true).order('nome'),
       supabase.from('contas').select('id,nome,tipo').eq('ativo', true).order('nome'),
       supabase.from('pessoas').select('id,nome').eq('tipo','membro').eq('ativo',true).order('nome'),
       supabase.from('pagamentos_parciais').select('*').eq('tabela_origem', cfg.table).order('data'),
@@ -155,7 +158,10 @@ export default function FinanceiroContas({ module }) {
     // Valor pago deve fechar com original + encargos (tolerância de 0.01 centavo)
     if (Math.abs(valor - esperado) > 0.01) {
       return toast(
-        `Valor não fecha: ${fmt(saldo)} + encargos (${fmt(encargos)}) = ${fmt(esperado)} esperado, mas foi informado ${fmt(valor)}`,
+        `Valor não fecha: ${fmt(saldo)} + encargos (${fmt(encargos)
+        .eq('entidade_id', entidadeAtiva?.id)
+        .eq('entidade_id', entidadeAtiva?.id)
+        .eq('entidade_id', entidadeAtiva?.id)}) = ${fmt(esperado)} esperado, mas foi informado ${fmt(valor)}`,
         'error'
       )
     }
@@ -163,7 +169,7 @@ export default function FinanceiroContas({ module }) {
     const valorTotal = valor
 
     // Registra pagamento parcial
-    const { error: e1 } = await supabase.from('pagamentos_parciais').insert({
+    const { error: e1 } = await supabase.from('pagamentos_parciais').insert({entidade_id: entidadeAtiva?.id, 
       tabela_origem: cfg.table,
       origem_id: row.id,
       valor: valorTotal,
@@ -272,7 +278,8 @@ export default function FinanceiroContas({ module }) {
 
     toast('Pagamento registrado!', 'success')
     setModalPgto(null)
-    setPgtoForm({ valor: '', data: today(), forma_pgto: '', conta_id: '', obs: '', juros: '', multa: '', desconto: '' })
+    setPgtoForm({ valor: '', data: today()
+        .eq('entidade_id', entidadeAtiva?.id), forma_pgto: '', conta_id: '', obs: '', juros: '', multa: '', desconto: '' })
     load()
   }
 
