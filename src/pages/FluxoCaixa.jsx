@@ -28,6 +28,7 @@ export default function FluxoCaixa() {
     let q = supabase
       .from('caixa')
       .select('data,tipo,valor,categoria,origem_tabela')
+      .eq('entidade_id', entidadeAtiva?.id)
       .gte('data', ini)
       .lte('data', fim)
     if (filterConta) q = q.eq('conta_id', filterConta)

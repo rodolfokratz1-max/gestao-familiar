@@ -42,12 +42,12 @@ export default function Financeiro({ module }) {
   const [editing, setEditing] = useState(null)
   const [deleting, setDeleting] = useState(null)
 
-  useEffect(() => { setRows([]); setForm({ ...cfg.empty }); load() }, [module])
+  useEffect(() => { if (!entidadeAtiva?.id) return; setRows([]); setForm({ ...cfg.empty }); load() }, [module, entidadeAtiva?.id])
 
   async function load() {
     setLoading(true)
     const [{ data: r }, { data: c }] = await Promise.all([
-      supabase.from(cfg.table).select('*').order('data', { ascending: false }),
+      supabase.from(cfg.table).select('*').eq('entidade_id', entidadeAtiva?.id).order('data', { ascending: false }),
       supabase.from('contas').select('id,nome,tipo').eq('ativo', true).eq('entidade_id', entidadeAtiva?.id).order('nome'),
     ])
     setRows(r || [])

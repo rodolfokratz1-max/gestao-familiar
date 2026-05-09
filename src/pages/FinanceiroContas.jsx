@@ -62,13 +62,14 @@ export default function FinanceiroContas({ module }) {
   const [expanded, setExpanded] = useState({})
 
   useEffect(() => {
+    if (!entidadeAtiva?.id) return
     setRows([]); setPagamentos([]); setForm(emptyForm()); load()
-  }, [module])
+  }, [module, entidadeAtiva?.id])
 
   async function load() {
     setLoading(true)
     const [{ data: r }, { data: p }, { data: c }, { data: m }, { data: pgs }] = await Promise.all([
-      supabase.from(cfg.table).select('*').order('data_emissao', { ascending: false }),
+      supabase.from(cfg.table).select('*').eq('entidade_id', entidadeAtiva?.id).order('data_emissao', { ascending: false }),
       supabase.from('pessoas').select('id,nome,tipo').in('tipo', cfg.pessoaTipo).eq('ativo', true).eq('entidade_id', entidadeAtiva?.id).order('nome'),
       supabase.from('contas').select('id,nome,tipo').eq('ativo', true).eq('entidade_id', entidadeAtiva?.id).order('nome'),
       supabase.from('pessoas').select('id,nome').eq('tipo','membro').eq('ativo',true).eq('entidade_id', entidadeAtiva?.id).order('nome'),
@@ -127,7 +128,7 @@ export default function FinanceiroContas({ module }) {
           [cfg.pagoField]: false,
         })
       }
-      const { error } = await supabase.from(cfg.table).insert(inserts.map(sanitize))
+      const { error } = await supabase.from(cfg.table).insert(inserts.map(s => ({...sanitize(s), entidade_id: entidadeAtiva?.id})))
       if (error) { toast(error.message, 'error'); return }
       toast(`${n} parcelas criadas!`, 'success')
       setModal(false); load(); return
@@ -136,7 +137,7 @@ export default function FinanceiroContas({ module }) {
     const payload = sanitize({ ...form, [cfg.pagoField]: false })
     let error
     if (editing) ({ error } = await supabase.from(cfg.table).update(payload).eq('id', editing))
-    else ({ error } = await supabase.from(cfg.table).insert(payload))
+    else ({ error } = await supabase.from(cfg.table).insert({...payload, entidade_id: entidadeAtiva?.id}))
     if (error) { toast(error.message, 'error'); return }
     toast('Salvo!', 'success'); setModal(false); load()
   }
