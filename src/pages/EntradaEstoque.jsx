@@ -55,10 +55,9 @@ export default function EntradaEstoque() {
 
   async function loadAuxiliar() {
     const [{ data: p }, { data: f }, { data: c }, empData] = await Promise.all([
-      supabase.from('produtos').select(
-        .eq('entidade_id', entidadeAtiva?.id)'id,nome,codigo,preco_custo,estoque,unidade').eq('tipo','produto').eq('ativo',true).order('nome'),
+      supabase.from('produtos').select('id,nome,codigo,preco_custo,estoque,unidade').eq('tipo','produto').eq('ativo',true).eq('entidade_id', entidadeAtiva?.id).order('nome'),
       supabase.from('pessoas').select('id,nome,cpf_cnpj,telefone,email,logradouro,numero,bairro,cidade,estado,cep').in('tipo',['fornecedor','ambos']).eq('ativo',true).order('nome'),
-      supabase.from('contas').select('id,nome').eq('ativo',true).order('nome'),
+      supabase.from('contas').select('id,nome').eq('ativo',true).eq('entidade_id', entidadeAtiva?.id).order('nome'),
       supabase.from('empresa').select('margem_padrao').limit(1).single(),
     ])
     setProdutos(p||[]); setFornecedores(f||[]); setContas(c||[])
@@ -67,7 +66,7 @@ export default function EntradaEstoque() {
 
   async function loadHistorico() {
     setLoadingHist(true)
-    const { data } = await supabase.from('entradas_estoque').select('*').order('created_at',{ascending:false}).limit(50)
+    const { data } = await supabase.from('entradas_estoque').select('*').eq('entidade_id', entidadeAtiva?.id).order('created_at',{ascending:false}).limit(50)
     setHistorico(data||[])
     setLoadingHist(false)
   }
@@ -78,8 +77,7 @@ export default function EntradaEstoque() {
 
     const { pode, motivos } = await verificarExclusao('entradas_estoque', entrada)
     if (!pode) {
-      toast(`Não é possível reverter: ${motivos.join('; ')
-        .eq('entidade_id', entidadeAtiva?.id)}.`, 'error')
+      toast(`Não é possível reverter: ${motivos.join('; ')}.`, 'error')
       setRevertendo(null)
       return
     }
@@ -94,8 +92,7 @@ export default function EntradaEstoque() {
         if (!item.produto_id) continue
         const { data:prod } = await supabase.from('produtos').select('estoque').eq('id', item.produto_id).single()
         if (prod) {
-          const novoEst = Math.max(0, Number(prod.estoque||0)
-        .eq('entidade_id', entidadeAtiva?.id) - Number(item.qtd||0))
+          const novoEst = Math.max(0, Number(prod.estoque||0) - Number(item.qtd||0))
           const { error:eEst } = await supabase.from('produtos').update({ estoque: novoEst }).eq('id', item.produto_id)
           if (eEst) erros.push('estoque: '+eEst.message)
         }
@@ -123,9 +120,7 @@ export default function EntradaEstoque() {
       await loadHistorico()
     } catch(err) {
       console.error('reverterNota:', err)
-      toast('Erro ao reverter: ' + (err?.message || String(err)
-        .eq('entidade_id', entidadeAtiva?.id)
-        .eq('entidade_id', entidadeAtiva?.id)), 'error')
+      toast('Erro ao reverter: ' + (err?.message || String(err)), 'error')
     } finally {
       setProcessando(false)
     }
@@ -183,7 +178,7 @@ export default function EntradaEstoque() {
           ? emitCNPJ.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5')
           : emitCNPJ
         const codigoForn = await gerarCodigo('pessoas')
-        const { data: novoForn, error: errForn } = await supabase.from('pessoas').insert({entidade_id: entidadeAtiva?.id, 
+        const { data: novoForn, error: errForn } = await supabase.from('pessoas').insert({
           nome: emitNome, tipo: 'fornecedor', ativo: true,
           cpf_cnpj: cnpjFmt || null,
           ie: emitIE || null,
@@ -358,13 +353,12 @@ export default function EntradaEstoque() {
     const item = itens[idx]
     if (!item.descricao?.trim()) return toast('Preencha a descrição antes de criar','error')
     const { data: allCodes } = await supabase.from('produtos').select('codigo')
-    const nums = (allCodes||[]).map(r => parseInt((r.codigo||'').replace(/[^0-9]/g,''))
-        .eq('entidade_id', entidadeAtiva?.id)||0)
+    const nums = (allCodes||[]).map(r => parseInt((r.codigo||'').replace(/[^0-9]/g,''))||0)
     const nextNum = Math.max(0, ...nums) + 1
     const codigo = 'PROD-'+String(nextNum).padStart(3,'0')
     const custo = Number(item.valor_unit)||0
     const venda = margemPadrao > 0 ? custo / (1 - margemPadrao/100) : 0
-    const { data:novo, error } = await supabase.from('produtos').insert({entidade_id: entidadeAtiva?.id, 
+    const { data:novo, error } = await supabase.from('produtos').insert({
       codigo, nome:item.descricao, tipo:'produto',
       preco_custo: custo,
       preco_venda: venda > 0 ? Number(venda.toFixed(2)) : null,
@@ -410,8 +404,7 @@ export default function EntradaEstoque() {
       if (itensSemVinc.length > 0) {
         // Busca o maior número sequencial existente uma só vez
         const { data: allCodes } = await supabase.from('produtos').select('codigo').order('created_at',{ascending:false})
-        const nums = (allCodes||[]).map(r => parseInt((r.codigo||'').replace(/[^0-9]/g,''))
-        .eq('entidade_id', entidadeAtiva?.id)||0)
+        const nums = (allCodes||[]).map(r => parseInt((r.codigo||'').replace(/[^0-9]/g,''))||0)
         let nextNum = Math.max(0, ...nums)
         for (let idx=0; idx<itensProc.length; idx++) {
           const item = itensProc[idx]
@@ -422,7 +415,7 @@ export default function EntradaEstoque() {
             const custoItem = Number(item.valor_unit)||0
             const vendaCalc = margemPadrao > 0 ? custoItem / (1 - margemPadrao/100) : 0
             const fiscal = item._fiscal || {}
-            const { data:novo, error:errInsert } = await supabase.from('produtos').insert({entidade_id: entidadeAtiva?.id, 
+            const { data:novo, error:errInsert } = await supabase.from('produtos').insert({
               codigo,
               nome: item.descricao, tipo: 'produto',
               preco_custo: custoItem,
@@ -450,7 +443,7 @@ export default function EntradaEstoque() {
             }).select().single()
             if (errInsert) {
               const fiscal2 = item._fiscal || {}
-              const { data:novo2 } = await supabase.from('produtos').insert({entidade_id: entidadeAtiva?.id, 
+              const { data:novo2 } = await supabase.from('produtos').insert({
                 codigo: `PROD-${Date.now()}`,
                 nome: item.descricao, tipo: 'produto',
                 preco_custo: Number(item.valor_unit)||0,
@@ -482,7 +475,7 @@ export default function EntradaEstoque() {
       }
 
       // 1. Salva entrada no histórico
-      const { data:entrada, error:errE } = await supabase.from('entradas_estoque').insert({entidade_id: entidadeAtiva?.id, 
+      const { data:entrada, error:errE } = await supabase.from('entradas_estoque').insert({
         numero_nf:nota.numero, fornecedor_id:nota.fornecedor_id||null,
         fornecedor_nome:nota.fornecedor_nome, data_emissao:nota.data_emissao,
         chave_nfe:nota.chave_nfe, total:totalNota, obs:nota.obs, itens:itensProc,
@@ -502,15 +495,14 @@ export default function EntradaEstoque() {
         if (eRpc && eRpc.message?.includes('function')) {
           const { data:prod } = await supabase.from('produtos').select('estoque').eq('id',item.produto_id).single()
           await supabase.from('produtos').update({
-            estoque: Number(prod?.estoque||0)
-        .eq('entidade_id', entidadeAtiva?.id)+Number(item.qtd),
+            estoque: Number(prod?.estoque||0)+Number(item.qtd),
             preco_custo: Number(item.valor_unit),
           }).eq('id',item.produto_id)
         }
       }
 
       // 3. Cria registro em Compras
-      const { data:compra } = await supabase.from('compras').insert({entidade_id: entidadeAtiva?.id, 
+      const { data:compra } = await supabase.from('compras').insert({
         data: nota.data_emissao,
         descricao: `NF ${nota.numero||'s/n'} — ${nota.fornecedor_nome||'Fornecedor'}`,
         fornecedor: nota.fornecedor_nome||'',
@@ -528,7 +520,7 @@ export default function EntradaEstoque() {
           // Usa exatamente as duplicatas do XML — valores e datas originais
           for (let i=0; i<dupsXML.length; i++) {
             const dup = dupsXML[i]
-            await supabase.from('contas_pagar').insert({entidade_id: entidadeAtiva?.id, 
+            await supabase.from('contas_pagar').insert({
               data_emissao: today(),
               descricao: dupsXML.length>1
                 ? `NF ${nota.numero||'s/n'} — ${nota.fornecedor_nome} (${dup.nDup||i+1}/${dupsXML.length})`
@@ -558,7 +550,7 @@ export default function EntradaEstoque() {
             venc.setDate(venc.getDate()+p*Number(fin.intervalo_dias))
             const vencStr = venc.toISOString().split('T')[0]
             const valorParcela = ((parcelaCentavos + (p === nParcelas - 1 ? restoCentavos : 0)) / 100).toFixed(2)
-            await supabase.from('contas_pagar').insert({entidade_id: entidadeAtiva?.id, 
+            await supabase.from('contas_pagar').insert({
               data_emissao: today(),
               descricao: nParcelas>1
                 ? `NF ${nota.numero||'s/n'} — ${nota.fornecedor_nome} (${p+1}/${nParcelas})`
