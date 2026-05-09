@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useToast } from '../contexts/ToastContext'
+import { useEntidade } from '../contexts/EntidadeContext'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import {
   MessageCircle, ShoppingCart, Wrench, CreditCard, FileText,
   CheckCircle, XCircle, Pencil, RefreshCw, ChevronDown, ChevronUp,
-  Clock, User, Calendar, Wallet, Tag, Hash, Camera, X, HardHat
+  Clock, User, Calendar, Wallet, Tag, MapPin, Hash
 } from 'lucide-react'
 import { today, fmtDate } from '../lib/utils.js'
 
@@ -28,6 +29,7 @@ const STATUS = [
 
 const CATEGORIAS = ['Alimentacao','Transporte','Saude','Mercado','Restaurante',
   'Combustivel','Farmacia','Servicos','Moradia','Lazer','Educacao','Compras','Pagamentos','Outros']
+
 const FORMAS = ['PIX','Cartao Debito','Cartao Credito','Dinheiro','Boleto','Transferencia','Outros']
 
 function tipoConfig(tipo) {
@@ -42,11 +44,11 @@ function badgeStyle(status) {
 
 export default function InboxWhatsApp() {
   const toast = useToast()
+  const { entidadeAtiva } = useEntidade()
   const [rows, setRows]           = useState([])
   const [anotacoes, setAnotacoes] = useState([])
   const [contas, setContas]       = useState([])
   const [cartoes, setCartoes]     = useState([])
-  const [obras, setObras]         = useState([])
   const [loading, setLoading]     = useState(true)
   const [filtroTipo, setFiltroTipo]     = useState('todos')
   const [filtroStatus, setFiltroStatus] = useState('')
@@ -56,35 +58,31 @@ export default function InboxWhatsApp() {
   const [editingId, setEditingId] = useState(null)
   const [confirmando, setConfirmando] = useState(null)
 
-  // Modal visualização de comprovante
-  const [fotoModal, setFotoModal] = useState(null) // URL da imagem
-
-  useEffect(() => { load() }, [])
+  useEffect(() => { if (entidadeAtiva?.id) load() }, [entidadeAtiva?.id])
 
   async function load() {
     setLoading(true)
-    const [{ data: inbox }, { data: anot }, { data: conts }, { data: carts }, { data: obrs }] = await Promise.all([
-      supabase.from('lancamentos_inbox').select('*').order('created_at', { ascending: false }),
+    const [{ data: inbox }, { data: anot }, { data: conts }, { data: carts }] = await Promise.all([
+      supabase.from('lancamentos_inbox').select('*').eq('entidade_id', entidadeAtiva?.id).order('created_at', { ascending: false }),
       supabase.from('whatsapp_anotacoes').select('*').order('created_at', { ascending: false }),
-      supabase.from('contas').select('id,nome').eq('ativo', true).order('nome'),
-      supabase.from('cartoes').select('id,nome').eq('ativo', true).order('nome'),
-      supabase.from('obras').select('id,nome').eq('ativo', true).order('nome'),
+      supabase.from('contas').select('id,nome').eq('ativo', true).eq('entidade_id', entidadeAtiva?.id).order('nome'),
+      supabase.from('cartoes').select('id,nome').eq('ativo', true).eq('entidade_id', entidadeAtiva?.id).order('nome'),
     ])
     setRows(inbox || [])
     setAnotacoes(anot || [])
     setContas(conts || [])
     setCartoes(carts || [])
-    setObras(obrs || [])
     setLoading(false)
   }
 
-  // Unifica lançamentos e anotações
+  // Unifica lançamentos e anotações em uma lista
   const tudoUnificado = [
     ...(rows || []).map(r => ({ ...r, _source: 'inbox' })),
     ...(anotacoes || []).filter(() => filtroTipo === 'todos' || filtroTipo === 'anotacao')
       .map(a => ({ ...a, _source: 'anotacao', tipo: 'anotacao', descricao: a.texto, status: a.arquivada ? 'aprovado' : 'pendente', valor: 0, categoria: 'Anotação', forma_pgto: '-', data_ref: a.created_at?.split('T')[0] }))
   ]
 
+  // Contadores por tipo
   const contadores = TIPOS.reduce((acc, t) => {
     if (t.id === 'todos') {
       acc[t.id] = tudoUnificado.filter(r => (!filtroStatus ? r.status === 'pendente' : r.status === filtroStatus)).length
@@ -97,6 +95,7 @@ export default function InboxWhatsApp() {
     return acc
   }, {})
 
+  // Filtra lista
   const filtrados = tudoUnificado.filter(r => {
     const matchTipo = filtroTipo === 'todos' ? true :
       filtroTipo === 'anotacao' ? r._source === 'anotacao' :
@@ -116,50 +115,31 @@ export default function InboxWhatsApp() {
       await supabase.from('whatsapp_anotacoes').update({ arquivada: true }).eq('id', row.id)
       toast('Anotação arquivada!', 'success')
     } else {
+      // Grava no destino correto
       const data = row.data_ref || today()
-
-      // Se tem obra_id → vai para obra_lancamentos em vez do caixa normal
-      if (row.obra_id) {
-        const { error } = await supabase.from('obra_lancamentos').insert({
-          obra_id:     row.obra_id,
-          tipo:        row.tipo === 'entrada' ? 'receita' : 'despesa',
-          descricao:   row.descricao,
-          valor:       row.valor,
-          pago_por:    row.forma_pgto || '',
-          reembolsavel: false,
-          data_ref:    data,
-          obs:         `Via WhatsApp por ${row.nome_remetente || ''}`,
-          origem_inbox_id: row.id,
+      if (row.categoria === 'Compras' || row.tipo === 'saida') {
+        await supabase.from('caixa').insert({entidade_id: entidadeAtiva?.id,
+          data, tipo: 'saida', descricao: row.descricao,
+          valor: row.valor, categoria: row.categoria,
+          forma_pgto: row.forma_pgto, conta_id: row.conta_id,
+          origem_id: row.id, origem_tabela: 'lancamentos_inbox'
         })
-        if (error) { toast(error.message, 'error'); return }
-        await supabase.from('lancamentos_inbox').update({ status: 'aprovado' }).eq('id', row.id)
-        toast('Lançado na Obra!', 'success')
-      } else {
-        // Fluxo normal — vai para o caixa ou contas
-        if (row.categoria === 'Compras' || row.tipo === 'saida') {
-          await supabase.from('caixa').insert({
-            data, tipo: 'saida', descricao: row.descricao,
-            valor: row.valor, categoria: row.categoria,
-            forma_pgto: row.forma_pgto, conta_id: row.conta_id,
-            origem_id: row.id, origem_tabela: 'lancamentos_inbox'
-          })
-        } else if (row.categoria === 'Pagamentos') {
-          await supabase.from('contas_pagar').insert({
-            data_emissao: data, descricao: row.descricao,
-            valor: row.valor, vencimento: row.data_ref,
-            obs: `Via WhatsApp por ${row.nome_remetente}`
-          })
-        } else if (row.tipo === 'entrada') {
-          await supabase.from('caixa').insert({
-            data, tipo: 'entrada', descricao: row.descricao,
-            valor: row.valor, categoria: row.categoria,
-            forma_pgto: row.forma_pgto, conta_id: row.conta_id,
-            origem_id: row.id, origem_tabela: 'lancamentos_inbox'
-          })
-        }
-        await supabase.from('lancamentos_inbox').update({ status: 'aprovado' }).eq('id', row.id)
-        toast('Lançamento aprovado e gravado!', 'success')
+      } else if (row.categoria === 'Pagamentos') {
+        await supabase.from('contas_pagar').insert({entidade_id: entidadeAtiva?.id,
+          data_emissao: data, descricao: row.descricao,
+          valor: row.valor, vencimento: row.data_ref,
+          obs: `Via WhatsApp por ${row.nome_remetente}`
+        })
+      } else if (row.tipo === 'entrada') {
+        await supabase.from('caixa').insert({entidade_id: entidadeAtiva?.id,
+          data, tipo: 'entrada', descricao: row.descricao,
+          valor: row.valor, categoria: row.categoria,
+          forma_pgto: row.forma_pgto, conta_id: row.conta_id,
+          origem_id: row.id, origem_tabela: 'lancamentos_inbox'
+        })
       }
+      await supabase.from('lancamentos_inbox').update({ status: 'aprovado' }).eq('id', row.id)
+      toast('Lançamento aprovado e gravado!', 'success')
     }
     load()
   }
@@ -178,14 +158,13 @@ export default function InboxWhatsApp() {
 
   function openEdit(row) {
     setForm({
-      descricao:    row.descricao || '',
-      valor:        row.valor || '',
-      categoria:    row.categoria || '',
-      forma_pgto:   row.forma_pgto || '',
-      data_ref:     row.data_ref || today(),
-      conta_id:     row.conta_id || '',
+      descricao: row.descricao || '',
+      valor: row.valor || '',
+      categoria: row.categoria || '',
+      forma_pgto: row.forma_pgto || '',
+      data_ref: row.data_ref || today(),
+      conta_id: row.conta_id || '',
       num_parcelas: row.num_parcelas || 1,
-      obra_id:      row.obra_id || '',
     })
     setEditingId(row.id)
     setModal(true)
@@ -193,23 +172,20 @@ export default function InboxWhatsApp() {
 
   async function saveEdit() {
     if (!form.descricao) return toast('Descrição obrigatória', 'error')
-    if (!form.valor)     return toast('Valor obrigatório', 'error')
+    if (!form.valor) return toast('Valor obrigatório', 'error')
     await supabase.from('lancamentos_inbox').update({
-      descricao:    form.descricao,
-      valor:        parseFloat(String(form.valor).replace(',', '.')),
-      categoria:    form.categoria,
-      forma_pgto:   form.forma_pgto,
-      data_ref:     form.data_ref,
-      conta_id:     form.conta_id || null,
+      descricao: form.descricao,
+      valor: parseFloat(String(form.valor).replace(',', '.')),
+      categoria: form.categoria,
+      forma_pgto: form.forma_pgto,
+      data_ref: form.data_ref,
+      conta_id: form.conta_id || null,
       num_parcelas: form.num_parcelas || 1,
-      obra_id:      form.obra_id || null,
     }).eq('id', editingId)
     toast('Lançamento atualizado!', 'success')
     setModal(false)
     load()
   }
-
-  const nomeObra = id => obras.find(o => o.id === id)?.nome
 
   const tc = tipoConfig(filtroTipo)
 
@@ -231,16 +207,16 @@ export default function InboxWhatsApp() {
             const Icon = t.icon
             const ativo = filtroTipo === t.id
             const count = contadores[t.id] || 0
-            const rgb = t.color === 'var(--accent)' ? '79,142,247' : t.color === 'var(--green)' ? '52,211,153' : t.color === 'var(--yellow)' ? '251,191,36' : t.color === 'var(--purple)' ? '167,139,250' : '125,143,179'
             return (
               <button key={t.id} onClick={() => setFiltroTipo(t.id)}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 7,
                   padding: '8px 14px', borderRadius: 10, cursor: 'pointer',
                   border: ativo ? `1px solid ${t.color}` : '1px solid var(--border)',
-                  background: ativo ? `rgba(${rgb},.1)` : 'var(--bg2)',
+                  background: ativo ? `rgba(${t.color === 'var(--accent)' ? '79,142,247' : t.color === 'var(--green)' ? '52,211,153' : t.color === 'var(--yellow)' ? '251,191,36' : t.color === 'var(--purple)' ? '167,139,250' : '125,143,179'},.1)` : 'var(--bg2)',
                   color: ativo ? t.color : 'var(--text2)',
-                  fontSize: 12, fontWeight: ativo ? 600 : 500, transition: 'all .15s'
+                  fontSize: 12, fontWeight: ativo ? 600 : 500,
+                  transition: 'all .15s'
                 }}>
                 <Icon size={13} />
                 {t.label}
@@ -299,8 +275,6 @@ export default function InboxWhatsApp() {
             const Icon = cfg.icon
             const isExp = expanded === row.id
             const isPendente = row.status === 'pendente'
-            const temFoto = !!row.imagem_url
-            const temObra = !!row.obra_id
 
             return (
               <div key={row.id} style={{
@@ -324,17 +298,8 @@ export default function InboxWhatsApp() {
 
                   {/* Descrição */}
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {row.descricao || 'Sem descrição'}
-                      {/* Ícone câmera — comprovante disponível */}
-                      {temFoto && (
-                        <button
-                          onClick={e => { e.stopPropagation(); setFotoModal(row.imagem_url) }}
-                          title="Ver comprovante"
-                          style={{ background: 'rgba(79,142,247,.12)', border: 'none', borderRadius: 6, padding: '2px 6px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3, color: 'var(--accent)' }}>
-                          <Camera size={12} />
-                        </button>
-                      )}
                     </div>
                     <div style={{ display: 'flex', gap: 10, marginTop: 3, flexWrap: 'wrap' }}>
                       {row.nome_remetente && (
@@ -350,12 +315,6 @@ export default function InboxWhatsApp() {
                       {row.categoria && row.categoria !== 'Anotação' && (
                         <span style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: 3 }}>
                           <Tag size={10} /> {row.categoria}
-                        </span>
-                      )}
-                      {/* Badge Obra */}
-                      {temObra && (
-                        <span style={{ fontSize: 10, color: 'var(--accent)', background: 'rgba(79,142,247,.1)', border: '1px solid rgba(79,142,247,.2)', borderRadius: 5, padding: '1px 6px', display: 'flex', alignItems: 'center', gap: 3 }}>
-                          <HardHat size={9} /> {nomeObra(row.obra_id) || 'Obra'}
                         </span>
                       )}
                     </div>
@@ -397,23 +356,7 @@ export default function InboxWhatsApp() {
                       {row.created_at && (
                         <Detail icon={<Clock size={12} />} label="Recebido" value={new Date(row.created_at).toLocaleString('pt-BR')} />
                       )}
-                      {temObra && (
-                        <Detail icon={<HardHat size={12} />} label="Obra" value={nomeObra(row.obra_id) || row.obra_id} />
-                      )}
                     </div>
-
-                    {/* Preview do comprovante */}
-                    {temFoto && (
-                      <div style={{ marginBottom: 12 }}>
-                        <div style={{ fontSize: 10, color: 'var(--text3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 6 }}>Comprovante</div>
-                        <img
-                          src={row.imagem_url}
-                          alt="Comprovante"
-                          onClick={() => setFotoModal(row.imagem_url)}
-                          style={{ maxHeight: 120, maxWidth: 200, borderRadius: 8, border: '1px solid var(--border)', cursor: 'pointer', objectFit: 'cover' }}
-                        />
-                      </div>
-                    )}
 
                     {/* Ações */}
                     {isPendente && (
@@ -430,8 +373,7 @@ export default function InboxWhatsApp() {
                         )}
                         <button onClick={() => aprovar(row)}
                           style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 8, border: '1px solid rgba(52,211,153,.3)', background: 'rgba(52,211,153,.08)', color: 'var(--green)', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
-                          <CheckCircle size={13} />
-                          {temObra ? 'Aprovar → Obra' : 'Aprovar'}
+                          <CheckCircle size={13} /> Aprovar
                         </button>
                       </div>
                     )}
@@ -488,18 +430,6 @@ export default function InboxWhatsApp() {
                   className="input" />
               </Field>
             </div>
-            {/* Vincular a uma obra */}
-            <Field label="Obra (opcional)">
-              <select value={form.obra_id} onChange={e => setForm(f => ({ ...f, obra_id: e.target.value }))} className="input">
-                <option value="">Sem obra (vai para o caixa normal)</option>
-                {obras.map(o => <option key={o.id} value={o.id}>{o.nome}</option>)}
-              </select>
-              {form.obra_id && (
-                <div style={{ marginTop: 5, fontSize: 11, color: 'var(--accent)' }}>
-                  Ao aprovar, este lançamento irá para os lançamentos da obra selecionada.
-                </div>
-              )}
-            </Field>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
               <button onClick={() => setModal(false)}
                 style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>
@@ -522,37 +452,6 @@ export default function InboxWhatsApp() {
           onConfirm={() => rejeitar(confirmando.row)}
           onCancel={() => setConfirmando(null)}
         />
-      )}
-
-      {/* Modal Foto / Comprovante */}
-      {fotoModal && (
-        <div
-          onClick={() => setFotoModal(null)}
-          style={{
-            position: 'fixed', inset: 0, zIndex: 1000,
-            background: 'rgba(0,0,0,.85)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            padding: 20,
-          }}>
-          <div onClick={e => e.stopPropagation()} style={{ position: 'relative', maxWidth: '90vw', maxHeight: '90vh' }}>
-            <button
-              onClick={() => setFotoModal(null)}
-              style={{
-                position: 'absolute', top: -12, right: -12, zIndex: 1,
-                width: 32, height: 32, borderRadius: '50%',
-                background: 'var(--bg2)', border: '1px solid var(--border)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                cursor: 'pointer', color: 'var(--text)',
-              }}>
-              <X size={15} />
-            </button>
-            <img
-              src={fotoModal}
-              alt="Comprovante"
-              style={{ maxWidth: '85vw', maxHeight: '85vh', borderRadius: 12, objectFit: 'contain' }}
-            />
-          </div>
-        </div>
       )}
 
       <style>{`

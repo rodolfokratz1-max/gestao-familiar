@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { useToast } from '../contexts/ToastContext'
+import { useEntidade } from '../contexts/EntidadeContext'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import {
@@ -34,6 +35,7 @@ const EMPTY_LANC = {
 
 export default function Obras() {
   const toast = useToast()
+  const { entidadeAtiva } = useEntidade()
   const [rows, setRows]                     = useState([])
   const [lancamentosMap, setLancamentosMap] = useState({})
   const [clientes, setClientes]             = useState([])
@@ -65,20 +67,21 @@ export default function Obras() {
   const [fotoIdx, setFotoIdx]           = useState(0)
 
   useEffect(() => {
+    if (!entidadeAtiva?.id) return
     load()
-    supabase.from('pessoas').select('id,nome').in('tipo', ['cliente', 'ambos']).eq('ativo', true).order('nome')
+    supabase.from('pessoas').select('id,nome').in('tipo', ['cliente', 'ambos']).eq('ativo', true).eq('entidade_id', entidadeAtiva?.id).order('nome')
       .then(({ data }) => setClientes(data || []))
     supabase.from('obras_fontes_pagamento').select('id,nome,tipo,direcao,conta_id').eq('ativo', true).order('nome')
       .then(({ data }) => setFontes(data || []))
-    supabase.from('contas').select('id,nome,saldo_atual').eq('ativo', true).order('nome')
+    supabase.from('contas').select('id,nome,saldo_atual').eq('ativo', true).eq('entidade_id', entidadeAtiva?.id).order('nome')
       .then(({ data }) => setContas(data || []))
     supabase.from('empresa').select('*').eq('ativo', true).limit(1).single()
       .then(({ data }) => setEmpresa(data || null))
-  }, [])
+  }, [entidadeAtiva?.id])
 
   async function load() {
     setLoading(true)
-    const { data: obras, error } = await supabase.from('obras').select('*').order('data_inicio', { ascending: false })
+    const { data: obras, error } = await supabase.from('obras').select('*').eq('entidade_id', entidadeAtiva?.id).order('data_inicio', { ascending: false })
     if (error) { toast(error.message, 'error'); setLoading(false); return }
     setRows(obras || [])
     if ((obras || []).length > 0) {
@@ -137,7 +140,7 @@ export default function Obras() {
     }
     let error
     if (editing) ({ error } = await supabase.from('obras').update(payload).eq('id', editing))
-    else         ({ error } = await supabase.from('obras').insert(payload))
+    else         ({ error } = await supabase.from('obras').insert({...payload, entidade_id: entidadeAtiva?.id}))
     if (error) { toast(error.message, 'error'); return }
     toast('Salvo!', 'success'); setModal(false); load()
   }
@@ -293,7 +296,7 @@ export default function Obras() {
           }
         } else if (novaFonteMoveCaixa) {
           // Não havia caixa antes, mas agora deve ter: cria
-          const { data: caixaRow } = await supabase.from('caixa').insert({
+          const { data: caixaRow } = await supabase.from('caixa').insert({entidade_id: entidadeAtiva?.id,
             data:          formLanc.data_ref || today(),
             tipo:          tipoCaixa,
             descricao:     `[Obra: ${obraSel.nome}] ${formLanc.descricao}`,
@@ -318,13 +321,13 @@ export default function Obras() {
 
       } else {
         // ── Novo lançamento ───────────────────────────────────────────────────
-        const { data, error } = await supabase.from('obra_lancamentos').insert(payload).select().single()
+        const { data, error } = await supabase.from('obra_lancamentos').insert({...payload, entidade_id: entidadeAtiva?.id}).select().single()
         if (error) { toast(error.message, 'error'); setSavingLanc(false); return }
         lancId = data.id
 
         if (fonte && FONTES_MOVEM_CAIXA.includes(fonte.tipo) && formLanc.conta_id) {
           const tipoCaixa = formLanc.tipo === 'despesa' ? 'saida' : 'entrada'
-          const { data: caixaRow } = await supabase.from('caixa').insert({
+          const { data: caixaRow } = await supabase.from('caixa').insert({entidade_id: entidadeAtiva?.id,
             data:          formLanc.data_ref || today(),
             tipo:          tipoCaixa,
             descricao:     `[Obra: ${obraSel.nome}] ${formLanc.descricao}`,
@@ -349,7 +352,7 @@ export default function Obras() {
           // ── Receita com PIX/Espécie → gera C/R já quitado ─────────────────
           // Garante rastreabilidade: aparece em Contas Recebidas vinculado à obra
           if (formLanc.tipo === 'receita' && ['proprio', 'dinheiro_cliente'].includes(fonte.tipo)) {
-            await supabase.from('contas_receber').insert({
+            await supabase.from('contas_receber').insert({entidade_id: entidadeAtiva?.id,
               descricao:    `[Obra: ${obraSel.nome}] ${formLanc.descricao}`,
               valor,
               data_emissao: formLanc.data_ref || today(),

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useToast } from '../contexts/ToastContext'
+import { useEntidade } from '../contexts/EntidadeContext'
 import Modal from '../components/Modal'
 import { Plus, Pencil, Power, Wallet, AlertCircle, CheckCircle, Landmark } from 'lucide-react'
 
@@ -18,6 +19,7 @@ const EMPTY = { nome: '', tipo: 'empresa', direcao: 'saida', conta_id: '', ativo
 
 export default function ObrasFontes() {
   const toast = useToast()
+  const { entidadeAtiva } = useEntidade()
   const [rows, setRows]       = useState([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal]     = useState(false)
@@ -28,7 +30,7 @@ export default function ObrasFontes() {
 
   useEffect(() => {
     load()
-    supabase.from('contas').select('id,nome').eq('ativo', true).order('nome')
+    supabase.from('contas').select('id,nome').eq('ativo', true).eq('entidade_id', entidadeAtiva?.id).order('nome')
       .then(({ data }) => setContas(data || []))
   }, [])
 
