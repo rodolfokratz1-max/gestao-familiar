@@ -139,7 +139,7 @@ export default function FinanceiroContas({ module }) {
     const payload = sanitize({ ...form, [cfg.pagoField]: false })
     let error
     if (editing) ({ error } = await supabase.from(cfg.table).update(payload).eq('id', editing))
-    else ({ error } = await supabase.from(cfg.table).insert({...payload, entidade_id: entidadeAtiva?.id || null}))
+    else ({ error } = await supabase.from(cfg.table).insert(sanitize({...payload, entidade_id: entidadeAtiva?.id || null}))
     if (error) { toast(error.message, 'error'); return }
     toast('Salvo!', 'success'); setModal(false); load()
   }

@@ -20,9 +20,16 @@ export default function CentroCusto() {
   const [form, setForm]       = useState(EMPTY)
   const [deleting, setDeleting] = useState(null)
 
+
+  // Sanitiza payload — converte strings vazias para null (evita erro uuid inválido)
+  const sanitize = (obj) => Object.fromEntries(
+    Object.entries(obj).map(([k, v]) => [k, v === '' ? null : v])
+  )
+
   useEffect(() => { if (entidadeAtiva?.id) loadAll() }, [entidadeAtiva?.id])
 
   async function loadAll() {
+    if (!entidadeAtiva?.id) { setLoading(false); return }
     setLoading(true)
     const [{ data: cc }, { data: rec }, { data: des }] = await Promise.all([
       supabase.from('centros_custo').select('*').eq('entidade_id', entidadeAtiva?.id).order('nome'),
@@ -43,10 +50,11 @@ export default function CentroCusto() {
   function openEdit(c) { setForm({...c}); setEditing(c.id); setModal(true) }
 
   async function save() {
+    if (!entidadeAtiva?.id) return toast('Selecione uma entidade antes de salvar', 'error')
     if (!form.nome?.trim()) return toast('Nome obrigatório','error')
     let error
     if (editing) ({ error } = await supabase.from('centros_custo').update(form).eq('id',editing))
-    else ({ error } = await supabase.from('centros_custo').insert({...form, entidade_id: entidadeAtiva?.id}))
+    else ({ error } = await supabase.from('centros_custo').insert(sanitize({...form, entidade_id: entidadeAtiva?.id || null}))
     if (error) { toast(error.message,'error'); return }
     toast('Salvo!','success'); setModal(false); loadAll()
   }

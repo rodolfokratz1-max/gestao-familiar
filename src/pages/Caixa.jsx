@@ -32,6 +32,12 @@ export default function Caixa() {
   const [editingLanc, setEditingLanc] = useState(null)
   const [formLanc, setFormLanc]       = useState(EMPTY_LANC)
 
+
+  // Sanitiza payload — converte strings vazias para null (evita erro uuid inválido)
+  const sanitize = (obj) => Object.fromEntries(
+    Object.entries(obj).map(([k, v]) => [k, v === '' ? null : v])
+  )
+
   useEffect(() => { if (entidadeAtiva?.id) load() }, [entidadeAtiva?.id])
 
   async function load() {
@@ -134,7 +140,7 @@ export default function Caixa() {
     if (editingLanc) {
       ({ error } = await supabase.from('caixa').update(payload).eq('id',editingLanc))
     } else {
-      const { error: eIns } = await supabase.from('caixa').insert({...payload, entidade_id: entidadeAtiva?.id || null})
+      const { error: eIns } = await supabase.from('caixa').insert(sanitize({...payload, entidade_id: entidadeAtiva?.id || null})
       error = eIns
 
       // Atualiza saldo da conta se informada (lê do banco — seguro para múltiplos usuários)

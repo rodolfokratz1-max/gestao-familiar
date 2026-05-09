@@ -42,6 +42,12 @@ export default function Financeiro({ module }) {
   const [editing, setEditing] = useState(null)
   const [deleting, setDeleting] = useState(null)
 
+
+  // Sanitiza payload — converte strings vazias para null (evita erro uuid inválido)
+  const sanitize = (obj) => Object.fromEntries(
+    Object.entries(obj).map(([k, v]) => [k, v === '' ? null : v])
+  )
+
   useEffect(() => { if (!entidadeAtiva?.id) return; setRows([]); setForm({ ...cfg.empty }); load() }, [module, entidadeAtiva?.id])
 
   async function load() {
@@ -82,7 +88,7 @@ export default function Financeiro({ module }) {
       const anterior = rows.find(r => r.id === editing)
       const eraPago = anterior?.[cfg.pagoField]
 
-      ;({ error } = await supabase.from(cfg.table).update({ ...form, usuario_email: usuarioEmail, usuario_nome: usuarioNome }).eq('id', editing))
+      ;({ error } = await supabase.from(cfg.table).update(sanitize({ ...form, usuario_email: usuarioEmail, usuario_nome: usuarioNome })).eq('id', editing))
       if (error) { toast(error.message, 'error'); return }
 
       // Se mudou de não pago → pago, lança no caixa
@@ -90,7 +96,7 @@ export default function Financeiro({ module }) {
       // Se mudou de pago → não pago, remove lançamento do caixa
       if (eraPago && !jaPago) await removerCaixa(editing)
     } else {
-      const { data: novo, error: e } = await supabase.from(cfg.table).insert({ ...form, entidade_id: entidadeAtiva?.id || null, usuario_email: usuarioEmail, usuario_nome: usuarioNome }).select().single()
+      const { data: novo, error: e } = await supabase.from(cfg.table).insert(sanitize({ ...form, entidade_id: entidadeAtiva?.id || null, usuario_email: usuarioEmail, usuario_nome: usuarioNome })).select().single()
       if (e) { toast(e.message, 'error'); return }
       if (jaPago) await lancarCaixa({ ...form, id: novo.id })
     }

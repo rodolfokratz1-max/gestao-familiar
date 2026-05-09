@@ -50,6 +50,12 @@ export default function Produtos() {
   const [deletingCat, setDeletingCat]   = useState(null)
   const [showCats, setShowCats]         = useState(false)
 
+
+  // Sanitiza payload — converte strings vazias para null (evita erro uuid inválido)
+  const sanitize = (obj) => Object.fromEntries(
+    Object.entries(obj).map(([k, v]) => [k, v === '' ? null : v])
+  )
+
   useEffect(() => { if (entidadeAtiva?.id) loadAll() }, [entidadeAtiva?.id])
 
   async function loadAll() {
@@ -149,7 +155,7 @@ export default function Produtos() {
     }
     let error
     if (editing) ({ error } = await supabase.from('produtos').update(payload).eq('id', editing))
-    else ({ error } = await supabase.from('produtos').insert({...payload, entidade_id: entidadeAtiva?.id || null}))
+    else ({ error } = await supabase.from('produtos').insert(sanitize({...payload, entidade_id: entidadeAtiva?.id || null}))
     if (error) { toast(error.message,'error'); return }
     toast(editing ? 'Atualizado!' : 'Criado!', 'success')
     setModal(false); loadAll()
@@ -177,7 +183,7 @@ export default function Produtos() {
     if (!formCat.nome?.trim()) return toast('Nome obrigatório','error')
     let error
     if (editingCat) ({ error } = await supabase.from('produto_categorias').update(formCat).eq('id', editingCat))
-    else ({ error } = await supabase.from('produto_categorias').insert({...formCat, entidade_id: entidadeAtiva?.id || null}))
+    else ({ error } = await supabase.from('produto_categorias').insert(sanitize({...formCat, entidade_id: entidadeAtiva?.id || null}))
     if (error) { toast(error.message,'error'); return }
     toast('Categoria salva!','success'); setModalCat(false); loadAll()
   }

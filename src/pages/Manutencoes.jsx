@@ -22,9 +22,16 @@ export default function Manutencoes() {
   const [editing, setEditing] = useState(null)
   const [deleting, setDeleting] = useState(null)
 
-  useEffect(() => { load() }, [])
+
+  // Sanitiza payload — converte strings vazias para null (evita erro uuid inválido)
+  const sanitize = (obj) => Object.fromEntries(
+    Object.entries(obj).map(([k, v]) => [k, v === '' ? null : v])
+  )
+
+  useEffect(() => { if (entidadeAtiva?.id) load() }, [entidadeAtiva?.id])
 
   async function load() {
+    if (!entidadeAtiva?.id) { setLoading(false); return }
     setLoading(true)
     const { data, error } = await supabase.from('manutencoes').select('*').eq('entidade_id', entidadeAtiva?.id).order('data_abertura', { ascending: false })
     if (error) toast(error.message, 'error')
@@ -43,11 +50,12 @@ export default function Manutencoes() {
   function openEdit(r) { setForm({ ...r }); setEditing(r.id); setModal(true) }
 
   async function save() {
+    if (!entidadeAtiva?.id) return toast('Selecione uma entidade antes de salvar', 'error')
     if (!form.bem?.trim()) return toast('Bem/Equipamento obrigatório', 'error')
     if (!form.descricao?.trim()) return toast('Descrição obrigatória', 'error')
     let error
     if (editing) ({ error } = await supabase.from('manutencoes').update(form).eq('id', editing))
-    else ({ error } = await supabase.from('manutencoes').insert({...form, entidade_id: entidadeAtiva?.id}))
+    else ({ error } = await supabase.from('manutencoes').insert(sanitize({...form, entidade_id: entidadeAtiva?.id || null}))
     if (error) { toast(error.message, 'error'); return }
     toast('Salvo!', 'success'); setModal(false); load()
   }

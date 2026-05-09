@@ -66,6 +66,12 @@ export default function Obras() {
   const [fotoModal, setFotoModal]     = useState(null)  // string | string[]
   const [fotoIdx, setFotoIdx]           = useState(0)
 
+
+  // Sanitiza payload — converte strings vazias para null (evita erro uuid inválido)
+  const sanitize = (obj) => Object.fromEntries(
+    Object.entries(obj).map(([k, v]) => [k, v === '' ? null : v])
+  )
+
   useEffect(() => {
     if (!entidadeAtiva?.id) return
     load()
@@ -142,7 +148,7 @@ export default function Obras() {
     }
     let error
     if (editing) ({ error } = await supabase.from('obras').update(payload).eq('id', editing))
-    else         ({ error } = await supabase.from('obras').insert({...payload, entidade_id: entidadeAtiva?.id || null}))
+    else         ({ error } = await supabase.from('obras').insert(sanitize({...payload, entidade_id: entidadeAtiva?.id || null}))
     if (error) { toast(error.message, 'error'); return }
     toast('Salvo!', 'success'); setModal(false); load()
   }
@@ -324,7 +330,7 @@ export default function Obras() {
 
       } else {
         // ── Novo lançamento ───────────────────────────────────────────────────
-        const { data, error } = await supabase.from('obra_lancamentos').insert({...payload, entidade_id: entidadeAtiva?.id || null}).select().single()
+        const { data, error } = await supabase.from('obra_lancamentos').insert(sanitize({...payload, entidade_id: entidadeAtiva?.id || null}).select().single()
         if (error) { toast(error.message, 'error'); setSavingLanc(false); return }
         lancId = data.id
 

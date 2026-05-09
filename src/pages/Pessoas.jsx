@@ -34,6 +34,12 @@ export default function Pessoas() {
   const [deleting, setDeleting] = useState(null)
   const [secao, setSecao] = useState('dados') // dados | endereco | contato
 
+
+  // Sanitiza payload — converte strings vazias para null (evita erro uuid inválido)
+  const sanitize = (obj) => Object.fromEntries(
+    Object.entries(obj).map(([k, v]) => [k, v === '' ? null : v])
+  )
+
   useEffect(() => { if (entidadeAtiva?.id) load() }, [entidadeAtiva?.id])
 
   async function load() {
@@ -70,7 +76,7 @@ export default function Pessoas() {
     let error
     const payload = { ...form, data_nascimento: form.data_nascimento || null }
     if (editing) ({ error } = await supabase.from('pessoas').update(payload).eq('id', editing))
-    else ({ error } = await supabase.from('pessoas').insert({...payload, entidade_id: entidadeAtiva?.id || null}))
+    else ({ error } = await supabase.from('pessoas').insert(sanitize({...payload, entidade_id: entidadeAtiva?.id || null}))
     if (error) { toast(error.message, 'error'); return }
     toast(editing ? 'Registro atualizado!' : 'Registro criado!', 'success')
     setModal(false); load()

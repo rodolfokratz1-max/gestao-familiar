@@ -43,6 +43,12 @@ export default function Recorrencias() {
   const [form, setForm] = useState(EMPTY)
   const [search, setSearch] = useState('')
 
+
+  // Sanitiza payload — converte strings vazias para null (evita erro uuid inválido)
+  const sanitize = (obj) => Object.fromEntries(
+    Object.entries(obj).map(([k, v]) => [k, v === '' ? null : v])
+  )
+
   useEffect(() => { if (entidadeAtiva?.id) loadAll() }, [entidadeAtiva?.id])
 
   async function loadAll() {
@@ -65,6 +71,7 @@ export default function Recorrencias() {
   function openEdit(r) { setForm({...EMPTY,...r, valor: String(r.valor)}); setEditing(r.id); setModal(true) }
 
   async function save() {
+    if (!entidadeAtiva?.id) return toast('Selecione uma entidade antes de salvar', 'error')
     if (!form.nome?.trim()) return toast('Nome obrigatório', 'error')
     if (!form.valor || Number(form.valor) <= 0) return toast('Valor deve ser maior que zero', 'error')
     if (!form.dia_vencimento || form.dia_vencimento < 1 || form.dia_vencimento > 31) return toast('Dia de vencimento inválido', 'error')
@@ -78,7 +85,7 @@ export default function Recorrencias() {
     }
     let error
     if (editing) ({ error } = await supabase.from('recorrencias').update(payload).eq('id', editing))
-    else ({ error } = await supabase.from('recorrencias').insert({...payload, entidade_id: entidadeAtiva?.id || null}))
+    else ({ error } = await supabase.from('recorrencias').insert(sanitize({...payload, entidade_id: entidadeAtiva?.id || null}))
     if (error) { toast(error.message,'error'); return }
     toast(editing ? 'Atualizado!' : 'Recorrência criada!', 'success')
     setModal(false); loadAll()
