@@ -155,7 +155,7 @@ export default function Produtos() {
     }
     let error
     if (editing) ({ error } = await supabase.from('produtos').update(payload).eq('id', editing))
-    else ({ error } = await supabase.from('produtos').insert(sanitize({...payload, entidade_id: entidadeAtiva?.id || null}))
+    else ({ error } = await supabase.from('produtos').insert(sanitize({...payload, entidade_id: entidadeAtiva?.id || null})))
     if (error) { toast(error.message,'error'); return }
     toast(editing ? 'Atualizado!' : 'Criado!', 'success')
     setModal(false); loadAll()
@@ -183,7 +183,7 @@ export default function Produtos() {
     if (!formCat.nome?.trim()) return toast('Nome obrigatório','error')
     let error
     if (editingCat) ({ error } = await supabase.from('produto_categorias').update(formCat).eq('id', editingCat))
-    else ({ error } = await supabase.from('produto_categorias').insert(sanitize({...formCat, entidade_id: entidadeAtiva?.id || null}))
+    else ({ error } = await supabase.from('produto_categorias').insert(sanitize({...formCat, entidade_id: entidadeAtiva?.id || null})))
     if (error) { toast(error.message,'error'); return }
     toast('Categoria salva!','success'); setModalCat(false); loadAll()
   }

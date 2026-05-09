@@ -76,7 +76,7 @@ export default function Pessoas() {
     let error
     const payload = { ...form, data_nascimento: form.data_nascimento || null }
     if (editing) ({ error } = await supabase.from('pessoas').update(payload).eq('id', editing))
-    else ({ error } = await supabase.from('pessoas').insert(sanitize({...payload, entidade_id: entidadeAtiva?.id || null}))
+    else ({ error } = await supabase.from('pessoas').insert(sanitize({...payload, entidade_id: entidadeAtiva?.id || null})))
     if (error) { toast(error.message, 'error'); return }
     toast(editing ? 'Registro atualizado!' : 'Registro criado!', 'success')
     setModal(false); load()

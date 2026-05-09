@@ -85,7 +85,7 @@ export default function Recorrencias() {
     }
     let error
     if (editing) ({ error } = await supabase.from('recorrencias').update(payload).eq('id', editing))
-    else ({ error } = await supabase.from('recorrencias').insert(sanitize({...payload, entidade_id: entidadeAtiva?.id || null}))
+    else ({ error } = await supabase.from('recorrencias').insert(sanitize({...payload, entidade_id: entidadeAtiva?.id || null})))
     if (error) { toast(error.message,'error'); return }
     toast(editing ? 'Atualizado!' : 'Recorrência criada!', 'success')
     setModal(false); loadAll()

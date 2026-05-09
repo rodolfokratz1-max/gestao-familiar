@@ -148,7 +148,7 @@ export default function Obras() {
     }
     let error
     if (editing) ({ error } = await supabase.from('obras').update(payload).eq('id', editing))
-    else         ({ error } = await supabase.from('obras').insert(sanitize({...payload, entidade_id: entidadeAtiva?.id || null}))
+    else         ({ error } = await supabase.from('obras').insert(sanitize({...payload, entidade_id: entidadeAtiva?.id || null})))
     if (error) { toast(error.message, 'error'); return }
     toast('Salvo!', 'success'); setModal(false); load()
   }
@@ -330,7 +330,7 @@ export default function Obras() {
 
       } else {
         // ── Novo lançamento ───────────────────────────────────────────────────
-        const { data, error } = await supabase.from('obra_lancamentos').insert(sanitize({...payload, entidade_id: entidadeAtiva?.id || null}).select().single()
+        const { data, error } = await supabase.from('obra_lancamentos').insert(sanitize({...payload, entidade_id: entidadeAtiva?.id || null}).select().single())
         if (error) { toast(error.message, 'error'); setSavingLanc(false); return }
         lancId = data.id
 

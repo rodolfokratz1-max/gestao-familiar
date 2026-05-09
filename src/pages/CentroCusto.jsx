@@ -54,7 +54,7 @@ export default function CentroCusto() {
     if (!form.nome?.trim()) return toast('Nome obrigatório','error')
     let error
     if (editing) ({ error } = await supabase.from('centros_custo').update(form).eq('id',editing))
-    else ({ error } = await supabase.from('centros_custo').insert(sanitize({...form, entidade_id: entidadeAtiva?.id || null}))
+    else ({ error } = await supabase.from('centros_custo').insert(sanitize({...form, entidade_id: entidadeAtiva?.id || null})))
     if (error) { toast(error.message,'error'); return }
     toast('Salvo!','success'); setModal(false); loadAll()
   }

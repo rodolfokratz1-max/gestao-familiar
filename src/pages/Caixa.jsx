@@ -140,7 +140,7 @@ export default function Caixa() {
     if (editingLanc) {
       ({ error } = await supabase.from('caixa').update(payload).eq('id',editingLanc))
     } else {
-      const { error: eIns } = await supabase.from('caixa').insert(sanitize({...payload, entidade_id: entidadeAtiva?.id || null})
+      const { error: eIns } = await supabase.from('caixa').insert(sanitize({...payload, entidade_id: entidadeAtiva?.id || null}))
       error = eIns
 
       // Atualiza saldo da conta se informada (lê do banco — seguro para múltiplos usuários)

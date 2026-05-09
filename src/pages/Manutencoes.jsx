@@ -55,7 +55,7 @@ export default function Manutencoes() {
     if (!form.descricao?.trim()) return toast('Descrição obrigatória', 'error')
     let error
     if (editing) ({ error } = await supabase.from('manutencoes').update(form).eq('id', editing))
-    else ({ error } = await supabase.from('manutencoes').insert(sanitize({...form, entidade_id: entidadeAtiva?.id || null}))
+    else ({ error } = await supabase.from('manutencoes').insert(sanitize({...form, entidade_id: entidadeAtiva?.id || null})))
     if (error) { toast(error.message, 'error'); return }
     toast('Salvo!', 'success'); setModal(false); load()
   }
