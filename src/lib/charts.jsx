@@ -18,7 +18,7 @@ export function BarChartSVG({ data, keys, colors, height = 220 }) {
   try {
     if (!data?.length || !keys?.length) return <Empty height={height}/>
 
-    const W=600, H=height, padL=58, padR=16, padT=16, padB=40
+    const W=600, H=height, padL=58, padR=16, padT=16, padB=52
     const chartW = W - padL - padR
     const chartH = H - padT - padB
 
@@ -67,7 +67,14 @@ export function BarChartSVG({ data, keys, colors, height = 220 }) {
                   </g>
                 )
               })}
-              <text x={gx+groupW/2} y={H-8} textAnchor="middle" fontSize={10} fill="var(--text3)">
+              <text
+                x={gx+groupW/2}
+                y={H-padB+14}
+                textAnchor="end"
+                fontSize={9}
+                fill="var(--text3)"
+                transform={`rotate(-40, ${gx+groupW/2}, ${H-padB+14})`}
+              >
                 {d.name||d.label||''}
               </text>
             </g>
@@ -80,7 +87,7 @@ export function BarChartSVG({ data, keys, colors, height = 220 }) {
 
         {/* Legend */}
         {keys.map((k,i) => (
-          <g key={k} transform={`translate(${padL+i*110},${H-2})`}>
+          <g key={k} transform={`translate(${padL+i*110},${H+2})`}>
             <rect x={0} y={-9} width={9} height={9} rx={2} fill={colors[i]||CHART_COLORS[i]} opacity={0.85}/>
             <text x={13} y={0} fontSize={10} fill="var(--text2)">{k}</text>
           </g>

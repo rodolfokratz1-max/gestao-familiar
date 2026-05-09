@@ -254,53 +254,42 @@ export default function Entidades() {
 
                         {vincsEnt.length === 0
                           ? <div style={{ fontSize: 12, color: 'var(--text3)' }}>Nenhum usuário vinculado.</div>
-                          : <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                              <thead>
-                                <tr>
-                                  {['Usuário', 'E-mail', 'Nível de acesso', ''].map((h, i) => (
-                                    <th key={i} style={{ padding: '6px 10px', fontSize: 10, textAlign: 'left', color: 'var(--text3)', fontWeight: 700, textTransform: 'uppercase' }}>{h}</th>
-                                  ))}
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {vincsEnt.map(v => (
-                                  <tr key={v.id} style={{ borderTop: '1px solid var(--border)' }}>
-                                    <td style={{ padding: '8px 10px', fontWeight: 600, fontSize: 13 }}>
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                        <div style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#fff' }}>
-                                          {v.nome?.charAt(0).toUpperCase()}
-                                        </div>
-                                        {v.nome}
+                          : <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                              {vincsEnt.map(v => (
+                                <div key={v.id} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                                      <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#fff', flexShrink: 0 }}>
+                                        {v.nome?.charAt(0).toUpperCase()}
                                       </div>
-                                    </td>
-                                    <td style={{ padding: '8px 10px', fontSize: 12, color: 'var(--text2)' }}>{v.email}</td>
-                                    <td style={{ padding: '8px 10px' }}>
-                                      {isAdmin
-                                        ? <select
-                                            value={v.nivel}
-                                            onChange={e => updateNivelVinculo(v.id, Number(e.target.value))}
-                                            className="form-select"
-                                            style={{ width: 'auto', fontSize: 12, padding: '4px 8px' }}>
-                                            {[1, 2, 3, 4].map(n => (
-                                              <option key={n} value={n}>{n} — {NIVEL_LABEL[n]}</option>
-                                            ))}
-                                          </select>
-                                        : <span className={`badge ${NIVEL_COLOR[v.nivel]}`} style={{ fontSize: 10 }}>
-                                            {NIVEL_LABEL[v.nivel]}
-                                          </span>
-                                      }
-                                    </td>
-                                    <td style={{ padding: '8px 10px' }}>
-                                      {isAdmin && (
-                                        <button className="icon-btn del" title="Remover acesso" onClick={() => setDeletingVinculo(v)}>
-                                          <X size={13} />
-                                        </button>
-                                      )}
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
+                                      <div style={{ minWidth: 0 }}>
+                                        <div style={{ fontWeight: 600, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v.nome}</div>
+                                        <div style={{ fontSize: 11, color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v.email}</div>
+                                      </div>
+                                    </div>
+                                    {isAdmin && (
+                                      <button className="icon-btn del" title="Remover acesso" onClick={() => setDeletingVinculo(v)} style={{ flexShrink: 0 }}>
+                                        <X size={13} />
+                                      </button>
+                                    )}
+                                  </div>
+                                  {isAdmin
+                                    ? <select
+                                        value={v.nivel}
+                                        onChange={e => updateNivelVinculo(v.id, Number(e.target.value))}
+                                        className="form-select"
+                                        style={{ width: '100%', fontSize: 12 }}>
+                                        {[1, 2, 3, 4].map(n => (
+                                          <option key={n} value={n}>{n} — {NIVEL_LABEL[n]}</option>
+                                        ))}
+                                      </select>
+                                    : <span className={`badge ${NIVEL_COLOR[v.nivel]}`} style={{ fontSize: 10 }}>
+                                        {NIVEL_LABEL[v.nivel]}
+                                      </span>
+                                  }
+                                </div>
+                              ))}
+                            </div>
                         }
 
                         {/* Legenda de níveis */}
@@ -393,7 +382,7 @@ export default function Entidades() {
       {/* Modal vínculo */}
       {modalVinculo && (
         <Modal
-          title={`Conceder acesso — ${entidadeVinculo?.nome_fantasia || entidadeVinculo?.nome}`}
+          title="Conceder acesso"
           onClose={() => setModalVinculo(false)}
           onSave={saveVinculo}>
           <div className="form-grid form-grid-1">
