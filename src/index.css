@@ -70,7 +70,7 @@ html,body,#root{height:100%;background:var(--bg);color:var(--text);font-family:v
   border-bottom:1px solid var(--border);
   display:flex;align-items:center;padding:0 20px;gap:12px;flex-shrink:0;
 }
-.page-title{font-size:15px;font-weight:700;flex:1;letter-spacing:-.2px}
+.page-title{font-size:15px;font-weight:700;letter-spacing:-.2px;white-space:nowrap}
 .menu-btn{background:none;border:none;color:var(--text2);cursor:pointer;padding:6px;border-radius:8px;display:none;transition:background var(--transition)}
 .menu-btn:hover{background:var(--bg3);color:var(--text)}
 .page-content{flex:1;overflow-y:auto;padding:20px 24px}
