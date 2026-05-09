@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useEntidade } from '../contexts/EntidadeContext'
 import { supabase } from '../lib/supabase'
 import { BarChartSVG, PieChartSVG, CHART_COLORS } from '../lib/charts'
 import { FileText, TrendingUp, TrendingDown, BarChart2, ArrowLeftRight, Landmark } from 'lucide-react'
@@ -10,6 +11,7 @@ const MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov'
 const semTransferencia = rows => (rows||[]).filter(r => r.categoria !== 'Transferência' && r.origem_tabela !== 'transferencia')
 
 export default function Relatorios() {
+  const { entidadeAtiva } = useEntidade()
   const anoAtual = new Date().getFullYear()
   const [aba, setAba]           = useState('dre')
   const [ano, setAno]           = useState(anoAtual)

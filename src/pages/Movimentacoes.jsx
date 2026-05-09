@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useEntidade } from '../contexts/EntidadeContext'
 import { supabase } from '../lib/supabase'
 import { Search, TrendingUp, TrendingDown, ArrowLeftRight } from 'lucide-react'
 import { fmtDate } from '../lib/utils.js'
@@ -7,6 +8,7 @@ const fmt = v => 'R$ ' + Number(v||0).toLocaleString('pt-BR',{minimumFractionDig
 
 export default function Movimentacoes() {
   const [rows, setRows] = useState([])
+  const { entidadeAtiva } = useEntidade()
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [filterTipo, setFilterTipo] = useState('')
@@ -20,6 +22,7 @@ export default function Movimentacoes() {
     const { data } = await supabase
       .from('caixa')
       .select('*')
+      .eq('entidade_id', entidadeAtiva?.id)
       .order('data', { ascending: false })
       .order('created_at', { ascending: false })
     setRows(data || [])

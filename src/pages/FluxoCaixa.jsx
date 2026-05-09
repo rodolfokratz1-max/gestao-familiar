@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useEntidade } from '../contexts/EntidadeContext'
 import { supabase } from '../lib/supabase'
 import { BarChartSVG } from '../lib/charts'
 
@@ -8,6 +9,7 @@ const MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov'
 const MESES_FULL = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
 
 export default function FluxoCaixa() {
+  const { entidadeAtiva } = useEntidade()
   const [ano, setAno] = useState(new Date().getFullYear())
   const [dados, setDados] = useState([])
   const [contas, setContas] = useState([])
