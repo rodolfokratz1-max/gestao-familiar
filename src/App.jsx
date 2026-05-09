@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { supabase } from './lib/supabase'
 import { ToastProvider } from './contexts/ToastContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import Login from './pages/Login'
@@ -25,6 +26,8 @@ import EntradaEstoque from './pages/EntradaEstoque'
 import Obras from './pages/Obras'
 import ObrasFontes from './pages/ObrasFontes'
 import { VERSION } from './version'
+import { EntidadeProvider, useEntidade } from './contexts/EntidadeContext'
+import SeletorEntidade from './components/SeletorEntidade'
 import ErrorBoundary from './components/ErrorBoundary'
 import {
   LayoutDashboard, Users, Package, TrendingUp, TrendingDown,
@@ -69,6 +72,7 @@ function getNav() {
       { id: 'obras_fontes', label: 'Fontes de Pagamento', icon: Wallet  },
     ]},
     { group: 'Sistema', items: [
+      { id: 'entidades', label: 'Entidades',         icon: Building2 },
       { id: 'empresa',  label: 'Dados da Empresa', icon: Building2 },
       { id: 'usuarios', label: 'Usuários',          icon: Shield },
     ]},
@@ -88,7 +92,7 @@ function getTitle(page) {
     compras:'Compras', os:'Ordens de Serviço',
     entrada_estoque:'Entrada de Estoque (NF)', inbox_whatsapp: 'Inbox WhatsApp',
     obras:'Obras & Projetos', obras_fontes:'Fontes de Pagamento',
-    empresa:'Dados da Empresa', usuarios:'Gerenciar Usuários',
+    entidades:'Entidades', empresa:'Dados da Empresa', usuarios:'Gerenciar Usuários',
   }
   return map[page] || ''
 }
@@ -116,6 +120,7 @@ function PageContent({ page, onNavigate }) {
   if (page === 'inbox_whatsapp') return <InboxWhatsApp />
   if (page === 'obras')          return <Obras />
   if (page === 'obras_fontes')   return <ObrasFontes />
+  if (page === 'entidades')       return <div style={{padding:20}}><h2>Entidades — em breve</h2></div>
   if (page === 'empresa')         return <Empresa />
   if (page === 'usuarios')        return <Usuarios />
   return null
@@ -125,9 +130,18 @@ function AppInner() {
   const { user, loading, signOut } = useAuth()
   const [page, setPage] = useState('dashboard')
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [usuarioAppId, setUsuarioAppId] = useState(null)
+
+  // Busca o id interno (usuarios_app) do usuário logado
+  useEffect(() => {
+    if (!user) return
+    supabase.from('usuarios_app').select('id').eq('auth_id', user.id).single()
+      .then(({ data }) => { if (data) setUsuarioAppId(data.id) })
+  }, [user])
 
   if (loading) return <div className="loading"><div className="spinner" /><span>Carregando...</span></div>
   if (!user) return <Login />
+  if (!usuarioAppId) return <div className="loading"><div className="spinner" /><span>Iniciando...</span></div>
 
   const nav = getNav()
   const nomeUsuario = user.user_metadata?.name || user.email?.split('@')[0] || 'Usuário'
@@ -136,6 +150,7 @@ function AppInner() {
   function navigate(id) { setPage(id); setSidebarOpen(false) }
 
   return (
+    <EntidadeProvider usuarioId={usuarioAppId}>
     <div className="app-layout">
       {sidebarOpen && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.5)', zIndex:499 }}
@@ -189,6 +204,7 @@ function AppInner() {
           </button>
           <h2 className="page-title">{getTitle(page)}</h2>
           <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:8 }}>
+            <SeletorEntidade />
             <span style={{ fontSize:10, fontWeight:700, color:'var(--text3)', fontFamily:'var(--mono)', background:'var(--bg3)', border:'1px solid var(--border)', borderRadius:6, padding:'2px 7px', letterSpacing:'.3px' }}>
               {VERSION}
             </span>
@@ -204,6 +220,7 @@ function AppInner() {
         </main>
       </div>
     </div>
+    </EntidadeProvider>
   )
 }
 
