@@ -128,7 +128,7 @@ export default function FinanceiroContas({ module }) {
           [cfg.pagoField]: false,
         })
       }
-      const { error } = await supabase.from(cfg.table).insert(inserts.map(s => ({...sanitize(s), entidade_id: entidadeAtiva?.id})))
+      const { error } = await supabase.from(cfg.table).insert(inserts.map(s => ({...sanitize(s), entidade_id: entidadeAtiva?.id || null})))
       if (error) { toast(error.message, 'error'); return }
       toast(`${n} parcelas criadas!`, 'success')
       setModal(false); load(); return
@@ -137,7 +137,7 @@ export default function FinanceiroContas({ module }) {
     const payload = sanitize({ ...form, [cfg.pagoField]: false })
     let error
     if (editing) ({ error } = await supabase.from(cfg.table).update(payload).eq('id', editing))
-    else ({ error } = await supabase.from(cfg.table).insert({...payload, entidade_id: entidadeAtiva?.id}))
+    else ({ error } = await supabase.from(cfg.table).insert({...payload, entidade_id: entidadeAtiva?.id || null}))
     if (error) { toast(error.message, 'error'); return }
     toast('Salvo!', 'success'); setModal(false); load()
   }
@@ -166,7 +166,7 @@ export default function FinanceiroContas({ module }) {
     const valorTotal = valor
 
     // Registra pagamento parcial
-    const { error: e1 } = await supabase.from('pagamentos_parciais').insert({entidade_id: entidadeAtiva?.id,
+    const { error: e1 } = await supabase.from('pagamentos_parciais').insert({entidade_id: entidadeAtiva?.id || null,
       tabela_origem: cfg.table,
       origem_id: row.id,
       valor: valorTotal,
@@ -194,7 +194,7 @@ export default function FinanceiroContas({ module }) {
     if (row.id) caixaPayload.origem_id = row.id
     if (cfg.table) caixaPayload.origem_tabela = cfg.table
 
-    const { error: eCaixa } = await supabase.from('caixa').insert({...caixaPayload, entidade_id: entidadeAtiva?.id})
+    const { error: eCaixa } = await supabase.from('caixa').insert({...caixaPayload, entidade_id: entidadeAtiva?.id || null})
     if (eCaixa) {
       toast('Aviso: pagamento registrado mas erro ao lançar no Caixa: ' + eCaixa.message, 'error')
       console.error('Erro caixa:', eCaixa)
@@ -218,7 +218,7 @@ export default function FinanceiroContas({ module }) {
         origem_tabela: cfg.table,
       }
       if (pgtoForm.conta_id) encargosPayload.conta_id = pgtoForm.conta_id
-      const { error: eEnc } = await supabase.from('caixa').insert({...encargosPayload, entidade_id: entidadeAtiva?.id})
+      const { error: eEnc } = await supabase.from('caixa').insert({...encargosPayload, entidade_id: entidadeAtiva?.id || null})
       if (eEnc) {
         toast('Aviso: encargos não lançados no Caixa: ' + eEnc.message, 'error')
         console.error('Erro encargos caixa:', eEnc)

@@ -118,20 +118,20 @@ export default function InboxWhatsApp() {
       // Grava no destino correto
       const data = row.data_ref || today()
       if (row.categoria === 'Compras' || row.tipo === 'saida') {
-        await supabase.from('caixa').insert({entidade_id: entidadeAtiva?.id,
+        await supabase.from('caixa').insert({entidade_id: entidadeAtiva?.id || null,
           data, tipo: 'saida', descricao: row.descricao,
           valor: row.valor, categoria: row.categoria,
           forma_pgto: row.forma_pgto, conta_id: row.conta_id,
           origem_id: row.id, origem_tabela: 'lancamentos_inbox'
         })
       } else if (row.categoria === 'Pagamentos') {
-        await supabase.from('contas_pagar').insert({entidade_id: entidadeAtiva?.id,
+        await supabase.from('contas_pagar').insert({entidade_id: entidadeAtiva?.id || null,
           data_emissao: data, descricao: row.descricao,
           valor: row.valor, vencimento: row.data_ref,
           obs: `Via WhatsApp por ${row.nome_remetente}`
         })
       } else if (row.tipo === 'entrada') {
-        await supabase.from('caixa').insert({entidade_id: entidadeAtiva?.id,
+        await supabase.from('caixa').insert({entidade_id: entidadeAtiva?.id || null,
           data, tipo: 'entrada', descricao: row.descricao,
           valor: row.valor, categoria: row.categoria,
           forma_pgto: row.forma_pgto, conta_id: row.conta_id,

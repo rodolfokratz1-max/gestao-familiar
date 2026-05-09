@@ -88,7 +88,7 @@ export default function Financeiro({ module }) {
       // Se mudou de pago → não pago, remove lançamento do caixa
       if (eraPago && !jaPago) await removerCaixa(editing)
     } else {
-      const { data: novo, error: e } = await supabase.from(cfg.table).insert({ ...form, entidade_id: entidadeAtiva?.id, usuario_email: usuarioEmail, usuario_nome: usuarioNome }).select().single()
+      const { data: novo, error: e } = await supabase.from(cfg.table).insert({ ...form, entidade_id: entidadeAtiva?.id || null, usuario_email: usuarioEmail, usuario_nome: usuarioNome }).select().single()
       if (e) { toast(e.message, 'error'); return }
       if (jaPago) await lancarCaixa({ ...form, id: novo.id })
     }
@@ -97,7 +97,7 @@ export default function Financeiro({ module }) {
   }
 
   async function lancarCaixa(r) {
-    await supabase.from('caixa').insert({entidade_id: entidadeAtiva?.id,
+    await supabase.from('caixa').insert({entidade_id: entidadeAtiva?.id || null,
       data: r.data || today(),
       tipo: cfg.caixaTipo,
       descricao: r.descricao,
