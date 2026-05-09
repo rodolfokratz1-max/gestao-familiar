@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useToast } from '../contexts/ToastContext'
+import { useAuth } from '../contexts/AuthContext'
 import { useEntidade } from '../contexts/EntidadeContext'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
@@ -23,6 +24,7 @@ const EMPTY_ENT = {
 export default function Entidades() {
   const toast = useToast()
   const { entidadeAtiva, pode, recarregar } = useEntidade()
+  const { user } = useAuth()
 
   const [rows, setRows]         = useState([])
   const [usuarios, setUsuarios] = useState([])
@@ -81,13 +83,30 @@ export default function Entidades() {
     if (!form.nome?.trim()) return toast('Nome obrigatório', 'error')
     const payload = { ...form, cnpj_cpf: form.cnpj_cpf || null }
     let error
-    if (editing) ({ error } = await supabase.from('entidades').update(payload).eq('id', editing))
-    else         ({ error } = await supabase.from('entidades').insert(payload))
+    if (editing) {
+      ;({ error } = await supabase.from('entidades').update(payload).eq('id', editing))
+    } else {
+      // Cria entidade
+      const { data: nova, error: eIns } = await supabase.from('entidades').insert(payload).select().single()
+      error = eIns
+      if (!error && nova) {
+        // Busca o id interno do usuário logado e cria vínculo como admin
+        const { data: ua } = await supabase.from('usuarios_app').select('id').eq('auth_id', user?.id).single()
+        if (ua) {
+          await supabase.from('usuario_entidades').insert({
+            usuario_id:  ua.id,
+            entidade_id: nova.id,
+            nivel:       4,
+            ativo:       true,
+          })
+        }
+      }
+    }
     if (error) { toast(error.message, 'error'); return }
     toast('Salvo!', 'success')
     setModal(false)
     load()
-    recarregar() // atualiza seletor no header
+    recarregar()
   }
 
   async function toggleAtivo(r) {
