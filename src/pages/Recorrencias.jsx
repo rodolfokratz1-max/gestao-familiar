@@ -48,8 +48,8 @@ export default function Recorrencias() {
   async function loadAll() {
     setLoading(true)
     const [{ data: r }, { data: c }, { data: cfg }] = await Promise.all([
-      supabase.from('recorrencias').select('*').order('nome'),
-      supabase.from('contas').select('id,nome').eq('ativo',true).order('nome'),
+      supabase.from('recorrencias').select('*').eq('entidade_id', entidadeAtiva?.id).order('nome'),
+      supabase.from('contas').select('id,nome').eq('ativo',true).eq('entidade_id', entidadeAtiva?.id).order('nome'),
       supabase.from('recorrencias_config').select('*').limit(1).single(),
     ])
     setRows(r || [])
@@ -67,7 +67,7 @@ export default function Recorrencias() {
     if (!form.nome?.trim()) return toast('Nome obrigatório', 'error')
     if (!form.valor || Number(form.valor) <= 0) return toast('Valor deve ser maior que zero', 'error')
     if (!form.dia_vencimento || form.dia_vencimento < 1 || form.dia_vencimento > 31) return toast('Dia de vencimento inválido', 'error')
-    const payload = { entidade_id: entidadeAtiva?.id,
+    const payload = {
       ...form,
       valor: Number(form.valor),
       data_fim: form.data_fim || null,
@@ -77,7 +77,7 @@ export default function Recorrencias() {
     }
     let error
     if (editing) ({ error } = await supabase.from('recorrencias').update(payload).eq('id', editing))
-    else ({ error } = await supabase.from('recorrencias').insert(payload))
+    else ({ error } = await supabase.from('recorrencias').insert({...payload, entidade_id: entidadeAtiva?.id}))
     if (error) { toast(error.message,'error'); return }
     toast(editing ? 'Atualizado!' : 'Recorrência criada!', 'success')
     setModal(false); loadAll()
@@ -114,9 +114,7 @@ export default function Recorrencias() {
         const mesRef = new Date(agora.getFullYear(), agora.getMonth() + i, 1)
 
         // Checa se está dentro do intervalo da recorrência
-        if (mesRef < new Date(inicio.getFullYear()
-        .eq('entidade_id', entidadeAtiva?.id)
-        .eq('entidade_id', entidadeAtiva?.id), inicio.getMonth(), 1)) continue
+        if (mesRef < new Date(inicio.getFullYear(), inicio.getMonth(), 1)) continue
         if (fim && mesRef > new Date(fim.getFullYear(), fim.getMonth(), 1)) continue
 
         // Calcula data de vencimento para esse mês

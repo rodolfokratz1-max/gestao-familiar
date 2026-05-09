@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useToast } from '../contexts/ToastContext'
+import { useEntidade } from '../contexts/EntidadeContext'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { Plus, Pencil, Trash2, Power, Target, TrendingUp, TrendingDown } from 'lucide-react'
@@ -10,6 +11,7 @@ const EMPTY = { nome:'', descricao:'', ativo:true }
 
 export default function CentroCusto() {
   const toast = useToast()
+  const { entidadeAtiva } = useEntidade()
   const [centros, setCentros] = useState([])
   const [resumo, setResumo]   = useState({}) // { id: { receita, despesa } }
   const [loading, setLoading] = useState(true)
@@ -23,9 +25,9 @@ export default function CentroCusto() {
   async function loadAll() {
     setLoading(true)
     const [{ data: cc }, { data: rec }, { data: des }] = await Promise.all([
-      supabase.from('centros_custo').select('*').order('nome'),
-      supabase.from('receitas').select('valor,centro_custo_id').eq('ativo',true),
-      supabase.from('despesas').select('valor,centro_custo_id').eq('ativo',true),
+      supabase.from('centros_custo').select('*').eq('entidade_id', entidadeAtiva?.id).order('nome'),
+      supabase.from('receitas').select('valor,centro_custo_id').eq('ativo',true).eq('entidade_id', entidadeAtiva?.id),
+      supabase.from('despesas').select('valor,centro_custo_id').eq('ativo',true).eq('entidade_id', entidadeAtiva?.id),
     ])
     setCentros(cc || [])
     // Monta resumo por centro
@@ -44,7 +46,7 @@ export default function CentroCusto() {
     if (!form.nome?.trim()) return toast('Nome obrigatório','error')
     let error
     if (editing) ({ error } = await supabase.from('centros_custo').update(form).eq('id',editing))
-    else ({ error } = await supabase.from('centros_custo').insert(form))
+    else ({ error } = await supabase.from('centros_custo').insert({...form, entidade_id: entidadeAtiva?.id}))
     if (error) { toast(error.message,'error'); return }
     toast('Salvo!','success'); setModal(false); loadAll()
   }

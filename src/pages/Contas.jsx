@@ -27,7 +27,7 @@ export default function Contas() {
 
   async function load() {
     setLoading(true)
-    const { data, error } = await supabase.from('contas').select('*').order('nome')
+    const { data, error } = await supabase.from('contas').select('*').eq('entidade_id', entidadeAtiva?.id).order('nome')
     if (error) toast(error.message, 'error')
     else setRows(data || [])
     setLoading(false)
@@ -35,7 +35,6 @@ export default function Contas() {
 
   const filtered = rows.filter(r => {
     const q = search.toLowerCase()
-        .eq('entidade_id', entidadeAtiva?.id)
     return !q || r.nome?.toLowerCase().includes(q) || r.banco?.toLowerCase().includes(q) || r.tipo?.toLowerCase().includes(q)
   })
 
@@ -52,7 +51,7 @@ export default function Contas() {
 
   async function save() {
     if (!form.nome?.trim()) return toast('Nome é obrigatório', 'error')
-    const payload = { ...form, entidade_id: entidadeAtiva?.id, saldo_inicial: form.saldo_inicial || 0, saldo_atual: editing ? form.saldo_atual : (form.saldo_inicial || 0) }
+    const payload = { entidade_id: entidadeAtiva?.id, ...form, saldo_inicial: form.saldo_inicial || 0, saldo_atual: editing ? form.saldo_atual : (form.saldo_inicial || 0) }
     let error
     if (editing) ({ error } = await supabase.from('contas').update(payload).eq('id', editing))
     else ({ error } = await supabase.from('contas').insert(payload))

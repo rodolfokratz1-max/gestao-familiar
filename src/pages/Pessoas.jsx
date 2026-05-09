@@ -38,7 +38,7 @@ export default function Pessoas() {
 
   async function load() {
     setLoading(true)
-    const { data, error } = await supabase.from('pessoas').select('*').order('nome')
+    const { data, error } = await supabase.from('pessoas').select('*').eq('entidade_id', entidadeAtiva?.id).order('nome')
     if (error) toast(error.message, 'error')
     else setRows(data)
     setLoading(false)
@@ -46,7 +46,6 @@ export default function Pessoas() {
 
   const filtered = rows.filter(r => {
     const q = search.toLowerCase()
-        .eq('entidade_id', entidadeAtiva?.id)
     const matchSearch = !q || r.nome?.toLowerCase().includes(q) || r.codigo?.toLowerCase().includes(q) || r.cpf_cnpj?.includes(q) || r.email?.toLowerCase().includes(q) || r.celular?.includes(q) || r.telefone?.includes(q)
     const matchTipo = !filterTipo || r.tipo === filterTipo
     const matchAtivo = filterAtivo === '' || String(r.ativo) === filterAtivo
@@ -67,9 +66,9 @@ export default function Pessoas() {
     if (!form.nome.trim()) return toast('Nome é obrigatório', 'error')
     if (!form.codigo.trim()) return toast('Código é obrigatório', 'error')
     let error
-    const payload = { entidade_id: entidadeAtiva?.id, ...form, data_nascimento: form.data_nascimento || null }
+    const payload = { ...form, data_nascimento: form.data_nascimento || null }
     if (editing) ({ error } = await supabase.from('pessoas').update(payload).eq('id', editing))
-    else ({ error } = await supabase.from('pessoas').insert(payload))
+    else ({ error } = await supabase.from('pessoas').insert({...payload, entidade_id: entidadeAtiva?.id}))
     if (error) { toast(error.message, 'error'); return }
     toast(editing ? 'Registro atualizado!' : 'Registro criado!', 'success')
     setModal(false); load()

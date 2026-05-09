@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useToast } from '../contexts/ToastContext'
+import { useEntidade } from '../contexts/EntidadeContext'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { Plus, Search, Pencil, Trash2, Power, Wrench } from 'lucide-react'
@@ -11,6 +12,7 @@ const EMPTY = { data_abertura: today(), bem: '', tipo: '', descricao: '', respon
 
 export default function Manutencoes() {
   const toast = useToast()
+  const { entidadeAtiva } = useEntidade()
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -24,7 +26,7 @@ export default function Manutencoes() {
 
   async function load() {
     setLoading(true)
-    const { data, error } = await supabase.from('manutencoes').select('*').order('data_abertura', { ascending: false })
+    const { data, error } = await supabase.from('manutencoes').select('*').eq('entidade_id', entidadeAtiva?.id).order('data_abertura', { ascending: false })
     if (error) toast(error.message, 'error')
     else setRows(data)
     setLoading(false)
@@ -45,7 +47,7 @@ export default function Manutencoes() {
     if (!form.descricao?.trim()) return toast('Descrição obrigatória', 'error')
     let error
     if (editing) ({ error } = await supabase.from('manutencoes').update(form).eq('id', editing))
-    else ({ error } = await supabase.from('manutencoes').insert(form))
+    else ({ error } = await supabase.from('manutencoes').insert({...form, entidade_id: entidadeAtiva?.id}))
     if (error) { toast(error.message, 'error'); return }
     toast('Salvo!', 'success'); setModal(false); load()
   }

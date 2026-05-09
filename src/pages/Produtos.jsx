@@ -55,8 +55,8 @@ export default function Produtos() {
   async function loadAll() {
     setLoading(true)
     const [{ data: p }, { data: c }] = await Promise.all([
-      supabase.from('produtos').select('*').order('nome'),
-      supabase.from('produto_categorias').select('*').order('nome'),
+      supabase.from('produtos').select('*').eq('entidade_id', entidadeAtiva?.id).order('nome'),
+      supabase.from('produto_categorias').select('*').eq('entidade_id', entidadeAtiva?.id).order('nome'),
     ])
     setRows(p || [])
     setCats(c || [])
@@ -109,7 +109,7 @@ export default function Produtos() {
   async function save() {
     if (!form.nome.trim()) return toast('Nome é obrigatório', 'error')
     if (!form.codigo.trim()) return toast('Código é obrigatório', 'error')
-    const payload = { entidade_id: entidadeAtiva?.id,
+    const payload = {
       ...form,
       preco_custo:    form.preco_custo    || null,
       preco_venda:    form.preco_venda    || null,
@@ -147,7 +147,7 @@ export default function Produtos() {
     }
     let error
     if (editing) ({ error } = await supabase.from('produtos').update(payload).eq('id', editing))
-    else ({ error } = await supabase.from('produtos').insert(payload))
+    else ({ error } = await supabase.from('produtos').insert({...payload, entidade_id: entidadeAtiva?.id}))
     if (error) { toast(error.message,'error'); return }
     toast(editing ? 'Atualizado!' : 'Criado!', 'success')
     setModal(false); loadAll()
@@ -175,7 +175,7 @@ export default function Produtos() {
     if (!formCat.nome?.trim()) return toast('Nome obrigatório','error')
     let error
     if (editingCat) ({ error } = await supabase.from('produto_categorias').update(formCat).eq('id', editingCat))
-    else ({ error } = await supabase.from('produto_categorias').insert(formCat))
+    else ({ error } = await supabase.from('produto_categorias').insert({...formCat, entidade_id: entidadeAtiva?.id}))
     if (error) { toast(error.message,'error'); return }
     toast('Categoria salva!','success'); setModalCat(false); loadAll()
   }
@@ -214,8 +214,7 @@ export default function Produtos() {
             <button className="btn btn-sm btn-primary" onClick={openNewCat}><Plus size={13} /> Nova</button>
           </div>
           {cats.length === 0
-            ? <div style={{ color:'var(--text3)
-        .eq('entidade_id', entidadeAtiva?.id)', fontSize:13 }}>Nenhuma categoria. Crie para organizar seus produtos.</div>
+            ? <div style={{ color:'var(--text3)', fontSize:13 }}>Nenhuma categoria. Crie para organizar seus produtos.</div>
             : <div style={{ display:'flex', flexWrap:'wrap', gap:8, marginTop:4 }}>
                 {cats.map(c => (
                   <div key={c.id} style={{ display:'flex', alignItems:'center', gap:6, background:'var(--bg3)', border:'1px solid var(--border)', borderRadius:8, padding:'5px 10px' }}>
