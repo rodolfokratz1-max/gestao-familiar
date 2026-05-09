@@ -204,8 +204,8 @@ function AppInner() {
             {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
           </button>
           <h2 className="page-title">{getTitle(page)}</h2>
+          <SeletorEntidade />
           <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:8 }}>
-            <SeletorEntidade />
             <span style={{ fontSize:10, fontWeight:700, color:'var(--text3)', fontFamily:'var(--mono)', background:'var(--bg3)', border:'1px solid var(--border)', borderRadius:6, padding:'2px 7px', letterSpacing:'.3px' }}>
               {VERSION}
             </span>
