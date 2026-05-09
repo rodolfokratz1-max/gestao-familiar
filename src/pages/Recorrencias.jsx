@@ -46,6 +46,7 @@ export default function Recorrencias() {
   useEffect(() => { if (entidadeAtiva?.id) loadAll() }, [entidadeAtiva?.id])
 
   async function loadAll() {
+    if (!entidadeAtiva?.id) { setLoading(false); return }
     setLoading(true)
     const [{ data: r }, { data: c }, { data: cfg }] = await Promise.all([
       supabase.from('recorrencias').select('*').eq('entidade_id', entidadeAtiva?.id).order('nome'),
@@ -77,7 +78,7 @@ export default function Recorrencias() {
     }
     let error
     if (editing) ({ error } = await supabase.from('recorrencias').update(payload).eq('id', editing))
-    else ({ error } = await supabase.from('recorrencias').insert({...payload, entidade_id: entidadeAtiva?.id}))
+    else ({ error } = await supabase.from('recorrencias').insert({...payload, entidade_id: entidadeAtiva?.id || null}))
     if (error) { toast(error.message,'error'); return }
     toast(editing ? 'Atualizado!' : 'Recorrência criada!', 'success')
     setModal(false); loadAll()

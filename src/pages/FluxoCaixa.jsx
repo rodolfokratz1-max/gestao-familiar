@@ -22,6 +22,7 @@ export default function FluxoCaixa() {
   useEffect(() => { if (entidadeAtiva?.id) load() }, [ano, filterConta, entidadeAtiva?.id])
 
   async function load() {
+    if (!entidadeAtiva?.id) { setLoading(false); return }
     setLoading(true)
     const ini = `${ano}-01-01`
     const fim = `${ano}-12-31`

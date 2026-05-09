@@ -26,6 +26,7 @@ export default function Contas() {
   useEffect(() => { if (entidadeAtiva?.id) load() }, [entidadeAtiva?.id])
 
   async function load() {
+    if (!entidadeAtiva?.id) { setLoading(false); return }
     setLoading(true)
     const { data, error } = await supabase.from('contas').select('*').eq('entidade_id', entidadeAtiva?.id).order('nome')
     if (error) toast(error.message, 'error')
@@ -51,7 +52,7 @@ export default function Contas() {
 
   async function save() {
     if (!form.nome?.trim()) return toast('Nome é obrigatório', 'error')
-    const payload = { entidade_id: entidadeAtiva?.id, ...form, saldo_inicial: form.saldo_inicial || 0, saldo_atual: editing ? form.saldo_atual : (form.saldo_inicial || 0) }
+    const payload = { entidade_id: entidadeAtiva?.id || null, ...form, saldo_inicial: form.saldo_inicial || 0, saldo_atual: editing ? form.saldo_atual : (form.saldo_inicial || 0) }
     let error
     if (editing) ({ error } = await supabase.from('contas').update(payload).eq('id', editing))
     else ({ error } = await supabase.from('contas').insert(payload))

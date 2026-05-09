@@ -35,6 +35,7 @@ export default function Caixa() {
   useEffect(() => { if (entidadeAtiva?.id) load() }, [entidadeAtiva?.id])
 
   async function load() {
+    if (!entidadeAtiva?.id) { setLoading(false); return }
     setLoading(true)
     const [{ data: caixaData }, { data: contasData }] = await Promise.all([
       supabase.from('caixa').select('*').eq('entidade_id', entidadeAtiva?.id).order('data',{ascending:false}).order('created_at',{ascending:false}),
@@ -85,14 +86,14 @@ export default function Caixa() {
     const saldoOrig = Number(origData.saldo_atual||0)
     if (saldoOrig < v) return toast(`Saldo insuficiente em "${origData.nome}". Disponível: ${fmt(saldoOrig)}`,'error')
 
-    const { error: e1 } = await supabase.from('caixa').insert({entidade_id: entidadeAtiva?.id,
+    const { error: e1 } = await supabase.from('caixa').insert({entidade_id: entidadeAtiva?.id || null,
       data, tipo:'saida', valor:v, categoria:'Transferência',
       descricao:`${descricao} → ${destData.nome}`,
       conta_id:contaOrigem, obs:obs||null, origem_tabela:'transferencia',
     })
     if (e1) return toast('Erro ao lançar saída: '+e1.message,'error')
 
-    const { error: e2 } = await supabase.from('caixa').insert({entidade_id: entidadeAtiva?.id,
+    const { error: e2 } = await supabase.from('caixa').insert({entidade_id: entidadeAtiva?.id || null,
       data, tipo:'entrada', valor:v, categoria:'Transferência',
       descricao:`${descricao} ← ${origData.nome}`,
       conta_id:contaDestino, obs:obs||null, origem_tabela:'transferencia',
@@ -132,7 +133,7 @@ export default function Caixa() {
     if (editingLanc) {
       ({ error } = await supabase.from('caixa').update(payload).eq('id',editingLanc))
     } else {
-      const { error: eIns } = await supabase.from('caixa').insert({...payload, entidade_id: entidadeAtiva?.id})
+      const { error: eIns } = await supabase.from('caixa').insert({...payload, entidade_id: entidadeAtiva?.id || null})
       error = eIns
 
       // Atualiza saldo da conta se informada (lê do banco — seguro para múltiplos usuários)

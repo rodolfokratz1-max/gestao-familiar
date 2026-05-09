@@ -23,6 +23,7 @@ export default function Dashboard({ onNavigate }) {
   useEffect(() => { if (entidadeAtiva?.id) load() }, [entidadeAtiva?.id])
 
   async function load() {
+    if (!entidadeAtiva?.id) { setLoading(false); return }
     setLoading(true)
     const mesAtual = new Date()
     const ano = mesAtual.getFullYear()

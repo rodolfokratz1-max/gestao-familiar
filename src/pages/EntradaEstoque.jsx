@@ -54,6 +54,7 @@ export default function EntradaEstoque() {
   useEffect(() => { if (aba === 'historico' && entidadeAtiva?.id) loadHistorico() }, [aba, entidadeAtiva?.id])
 
   async function loadAuxiliar() {
+    if (!entidadeAtiva?.id) { setLoading(false); return }
     const [{ data: p }, { data: f }, { data: c }, empData] = await Promise.all([
       supabase.from('produtos').select('id,nome,codigo,preco_custo,estoque,unidade').eq('tipo','produto').eq('ativo',true).eq('entidade_id', entidadeAtiva?.id).order('nome'),
       supabase.from('pessoas').select('id,nome,cpf_cnpj,telefone,email,logradouro,numero,bairro,cidade,estado,cep').in('tipo',['fornecedor','ambos']).eq('ativo',true).order('nome'),
@@ -65,6 +66,7 @@ export default function EntradaEstoque() {
   }
 
   async function loadHistorico() {
+    if (!entidadeAtiva?.id) { setLoading(false); return }
     setLoadingHist(true)
     const { data } = await supabase.from('entradas_estoque').select('*').eq('entidade_id', entidadeAtiva?.id).order('created_at',{ascending:false}).limit(50)
     setHistorico(data||[])

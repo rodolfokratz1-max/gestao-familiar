@@ -30,6 +30,7 @@ export default function Relatorios() {
   useEffect(() => { if (entidadeAtiva?.id) loadDados() }, [aba, ano, mesIni, mesFim, filterConta, entidadeAtiva?.id])
 
   async function loadDados() {
+    if (!entidadeAtiva?.id) { setLoading(false); return }
     setLoading(true)
     const ini    = `${ano}-${mesIni.padStart(2,'0')}-01`
     const ult    = new Date(ano, Number(mesFim), 0).getDate()

@@ -42,6 +42,7 @@ export default function Compras() {
   }, [])
 
   async function load() {
+    if (!entidadeAtiva?.id) { setLoading(false); return }
     setLoading(true)
     const { data, error } = await supabase.from('compras').select('*').eq('entidade_id', entidadeAtiva?.id).order('data', { ascending: false })
     if (error) { toast(error.message, 'error'); setLoading(false); return }

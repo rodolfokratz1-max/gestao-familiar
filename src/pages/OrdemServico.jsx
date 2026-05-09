@@ -59,6 +59,7 @@ export default function OrdemServico() {
   useEffect(() => { if (osSel) loadItens(osSel.id) }, [osSel])
 
   async function loadAll() {
+    if (!entidadeAtiva?.id) { setLoading(false); return }
     setLoading(true)
     const [{ data: o }, { data: c }, { data: p }, { data: emp }] = await Promise.all([
       supabase.from('ordens_servico').select('*').eq('entidade_id', entidadeAtiva?.id).order('created_at', { ascending: false }),

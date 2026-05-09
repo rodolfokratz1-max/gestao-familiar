@@ -45,6 +45,7 @@ export default function Financeiro({ module }) {
   useEffect(() => { if (!entidadeAtiva?.id) return; setRows([]); setForm({ ...cfg.empty }); load() }, [module, entidadeAtiva?.id])
 
   async function load() {
+    if (!entidadeAtiva?.id) { setLoading(false); return }
     setLoading(true)
     const [{ data: r }, { data: c }] = await Promise.all([
       supabase.from(cfg.table).select('*').eq('entidade_id', entidadeAtiva?.id).order('data', { ascending: false }),

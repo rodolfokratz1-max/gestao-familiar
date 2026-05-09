@@ -37,6 +37,7 @@ export default function Pessoas() {
   useEffect(() => { if (entidadeAtiva?.id) load() }, [entidadeAtiva?.id])
 
   async function load() {
+    if (!entidadeAtiva?.id) { setLoading(false); return }
     setLoading(true)
     const { data, error } = await supabase.from('pessoas').select('*').eq('entidade_id', entidadeAtiva?.id).order('nome')
     if (error) toast(error.message, 'error')
@@ -68,7 +69,7 @@ export default function Pessoas() {
     let error
     const payload = { ...form, data_nascimento: form.data_nascimento || null }
     if (editing) ({ error } = await supabase.from('pessoas').update(payload).eq('id', editing))
-    else ({ error } = await supabase.from('pessoas').insert({...payload, entidade_id: entidadeAtiva?.id}))
+    else ({ error } = await supabase.from('pessoas').insert({...payload, entidade_id: entidadeAtiva?.id || null}))
     if (error) { toast(error.message, 'error'); return }
     toast(editing ? 'Registro atualizado!' : 'Registro criado!', 'success')
     setModal(false); load()

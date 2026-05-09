@@ -61,6 +61,7 @@ export default function InboxWhatsApp() {
   useEffect(() => { if (entidadeAtiva?.id) load() }, [entidadeAtiva?.id])
 
   async function load() {
+    if (!entidadeAtiva?.id) { setLoading(false); return }
     setLoading(true)
     const [{ data: inbox }, { data: anot }, { data: conts }, { data: carts }] = await Promise.all([
       supabase.from('lancamentos_inbox').select('*').eq('entidade_id', entidadeAtiva?.id).order('created_at', { ascending: false }),

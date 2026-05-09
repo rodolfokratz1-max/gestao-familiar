@@ -42,6 +42,7 @@ export default function Cartoes() {
   useEffect(() => { if (cartaoSel) loadLancamentos() }, [cartaoSel, mesRef])
 
   async function loadAll() {
+    if (!entidadeAtiva?.id) { setLoading(false); return }
     setLoading(true)
     const [{ data: c }, { data: m }, { data: f }] = await Promise.all([
       supabase.from('cartoes').select('*').order('nome'),
@@ -55,6 +56,7 @@ export default function Cartoes() {
   }
 
   async function loadLancamentos() {
+    if (!entidadeAtiva?.id) { setLoading(false); return }
     const [ano, mes] = mesRef.split('-')
     const ultimoDia = new Date(Number(ano), Number(mes), 0).getDate()
     const { data } = await supabase
@@ -96,7 +98,7 @@ export default function Cartoes() {
     const nomeM = new Date(Number(anoRef), Number(mesNum)-1, 1).toLocaleString('pt-BR', { month: 'long', year: 'numeric' })
 
     // Cria registro de fatura fechada
-    const { data: fat, error: e1 } = await supabase.from('faturas_cartao').insert({entidade_id: entidadeAtiva?.id, 
+    const { data: fat, error: e1 } = await supabase.from('faturas_cartao').insert({entidade_id: entidadeAtiva?.id || null, 
       cartao_id: cartao.id, cartao_nome: cartao.nome,
       mes_ref: mesRef, total: totalFatura,
       vencimento: venc, status: 'fechada',
@@ -104,7 +106,7 @@ export default function Cartoes() {
     if (e1) { toast(e1.message, 'error'); return }
 
     // Gera UMA conta a pagar
-    await supabase.from('contas_pagar').insert({entidade_id: entidadeAtiva?.id, 
+    await supabase.from('contas_pagar').insert({entidade_id: entidadeAtiva?.id || null, 
       data_emissao: today(),
       descricao: `Fatura ${cartao.nome} — ${nomeM}`,
       valor: totalFatura, vencimento: venc,
