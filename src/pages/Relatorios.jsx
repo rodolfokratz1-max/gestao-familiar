@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import { useEntidade } from '../contexts/EntidadeContext'
 import { BarChartSVG, PieChartSVG, CHART_COLORS } from '../lib/charts'
 import { FileText, TrendingUp, TrendingDown, BarChart2, ArrowLeftRight, Landmark } from 'lucide-react'
 import { fmtDate } from '../lib/utils.js'
@@ -23,8 +22,7 @@ export default function Relatorios() {
 
   // Carrega contas uma só vez
   useEffect(() => {
-    supabase.from('contas').select('id,nome,tipo').eq('ativo',true).order('nome').then(({data})
-        .eq('entidade_id', entidadeAtiva?.id)=>setContas(data||[]))
+    supabase.from('contas').select('id,nome,tipo').eq('ativo',true).eq('entidade_id', entidadeAtiva?.id).order('nome').then(({data})=>setContas(data||[]))
   }, [])
 
   useEffect(() => { loadDados() }, [aba, ano, mesIni, mesFim, filterConta])
@@ -38,12 +36,11 @@ export default function Relatorios() {
     const anoFim = `${ano}-12-31`
 
     if (aba === 'dre') {
-      let q = supabase.from('caixa').select('tipo,valor,data,categoria,origem_tabela').gte('data',anoIni).lte('data',anoFim)
+      let q = supabase.from('caixa').select('tipo,valor,data,categoria,origem_tabela').gte('data',anoIni).lte('data',anoFim).eq('entidade_id', entidadeAtiva?.id)
       if (filterConta) q = q.eq('conta_id', filterConta)
       const { data: caixaRaw } = await q
       const caixa = semTransferencia(caixaRaw)
-      const meses = MESES.map((label,i)
-        .eq('entidade_id', entidadeAtiva?.id) => {
+      const meses = MESES.map((label,i) => {
         const m = String(i+1).padStart(2,'0')
         const d = caixa.filter(r=>r.data?.startsWith(`${ano}-${m}`))
         const receita = d.filter(r=>r.tipo==='entrada').reduce((s,r)=>s+Number(r.valor),0)
@@ -56,31 +53,29 @@ export default function Relatorios() {
     }
 
     if (aba === 'categorias') {
-      let q = supabase.from('caixa').select('valor,categoria,origem_tabela').eq('tipo','saida').gte('data',ini).lte('data',fim)
+      let q = supabase.from('caixa').select('valor,categoria,origem_tabela').eq('tipo','saida').gte('data',ini).lte('data',fim).eq('entidade_id', entidadeAtiva?.id)
       if (filterConta) q = q.eq('conta_id', filterConta)
       const { data: raw } = await q
       const saidas = semTransferencia(raw)
       const map = {}
-      saidas.forEach(r=>{ const k=r.categoria||'Sem categoria'; map[k]=(map[k]||0)
-        .eq('entidade_id', entidadeAtiva?.id)+Number(r.valor) })
+      saidas.forEach(r=>{ const k=r.categoria||'Sem categoria'; map[k]=(map[k]||0)+Number(r.valor) })
       const lista = Object.entries(map).sort((a,b)=>b[1]-a[1]).map(([name,value])=>({name,value}))
       setDados({ lista, total:lista.reduce((s,x)=>s+x.value,0) })
     }
 
     if (aba === 'categorias_rec') {
-      let q = supabase.from('caixa').select('valor,categoria,origem_tabela').eq('tipo','entrada').gte('data',ini).lte('data',fim)
+      let q = supabase.from('caixa').select('valor,categoria,origem_tabela').eq('tipo','entrada').gte('data',ini).lte('data',fim).eq('entidade_id', entidadeAtiva?.id)
       if (filterConta) q = q.eq('conta_id', filterConta)
       const { data: raw } = await q
       const entradas = semTransferencia(raw)
       const map = {}
-      entradas.forEach(r=>{ const k=r.categoria||'Sem categoria'; map[k]=(map[k]||0)
-        .eq('entidade_id', entidadeAtiva?.id)+Number(r.valor) })
+      entradas.forEach(r=>{ const k=r.categoria||'Sem categoria'; map[k]=(map[k]||0)+Number(r.valor) })
       const lista = Object.entries(map).sort((a,b)=>b[1]-a[1]).map(([name,value])=>({name,value}))
       setDados({ lista, total:lista.reduce((s,x)=>s+x.value,0) })
     }
 
     if (aba === 'periodo') {
-      let q = supabase.from('caixa').select('id,tipo,valor,data,categoria,descricao,origem_tabela,conta_id,forma_pgto')
+      let q = supabase.from('caixa').select('id,tipo,valor,data,categoria,descricao,origem_tabela,conta_id,forma_pgto').eq('entidade_id', entidadeAtiva?.id)
         .gte('data',ini).lte('data',fim).order('data',{ascending:false})
       if (filterConta) q = q.eq('conta_id', filterConta)
       const { data: caixaRaw } = await q
@@ -88,8 +83,7 @@ export default function Relatorios() {
       const caixaSemTransf = semTransferencia(caixaRaw)
       const transferencias  = (caixaRaw||[]).filter(r=>r.categoria==='Transferência'||r.origem_tabela==='transferencia')
 
-      const totalE   = caixaSemTransf.filter(r=>r.tipo==='entrada').reduce((s,r)
-        .eq('entidade_id', entidadeAtiva?.id)=>s+Number(r.valor),0)
+      const totalE   = caixaSemTransf.filter(r=>r.tipo==='entrada').reduce((s,r)=>s+Number(r.valor),0)
       const totalS   = caixaSemTransf.filter(r=>r.tipo==='saida').reduce((s,r)=>s+Number(r.valor),0)
       const totalTrf = transferencias.filter(r=>r.tipo==='saida').reduce((s,r)=>s+Number(r.valor),0)
 

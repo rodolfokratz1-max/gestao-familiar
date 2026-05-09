@@ -35,16 +35,14 @@ export default function Compras() {
 
   useEffect(() => {
     load()
-    supabase.from('pessoas').select('id,nome').in('tipo', ['fornecedor', 'ambos']).eq('ativo', true).then(({ data }) => setFornecedores(data || []))
-    supabase.from('contas').select('id,nome').eq('ativo', true).order('nome').then(({ data })
-        .eq('entidade_id', entidadeAtiva?.id) => setContas(data || []))
-    supabase.from('produtos').select('id,nome,preco_custo,estoque,unidade').eq('tipo', 'produto').eq('ativo', true).order('nome').then(({ data })
-        .eq('entidade_id', entidadeAtiva?.id) => setProdutos(data || []))
+    supabase.from('pessoas').select('id,nome').in('tipo', ['fornecedor', 'ambos']).eq('ativo', true).eq('entidade_id', entidadeAtiva?.id).then(({ data }) => setFornecedores(data || []))
+    supabase.from('contas').select('id,nome').eq('ativo', true).eq('entidade_id', entidadeAtiva?.id).order('nome').then(({ data }) => setContas(data || []))
+    supabase.from('produtos').select('id,nome,preco_custo,estoque,unidade').eq('tipo', 'produto').eq('ativo', true).eq('entidade_id', entidadeAtiva?.id).order('nome').then(({ data }) => setProdutos(data || []))
   }, [])
 
   async function load() {
     setLoading(true)
-    const { data, error } = await supabase.from('compras').select('*').order('data', { ascending: false })
+    const { data, error } = await supabase.from('compras').select('*').eq('entidade_id', entidadeAtiva?.id).order('data', { ascending: false })
     if (error) { toast(error.message, 'error'); setLoading(false); return }
     const compras = data || []
     setRows(compras)
@@ -57,8 +55,7 @@ export default function Compras() {
 
     const [{ data: p1 }, { data: p2 }] = await Promise.all([
       idsCompras.length > 0
-        ? supabase.from('contas_pagar').select(
-        .eq('entidade_id', entidadeAtiva?.id)'id,origem_id,valor,pago,descricao,vencimento').eq('origem_tabela', 'compras').in('origem_id', idsCompras).eq('ativo', true)
+        ? supabase.from('contas_pagar').select('id,origem_id,valor,pago,descricao,vencimento').eq('origem_tabela', 'compras').in('origem_id', idsCompras).eq('ativo', true)
         : { data: [] },
       idsEntradas.length > 0
         ? supabase.from('contas_pagar').select('id,origem_id,valor,pago,descricao,vencimento').eq('origem_tabela', 'entradas_estoque').in('origem_id', idsEntradas).eq('ativo', true)
@@ -131,8 +128,7 @@ export default function Compras() {
   }
 
   async function save() {
-    if (!form.descricao?.trim()
-        .eq('entidade_id', entidadeAtiva?.id)) return toast('Descrição obrigatória', 'error')
+    if (!form.descricao?.trim()) return toast('Descrição obrigatória', 'error')
     if (!form.valor_total) return toast('Valor obrigatório', 'error')
 
     // Compras importadas de EntradaEstoque são readonly — só permite salvar obs
@@ -165,7 +161,7 @@ export default function Compras() {
   }
 
   async function lancarCaixaCompra(r) {
-    await supabase.from('caixa').insert({entidade_id: entidadeAtiva?.id, 
+    await supabase.from('caixa').insert({
       data: r.data || today(), tipo: 'saida',
       descricao: `Compra: ${r.descricao}`,
       valor: r.valor_total, categoria: 'Compra',
@@ -174,27 +170,23 @@ export default function Compras() {
     })
     if (r.conta_id) {
       const { data: ct } = await supabase.from('contas').select('saldo_atual').eq('id', r.conta_id).single()
-      if (ct) await supabase.from('contas').update({ saldo_atual: Number(ct.saldo_atual || 0)
-        .eq('entidade_id', entidadeAtiva?.id) - Number(r.valor_total) }).eq('id', r.conta_id)
+      if (ct) await supabase.from('contas').update({ saldo_atual: Number(ct.saldo_atual || 0) - Number(r.valor_total) }).eq('id', r.conta_id)
     }
     if (r.itens_compra?.length) {
       for (const item of r.itens_compra) {
         if (!item.produto_id) continue
         const { data: prod } = await supabase.from('produtos').select('estoque').eq('id', item.produto_id).single()
-        if (prod) await supabase.from('produtos').update({ estoque: Number(prod.estoque || 0)
-        .eq('entidade_id', entidadeAtiva?.id) + Number(item.qtd || 0) }).eq('id', item.produto_id)
+        if (prod) await supabase.from('produtos').update({ estoque: Number(prod.estoque || 0) + Number(item.qtd || 0) }).eq('id', item.produto_id)
       }
     }
   }
 
   async function removerCaixaCompra(origemId) {
     const { data: cxList } = await supabase.from('caixa').select('*').eq('origem_id', origemId).eq('origem_tabela', 'compras')
-    for (const cx of (cxList || [])
-        .eq('entidade_id', entidadeAtiva?.id)) {
+    for (const cx of (cxList || [])) {
       if (cx?.conta_id) {
         const { data: ct } = await supabase.from('contas').select('saldo_atual').eq('id', cx.conta_id).single()
-        if (ct) await supabase.from('contas').update({ saldo_atual: Number(ct.saldo_atual || 0)
-        .eq('entidade_id', entidadeAtiva?.id) + Number(cx.valor) }).eq('id', cx.conta_id)
+        if (ct) await supabase.from('contas').update({ saldo_atual: Number(ct.saldo_atual || 0) + Number(cx.valor) }).eq('id', cx.conta_id)
       }
     }
     await supabase.from('caixa').delete().eq('origem_id', origemId).eq('origem_tabela', 'compras')
@@ -293,7 +285,6 @@ export default function Compras() {
                 <tbody>
                   {filtered.map(r => {
                     const statusReal = statusCalculado(r)
-        .eq('entidade_id', entidadeAtiva?.id)
                     const parcelas = parcelasDeCompra(r.id)
                     const pago = valorPagoCompra(r.id)
                     const pendente = valorPendenteCompra(r.id)
@@ -341,8 +332,7 @@ export default function Compras() {
                         </td>
                       </tr>
                     )
-                  })
-        .eq('entidade_id', entidadeAtiva?.id)}
+                  })}
                 </tbody>
               </table>
             </div>

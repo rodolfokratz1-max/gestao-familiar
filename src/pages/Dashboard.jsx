@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import { useEntidade } from '../contexts/EntidadeContext'
 import { TrendingUp, TrendingDown, Wallet, HandCoins, CreditCard, AlertCircle, ChevronRight, Target, BarChart2, RefreshCw } from 'lucide-react'
 import { BarChartSVG, PieChartSVG, CHART_COLORS } from '../lib/charts'
 import { today } from '../lib/utils.js'
@@ -32,11 +31,11 @@ export default function Dashboard({ onNavigate }) {
     const d7  = new Date(); d7.setDate(d7.getDate()+7); const d7s = d7.toISOString().split('T')[0]
 
     const [caixa, apagar, areceber, cartR, fatR, ccR] = await Promise.allSettled([
-      supabase.from('caixa').select('tipo,valor,data,categoria,origem_tabela').gte('data',`${ano}-01-01`).lte('data',`${ano}-12-31`),
-      supabase.from('contas_pagar').select('valor,vencimento').eq('pago',false).eq('ativo',true),
-      supabase.from('contas_receber').select('valor,vencimento').eq('recebido',false).eq('ativo',true),
-      supabase.from('cartoes').select('*').eq('ativo',true).order('nome'),
-      supabase.from('faturas_cartao').select('*').order('mes_ref',{ascending:false}),
+      supabase.from('caixa').select('tipo,valor,data,categoria,origem_tabela').eq('entidade_id', entidadeAtiva?.id).gte('data',`${ano}-01-01`).lte('data',`${ano}-12-31`),
+      supabase.from('contas_pagar').select('valor,vencimento').eq('pago',false).eq('ativo',true).eq('entidade_id', entidadeAtiva?.id),
+      supabase.from('contas_receber').select('valor,vencimento').eq('recebido',false).eq('ativo',true).eq('entidade_id', entidadeAtiva?.id),
+      supabase.from('cartoes').select('*').eq('ativo',true).eq('entidade_id', entidadeAtiva?.id).order('nome'),
+      supabase.from('faturas_cartao').select('*').eq('entidade_id', entidadeAtiva?.id).order('mes_ref',{ascending:false}),
       supabase.from('centros_custo').select('id,nome').eq('ativo',true).order('nome'),
     ])
 
@@ -54,12 +53,7 @@ export default function Dashboard({ onNavigate }) {
 
     // Vencendo hoje e em 7 dias
     setVencendoHoje({
-      pagar: apagarData.filter(r=>r.vencimento===td).reduce((s,r)
-        .eq('entidade_id', entidadeAtiva?.id)
-        .eq('entidade_id', entidadeAtiva?.id)
-        .eq('entidade_id', entidadeAtiva?.id)
-        .eq('entidade_id', entidadeAtiva?.id)
-        .eq('entidade_id', entidadeAtiva?.id)=>s+Number(r.valor),0),
+      pagar: apagarData.filter(r=>r.vencimento===td).reduce((s,r)=>s+Number(r.valor),0),
       receber: areceberData.filter(r=>r.vencimento===td).reduce((s,r)=>s+Number(r.valor),0),
     })
     setVencendo7d({
@@ -102,8 +96,8 @@ export default function Dashboard({ onNavigate }) {
     const ccList = ccR?.value?.data || []
     const ccResumo = await Promise.all(ccList.map(async cc => {
       const [rec, des] = await Promise.all([
-        supabase.from('receitas').select('valor').eq('centro_custo_id',cc.id).eq('ativo',true),
-        supabase.from('despesas').select('valor').eq('centro_custo_id',cc.id).eq('ativo',true),
+        supabase.from('receitas').select('valor').eq('centro_custo_id',cc.id).eq('ativo',true).eq('entidade_id', entidadeAtiva?.id),
+        supabase.from('despesas').select('valor').eq('centro_custo_id',cc.id).eq('ativo',true).eq('entidade_id', entidadeAtiva?.id),
       ])
       const r = (rec.data||[]).reduce((s,x)=>s+Number(x.valor),0)
       const d = (des.data||[]).reduce((s,x)=>s+Number(x.valor),0)
@@ -199,9 +193,7 @@ export default function Dashboard({ onNavigate }) {
           </div>
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:12}}>
             {centros.map(cc=>(
-              <div key={cc.id} style={{background:'var(--bg3)
-        .eq('entidade_id', entidadeAtiva?.id)
-        .eq('entidade_id', entidadeAtiva?.id)',borderRadius:10,padding:'12px 14px',border:'1px solid var(--border)'}}>
+              <div key={cc.id} style={{background:'var(--bg3)',borderRadius:10,padding:'12px 14px',border:'1px solid var(--border)'}}>
                 <div style={{fontWeight:700,fontSize:13,marginBottom:8}}>{cc.nome}</div>
                 <div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:3}}>
                   <span style={{color:'var(--text2)'}}>Receita</span>
