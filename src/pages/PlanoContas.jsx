@@ -48,6 +48,7 @@ export default function PlanoContas() {
   useEffect(() => { loadAll() }, [])
 
   async function loadAll() {
+    if (!entidadeAtiva?.id) { setLoading(false); return }
     setLoading(true)
     const [{ data: g }, { data: s }] = await Promise.all([
       supabase.from('plano_contas_grupos').select('*').order('tipo').order('nome'),

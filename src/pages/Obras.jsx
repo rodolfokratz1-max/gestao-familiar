@@ -330,7 +330,7 @@ export default function Obras() {
 
       } else {
         // ── Novo lançamento ───────────────────────────────────────────────────
-        const { data, error } = await supabase.from('obra_lancamentos').insert(sanitize({...payload, entidade_id: entidadeAtiva?.id || null}).select().single())
+        const { data, error } = await supabase.from('obra_lancamentos').insert(sanitize({...payload, entidade_id: entidadeAtiva?.id || null})).select().single()
         if (error) { toast(error.message, 'error'); setSavingLanc(false); return }
         lancId = data.id
 
