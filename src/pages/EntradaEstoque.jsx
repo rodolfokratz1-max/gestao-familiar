@@ -943,7 +943,7 @@ export default function EntradaEstoque() {
             setConfirmando(true)
           }} disabled={processando}>
             <CheckCircle size={15}/> {processando?'Processando...':`Confirmar Entrada (${itens.length} itens)`}
-          </button>
+          </button>}
         </div>
       )}
 
