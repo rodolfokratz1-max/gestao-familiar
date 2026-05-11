@@ -426,17 +426,21 @@ export default function Obras() {
           // ── Receita com PIX/Espécie → gera C/R já quitado ─────────────────
           // Garante rastreabilidade: aparece em Contas Recebidas vinculado à obra
           if (formLanc.tipo === 'receita' && ['proprio', 'dinheiro_cliente'].includes(fonte.tipo)) {
-            await supabase.from('contas_receber').insert({entidade_id: entidadeAtiva?.id || null,
-              descricao:    `[Obra: ${obraSel.nome}] ${formLanc.descricao}`,
+            await supabase.from('contas_receber').insert({
+              entidade_id:      entidadeAtiva?.id || null,
+              descricao:        `[Obra: ${obraSel.nome}] ${formLanc.descricao}`,
               valor,
-              data_emissao: formLanc.data_ref || today(),
-              vencimento:   formLanc.data_ref || today(),
-              data_pgto:    formLanc.data_ref || today(),
-              status:       'pago',
-              cliente_id:   obraSel.cliente_id || null,
-              obs:          `Recebimento via ${fonte.nome} | Obra: ${obraSel.nome}`,
-              origem_tabela:'obra_lancamentos',
-              origem_id:    lancId,
+              data_emissao:     formLanc.data_ref || today(),
+              vencimento:       formLanc.data_ref || today(),
+              data_recebimento: formLanc.data_ref || today(),
+              recebido:         true,
+              pessoa_id:        obraSel.cliente_id || null,
+              obs:              `Recebimento via ${fonte.nome} | Obra: ${obraSel.nome}`,
+              origem_tabela:    'obra_lancamentos',
+              origem_id:        lancId,
+              categoria:        'Obras',
+              forma_pgto:       fonte.nome,
+              conta_id:         formLanc.conta_id || null,
             })
           }
         }
