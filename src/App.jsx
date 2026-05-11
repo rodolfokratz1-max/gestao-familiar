@@ -32,7 +32,7 @@ import { EntidadeProvider, useEntidade } from './contexts/EntidadeContext'
 import SeletorEntidade from './components/SeletorEntidade'
 import ErrorBoundary from './components/ErrorBoundary'
 import {
-  LayoutDashboard, Users, Package, TrendingUp, TrendingDown, ArrowLeftRight,
+  LayoutDashboard, Users, Package, TrendingUp, TrendingDown,
   Wallet, ShoppingCart, CreditCard, HandCoins, Menu, X,
   Landmark, BarChart2, LogOut, Shield, ClipboardList,
   Building2, Repeat2, ListTree, ArrowLeftRight, BarChart,
