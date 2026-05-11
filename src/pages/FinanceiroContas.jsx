@@ -319,7 +319,7 @@ export default function FinanceiroContas({ module }) {
           <option value="aberto">Em Aberto</option>
           <option value="pago">{cfg.pagoLabel}s</option>
         </select>
-        {pode('lancar') && <button className="btn btn-primary" onClick={openNew}><Plus size={15} /> {cfg.newLabel}</button>
+        {pode('lancar') && <button className="btn btn-primary" onClick={openNew}><Plus size={15} /> {cfg.newLabel}</button>}
       </div>
 
       <div className="card">

@@ -137,7 +137,7 @@ export default function Pessoas() {
           <option value="false">Inativos</option>
           <option value="">Todos</option>
         </select>
-        {pode('lancar') && <button className="btn btn-primary" onClick={openNew}><Plus size={15} /> Nova Pessoa</button>
+        {pode('lancar') && <button className="btn btn-primary" onClick={openNew}><Plus size={15} /> Nova Pessoa</button>}
       </div>
 
       <div className="card">
