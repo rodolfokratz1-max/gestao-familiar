@@ -13,7 +13,7 @@ const EMPTY = { data: today(), fornecedor: '', descricao: '', valor_total: '', s
 
 export default function Compras() {
   const toast = useToast()
-  const { entidadeAtiva } = useEntidade()
+  const { entidadeAtiva, pode } = useEntidade()
   const [rows, setRows] = useState([])
   const [fornecedores, setFornecedores] = useState([])
   const [contas, setContas] = useState([])
@@ -270,7 +270,7 @@ export default function Compras() {
           <input type="checkbox" checked={showArquivados} onChange={e => setShowArquivados(e.target.checked)} style={{ width: 14, height: 14 }} />
           Mostrar arquivados
         </label>
-        <button className="btn btn-primary" onClick={openNew}><Plus size={15} /> Nova Compra</button>
+        {pode('lancar') && <button className="btn btn-primary" onClick={openNew}><Plus size={15} /> Nova Compra</button>}
       </div>
 
       <div className="card">

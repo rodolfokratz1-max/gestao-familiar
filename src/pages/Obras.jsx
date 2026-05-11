@@ -95,7 +95,7 @@ export default function Obras() {
       .then(({ data }) => setFontes(data || []))
     supabase.from('contas').select('id,nome,saldo_atual').eq('ativo', true).eq('entidade_id', entidadeAtiva?.id).order('nome')
       .then(({ data }) => setContas(data || []))
-    supabase.from('empresa').select('*').eq('ativo', true).limit(1).single()
+    supabase.from('entidades').select('*').eq('id', entidadeAtiva?.id).single()
       .then(({ data }) => setEmpresa(data || null))
   }, [entidadeAtiva?.id])
 

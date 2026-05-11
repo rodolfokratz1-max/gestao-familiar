@@ -34,7 +34,7 @@ const EMPTY_ITEM = { descricao:'', quantidade:1, valor_unit:0, pago:false, obs:'
 export default function OrdemServico() {
   const { user } = useAuth()
   const toast = useToast()
-  const { entidadeAtiva } = useEntidade()
+  const { entidadeAtiva, pode } = useEntidade()
   const [view, setView] = useState('lista') // lista | detalhe
   const [os, setOs] = useState([])
   const [clientes, setClientes] = useState([])
@@ -530,7 +530,7 @@ export default function OrdemServico() {
           <Search size={14} />
           <input className="search-input" placeholder="Buscar nº OS, cliente, equipamento..." value={search} onChange={e => setSearch(e.target.value)} />
         </div>
-        <button className="btn btn-primary" onClick={openNewOs}><Plus size={15} /> Nova OS</button>
+        {pode('lancar') && <button className="btn btn-primary" onClick={openNewOs}><Plus size={15} /> Nova OS</button>}
       </div>
 
       {loading ? <div className="loading"><div className="spinner" /></div> :

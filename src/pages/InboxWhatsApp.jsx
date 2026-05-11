@@ -65,7 +65,7 @@ export default function InboxWhatsApp() {
     setLoading(true)
     const [{ data: inbox }, { data: anot }, { data: conts }, { data: carts }] = await Promise.all([
       supabase.from('lancamentos_inbox').select('*').eq('entidade_id', entidadeAtiva?.id).order('created_at', { ascending: false }),
-      supabase.from('whatsapp_anotacoes').select('*').order('created_at', { ascending: false }),
+      supabase.from('whatsapp_anotacoes').select('*').eq('entidade_id', entidadeAtiva?.id).order('created_at', { ascending: false }),
       supabase.from('contas').select('id,nome').eq('ativo', true).eq('entidade_id', entidadeAtiva?.id).order('nome'),
       supabase.from('cartoes').select('id,nome').eq('ativo', true).eq('entidade_id', entidadeAtiva?.id).order('nome'),
     ])
@@ -172,6 +172,7 @@ export default function InboxWhatsApp() {
   }
 
   async function saveEdit() {
+    if (!entidadeAtiva?.id) return toast('Selecione uma entidade antes de salvar', 'error')
     if (!form.descricao) return toast('Descrição obrigatória', 'error')
     if (!form.valor) return toast('Valor obrigatório', 'error')
     await supabase.from('lancamentos_inbox').update({

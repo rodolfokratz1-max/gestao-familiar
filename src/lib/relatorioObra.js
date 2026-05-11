@@ -51,7 +51,7 @@ export function imprimirRelatorioObra({ obra, lancamentos = [], etapas = [], emp
       ${logoHtml}
       <div class="empresa-info">
         <div class="empresa-nome">${empresa.nome_fantasia || empresa.nome}</div>
-        ${empresa.cnpj    ? `<div class="empresa-detalhe">CNPJ: ${empresa.cnpj}</div>` : ''}
+        ${(empresa.cnpj||empresa.cnpj_cpf) ? `<div class="empresa-detalhe">CNPJ: ${empresa.cnpj||empresa.cnpj_cpf}</div>` : ''}
         ${enderecoEmp     ? `<div class="empresa-detalhe">${enderecoEmp}</div>` : ''}
         ${empresa.telefone ? `<div class="empresa-detalhe">Tel: ${empresa.telefone}</div>` : ''}
         ${empresa.email   ? `<div class="empresa-detalhe">${empresa.email}</div>` : ''}

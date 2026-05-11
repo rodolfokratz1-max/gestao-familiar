@@ -17,7 +17,7 @@ const FORMAS = ['Boleto','PIX','Cartão Crédito','Cartão Débito','Transferên
 
 export default function EntradaEstoque() {
   const toast = useToast()
-  const { entidadeAtiva } = useEntidade()
+  const { entidadeAtiva, pode } = useEntidade()
   const fileRef = useRef()
 
   const [aba, setAba] = useState('nova') // nova | historico
@@ -937,7 +937,7 @@ export default function EntradaEstoque() {
       {itens.length>0&&(
         <div style={{display:'flex',justifyContent:'flex-end',gap:10}}>
           <button className="btn btn-secondary" onClick={()=>{setItens([]);setNota({numero:'',fornecedor_id:'',fornecedor_nome:'',data_emissao:today(),chave_nfe:'',obs:''})}}>Limpar</button>
-          <button className="btn btn-primary" onClick={()=>{
+          {pode('lancar') && <button className="btn btn-primary" onClick={()=>{
             if (!nota.fornecedor_id) { toast('Selecione o fornecedor antes de confirmar','error'); return }
             if (itens.length===0) { toast('Adicione pelo menos um item','error'); return }
             setConfirmando(true)
