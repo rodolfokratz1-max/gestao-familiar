@@ -25,13 +25,14 @@ import CentroCusto from './pages/CentroCusto'
 import EntradaEstoque from './pages/EntradaEstoque'
 import Obras from './pages/Obras'
 import Entidades from './pages/Entidades'
+import TransferenciaEntidades from './pages/TransferenciaEntidades'
 import ObrasFontes from './pages/ObrasFontes'
 import { VERSION } from './version'
 import { EntidadeProvider, useEntidade } from './contexts/EntidadeContext'
 import SeletorEntidade from './components/SeletorEntidade'
 import ErrorBoundary from './components/ErrorBoundary'
 import {
-  LayoutDashboard, Users, Package, TrendingUp, TrendingDown,
+  LayoutDashboard, Users, Package, TrendingUp, TrendingDown, ArrowLeftRight,
   Wallet, ShoppingCart, CreditCard, HandCoins, Menu, X,
   Landmark, BarChart2, LogOut, Shield, ClipboardList,
   Building2, Repeat2, ListTree, ArrowLeftRight, BarChart,
@@ -73,7 +74,8 @@ function getNav() {
       { id: 'obras_fontes', label: 'Fontes de Pagamento', icon: Wallet  },
     ]},
     { group: 'Sistema', items: [
-      { id: 'entidades', label: 'Entidades',         icon: Building2 },
+      { id: 'entidades',             label: 'Entidades',             icon: Building2 },
+      { id: 'transferencias_entidades', label: 'Transf. entre Entidades', icon: ArrowLeftRight },
       { id: 'empresa',  label: 'Dados da Empresa', icon: Building2 },
       { id: 'usuarios', label: 'Usuários',          icon: Shield },
     ]},
@@ -93,7 +95,7 @@ function getTitle(page) {
     compras:'Compras', os:'Ordens de Serviço',
     entrada_estoque:'Entrada de Estoque (NF)', inbox_whatsapp: 'Inbox WhatsApp',
     obras:'Obras & Projetos', obras_fontes:'Fontes de Pagamento',
-    entidades:'Entidades', empresa:'Dados da Empresa', usuarios:'Gerenciar Usuários',
+    entidades:'Entidades', transferencias_entidades:'Transferências entre Entidades', empresa:'Dados da Empresa', usuarios:'Gerenciar Usuários',
   }
   return map[page] || ''
 }
@@ -121,7 +123,8 @@ function PageContent({ page, onNavigate }) {
   if (page === 'inbox_whatsapp') return <InboxWhatsApp />
   if (page === 'obras')          return <Obras />
   if (page === 'obras_fontes')   return <ObrasFontes />
-  if (page === 'entidades')       return <Entidades />
+  if (page === 'entidades')             return <Entidades />
+  if (page === 'transferencias_entidades') return <TransferenciaEntidades />
   if (page === 'empresa')         return <Empresa />
   if (page === 'usuarios')        return <Usuarios />
   return null

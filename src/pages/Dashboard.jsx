@@ -8,7 +8,12 @@ import { today } from '../lib/utils.js'
 const fmt = v => 'R$ ' + Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2})
 const fmtK = v => { const n=Number(v||0); return Math.abs(n)>=1000 ? 'R$'+(n/1000).toFixed(0)+'k' : 'R$'+n.toFixed(0) }
 export default function Dashboard({ onNavigate }) {
-  const { entidadeAtiva } = useEntidade()
+  const { entidadeAtiva, entidades } = useEntidade()
+  const STORAGE_KEY = 'dashboard_entidades_selecionadas'
+  const [entidadesSelecionadas, setEntidadesSelecionadas] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || null } catch { return null }
+  })
+  // null = usa só a entidade ativa; array de ids = visão consolidada
   const [loading, setLoading]     = useState(true)
   const [stats, setStats]         = useState({})
   const [chart6m, setChart6m]     = useState([])
@@ -20,10 +25,14 @@ export default function Dashboard({ onNavigate }) {
   const [vencendoHoje, setVencendoHoje]   = useState({ pagar:0, receber:0 })
   const [vencendo7d, setVencendo7d]       = useState({ pagar:0, receber:0 })
 
-  useEffect(() => { if (entidadeAtiva?.id) load() }, [entidadeAtiva?.id])
+  useEffect(() => { if (entidadeAtiva?.id) load() }, [entidadeAtiva?.id, entidadesSelecionadas])
 
   async function load() {
     if (!entidadeAtiva?.id) { setLoading(false); return }
+    // IDs a consultar: selecionadas ou só a ativa
+    const idsConsultar = entidadesSelecionadas?.length
+      ? entidadesSelecionadas
+      : [entidadeAtiva.id]
     setLoading(true)
     const mesAtual = new Date()
     const ano = mesAtual.getFullYear()
@@ -34,11 +43,11 @@ export default function Dashboard({ onNavigate }) {
     const d7  = new Date(); d7.setDate(d7.getDate()+7); const d7s = d7.toISOString().split('T')[0]
 
     const [caixa, apagar, areceber, cartR, fatR, ccR] = await Promise.allSettled([
-      supabase.from('caixa').select('tipo,valor,data,categoria,origem_tabela').eq('entidade_id', entidadeAtiva?.id).gte('data',`${ano}-01-01`).lte('data',`${ano}-12-31`),
-      supabase.from('contas_pagar').select('valor,vencimento').eq('pago',false).eq('ativo',true).eq('entidade_id', entidadeAtiva?.id),
-      supabase.from('contas_receber').select('valor,vencimento').eq('recebido',false).eq('ativo',true).eq('entidade_id', entidadeAtiva?.id),
-      supabase.from('cartoes').select('*').eq('ativo',true).eq('entidade_id', entidadeAtiva?.id).order('nome'),
-      supabase.from('faturas_cartao').select('*').eq('entidade_id', entidadeAtiva?.id).order('mes_ref',{ascending:false}),
+      supabase.from('caixa').select('tipo,valor,data,categoria,origem_tabela').in('entidade_id', idsConsultar).gte('data',`${ano}-01-01`).lte('data',`${ano}-12-31`),
+      supabase.from('contas_pagar').select('valor,vencimento').eq('pago',false).eq('ativo',true).in('entidade_id', idsConsultar),
+      supabase.from('contas_receber').select('valor,vencimento').eq('recebido',false).eq('ativo',true).in('entidade_id', idsConsultar),
+      supabase.from('cartoes').select('*').eq('ativo',true).in('entidade_id', idsConsultar).order('nome'),
+      supabase.from('faturas_cartao').select('*').in('entidade_id', idsConsultar).order('mes_ref',{ascending:false}),
       supabase.from('centros_custo').select('id,nome').eq('ativo',true).order('nome'),
     ])
 
@@ -122,6 +131,37 @@ export default function Dashboard({ onNavigate }) {
 
   return (
     <div>
+      {/* Seletor de entidades para visão consolidada */}
+      {entidades.length > 1 && (
+        <div style={{ marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.5px' }}>Visão:</span>
+          {entidades.map(e => {
+            const ativo = idsAtivos.includes(e.id)
+            const cor   = e.cor_tema || '#2563eb'
+            return (
+              <button key={e.id} onClick={() => toggleEntidade(e.id)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  padding: '5px 12px', borderRadius: 20, cursor: 'pointer',
+                  border: ativo ? `1.5px solid ${cor}` : '1px solid var(--border)',
+                  background: ativo ? `${cor}15` : 'var(--bg2)',
+                  fontSize: 12, fontWeight: ativo ? 600 : 400,
+                  color: ativo ? cor : 'var(--text3)',
+                  transition: 'all .15s',
+                }}>
+                <div style={{ width: 7, height: 7, borderRadius: '50%', background: ativo ? cor : 'var(--text3)' }} />
+                {e.nome_fantasia || e.nome}
+                {ativo && <span style={{ fontSize: 10 }}>✓</span>}
+              </button>
+            )
+          })}
+          {idsAtivos.length > 1 && (
+            <span style={{ fontSize: 11, color: 'var(--accent)', marginLeft: 4 }}>
+              Consolidado ({idsAtivos.length} entidades)
+            </span>
+          )}
+        </div>
+      )}
       {/* Alertas do dia */}
       {(vencendoHoje.pagar > 0 || vencendoHoje.receber > 0) && (
         <div style={{marginBottom:14,display:'flex',gap:10,flexWrap:'wrap'}}>
