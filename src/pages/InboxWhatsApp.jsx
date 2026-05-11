@@ -65,7 +65,7 @@ export default function InboxWhatsApp() {
     setLoading(true)
     const [{ data: inbox }, { data: anot }, { data: conts }, { data: carts }] = await Promise.all([
       supabase.from('lancamentos_inbox').select('*').eq('entidade_id', entidadeAtiva?.id).order('created_at', { ascending: false }),
-      supabase.from('whatsapp_anotacoes').select('*').eq('entidade_id', entidadeAtiva?.id).order('created_at', { ascending: false }),
+      supabase.from('whatsapp_anotacoes').select('*').or(`entidade_id.eq.${entidadeAtiva?.id},entidade_id.is.null`).order('created_at', { ascending: false }),
       supabase.from('contas').select('id,nome').eq('ativo', true).eq('entidade_id', entidadeAtiva?.id).order('nome'),
       supabase.from('cartoes').select('id,nome').eq('ativo', true).eq('entidade_id', entidadeAtiva?.id).order('nome'),
     ])
@@ -113,7 +113,7 @@ export default function InboxWhatsApp() {
 
   async function aprovar(row) {
     if (row._source === 'anotacao') {
-      await supabase.from('whatsapp_anotacoes').update({ arquivada: true }).eq('id', row.id)
+      await supabase.from('whatsapp_anotacoes').update({ arquivada: true, entidade_id: entidadeAtiva?.id || null }).eq('id', row.id)
       toast('Anotação arquivada!', 'success')
     } else {
       // Grava no destino correto

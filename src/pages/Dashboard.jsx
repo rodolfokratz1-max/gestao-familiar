@@ -127,6 +127,18 @@ export default function Dashboard({ onNavigate }) {
     faturaAberta: faturas.find(f=>f.cartao_id===c.id&&!f.pago)
   }))
 
+  // Seletor de entidades consolidado
+  function toggleEntidade(id) {
+    setEntidadesSelecionadas(prev => {
+      const atual = prev || (entidadeAtiva?.id ? [entidadeAtiva.id] : [])
+      const nova = atual.includes(id) ? atual.filter(x => x !== id) : [...atual, id]
+      const resultado = nova.length === 0 ? (entidadeAtiva?.id ? [entidadeAtiva.id] : []) : nova
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(resultado))
+      return resultado
+    })
+  }
+  const idsAtivos = entidadesSelecionadas?.length ? entidadesSelecionadas : (entidadeAtiva?.id ? [entidadeAtiva.id] : [])
+
   if (loading) return <div className="loading"><div className="spinner"/><span>Carregando...</span></div>
 
   return (
