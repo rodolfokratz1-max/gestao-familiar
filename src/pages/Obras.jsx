@@ -434,6 +434,8 @@ export default function Obras() {
               vencimento:       formLanc.data_ref || today(),
               data_recebimento: formLanc.data_ref || today(),
               recebido:         true,
+              ativo:            true,
+              bloqueado:        false,
               pessoa_id:        obraSel.cliente_id || null,
               obs:              `Recebimento via ${fonte.nome} | Obra: ${obraSel.nome}`,
               origem_tabela:    'obra_lancamentos',
