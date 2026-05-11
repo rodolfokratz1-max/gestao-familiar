@@ -7,7 +7,7 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import {
   Plus, Search, Pencil, Trash2, Power, HardHat,
   CheckCircle, ChevronDown, ChevronUp, Wallet,
-  AlertCircle, Camera, X, TrendingUp, TrendingDown
+  AlertCircle, Camera, X, TrendingUp, TrendingDown, Layers, GripVertical
 } from 'lucide-react'
 import { today, fmtDate } from '../lib/utils.js'
 import UploadComprovante from '../components/UploadComprovante'
@@ -24,24 +24,38 @@ const FONTES_MOVEM_CAIXA = ['empresa', 'proprio', 'dinheiro_cliente']
 // Cartão do cliente NÃO entra no caixa
 const FONTE_NAO_CAIXA = 'cartao_cliente'
 
+const STATUS_ETAPA  = ['pendente','em_andamento','concluida','cancelada']
+const LETAPA_LABEL  = { pendente: 'Pendente', em_andamento: 'Em Andamento', concluida: 'Concluída', cancelada: 'Cancelada' }
+const LETAPA_COLOR  = { pendente: 'badge-gray', em_andamento: 'badge-yellow', concluida: 'badge-green', cancelada: 'badge-red' }
+
+const EMPTY_ETAPA = { nome: '', descricao: '', ordem: 0, valor_orcado: '', status: 'pendente', data_inicio: '', data_fim: '' }
+
 const EMPTY_OBRA = {
   nome: '', cliente_id: '', cliente_nome: '', status: 'planejamento',
   valor_contratado: '', data_inicio: today(), data_fim: '', obs: ''
 }
 const EMPTY_LANC = {
   tipo: 'despesa', descricao: '', valor: '', fonte_id: '', pago_por: '',
-  conta_id: '', reembolsavel: false, data_ref: today(), obs: '', imagens_url: []
+  conta_id: '', etapa_id: '', reembolsavel: false, data_ref: today(), obs: '', imagens_url: []
 }
 
 export default function Obras() {
   const toast = useToast()
-  const { entidadeAtiva } = useEntidade()
+  const { entidadeAtiva, pode } = useEntidade()
   const [rows, setRows]                     = useState([])
   const [lancamentosMap, setLancamentosMap] = useState({})
   const [clientes, setClientes]             = useState([])
   const [fontes, setFontes]                 = useState([])
   const [contas, setContas]                 = useState([])
   const [empresa, setEmpresa]               = useState(null)
+  const [etapasMap, setEtapasMap]           = useState({})  // { obra_id: [etapas] }
+
+  // Modal etapa
+  const [modalEtapa, setModalEtapa]         = useState(false)
+  const [formEtapa, setFormEtapa]           = useState(EMPTY_ETAPA)
+  const [editingEtapa, setEditingEtapa]     = useState(null)
+  const [deletingEtapa, setDeletingEtapa]   = useState(null)
+  const [etapaExpanded, setEtapaExpanded]   = useState(null)
   const [loading, setLoading]               = useState(true)
   const [search, setSearch]                 = useState('')
   const [filterStatus, setFilterStatus]     = useState('')
@@ -55,7 +69,7 @@ export default function Obras() {
 
   // Detalhe da obra
   const [obraSel, setObraSel]       = useState(null)
-  const [tabDetalhe, setTabDetalhe] = useState('lancamentos') // 'lancamentos' | 'relatorio'
+  const [tabDetalhe, setTabDetalhe] = useState('lancamentos') // 'lancamentos' | 'etapas' | 'relatorio'
 
   // Modal lançamento
   const [modalLanc, setModalLanc]     = useState(false)
@@ -104,13 +118,28 @@ export default function Obras() {
         mapa[l.obra_id].push(l)
       }
       setLancamentosMap(mapa)
+
+      // Carrega etapas das obras
+      const { data: etapas } = await supabase
+        .from('obra_etapas')
+        .select('*')
+        .in('obra_id', ids)
+        .order('ordem')
+      const mapaEtapas = {}
+      for (const e of (etapas || [])) {
+        if (!mapaEtapas[e.obra_id]) mapaEtapas[e.obra_id] = []
+        mapaEtapas[e.obra_id].push(e)
+      }
+      setEtapasMap(mapaEtapas)
     } else {
       setLancamentosMap({})
+      setEtapasMap({})
     }
     setLoading(false)
   }
 
-  const lancsDaObra  = id => lancamentosMap[id] || []
+  const lancsDaObra   = id => lancamentosMap[id] || []
+  const etapasDaObra  = id => etapasMap[id] || []
   const gastoObra    = id => lancsDaObra(id).filter(l => l.tipo === 'despesa').reduce((s, l) => s + Number(l.valor || 0), 0)
   const recebidoObra = id => lancsDaObra(id).filter(l => l.tipo === 'receita').reduce((s, l) => s + Number(l.valor || 0), 0)
   // Percentual gasto em relação ao contratado (para alerta)
@@ -164,6 +193,41 @@ export default function Obras() {
     if (obraSel?.id === deleting.id) setObraSel(null)
     toast('Excluído', 'success'); setDeleting(null); load()
   }
+
+  // ── ETAPAS ──────────────────────────────────────────────────────────────────
+
+  function openNewEtapa(obraId) {
+    setFormEtapa({ ...EMPTY_ETAPA, obra_id: obraId, ordem: (etapasDaObra(obraId).length) })
+    setEditingEtapa(null)
+    setModalEtapa(true)
+  }
+  function openEditEtapa(e) { setFormEtapa({ ...e }); setEditingEtapa(e.id); setModalEtapa(true) }
+
+  async function saveEtapa() {
+    if (!entidadeAtiva?.id) return toast('Selecione uma entidade', 'error')
+    if (!formEtapa.nome?.trim()) return toast('Nome da etapa obrigatório', 'error')
+    const payload = {
+      ...formEtapa,
+      obra_id:      formEtapa.obra_id,
+      valor_orcado: formEtapa.valor_orcado || null,
+      data_inicio:  formEtapa.data_inicio  || null,
+      data_fim:     formEtapa.data_fim     || null,
+      entidade_id:  entidadeAtiva.id,
+    }
+    let error
+    if (editingEtapa) ({ error } = await supabase.from('obra_etapas').update(payload).eq('id', editingEtapa))
+    else              ({ error } = await supabase.from('obra_etapas').insert(sanitize(payload)))
+    if (error) { toast(error.message, 'error'); return }
+    toast('Etapa salva!', 'success'); setModalEtapa(false); load()
+  }
+
+  async function destroyEtapa() {
+    await supabase.from('obra_lancamentos').update({ etapa_id: null }).eq('etapa_id', deletingEtapa.id)
+    await supabase.from('obra_etapas').delete().eq('id', deletingEtapa.id)
+    toast('Etapa excluída', 'success'); setDeletingEtapa(null); load()
+  }
+
+  const fe = (k, v) => setFormEtapa(p => ({ ...p, [k]: v }))
 
   function selectObra(r) {
     if (obraSel?.id === r.id) { setObraSel(null) }
@@ -236,6 +300,7 @@ export default function Obras() {
         reembolsavel: formLanc.reembolsavel,
         data_ref:    formLanc.data_ref || today(),
         obs:         formLanc.obs || null,
+        etapa_id:    formLanc.etapa_id || null,
         imagens_url: formLanc.imagens_url || [],
       }
 
@@ -453,7 +518,7 @@ export default function Obras() {
           <input type="checkbox" checked={showArquivados} onChange={e => setShowArquivados(e.target.checked)} style={{ width: 14, height: 14 }} />
           Mostrar arquivados
         </label>
-        <button className="btn btn-primary" onClick={openNew}><Plus size={15} /> Nova Obra</button>
+        {pode('lancar') && <button className="btn btn-primary" onClick={openNew}><Plus size={15} /> Nova Obra</button>}
       </div>
 
       {/* Tabela de obras */}
@@ -525,6 +590,7 @@ export default function Obras() {
                                 <PainelDetalhe
                                   obra={r}
                                   lancs={lancsDaObra(r.id)}
+                                  etapas={etapasDaObra(r.id)}
                                   fontes={fontes}
                                   empresa={empresa}
                                   tab={tabDetalhe}
@@ -532,6 +598,11 @@ export default function Obras() {
                                   onNewLanc={openNewLanc}
                                   onEditLanc={openEditLanc}
                                   onDeleteLanc={setDeletingLanc}
+                                  onNewEtapa={() => openNewEtapa(r.id)}
+                                  onEditEtapa={openEditEtapa}
+                                  onDeleteEtapa={setDeletingEtapa}
+                                  etapaExpanded={etapaExpanded}
+                                  onEtapaExpand={setEtapaExpanded}
                                 />
                               </td>
                             </tr>
@@ -668,9 +739,57 @@ export default function Obras() {
                 maxFotos={5}
               />
             </div>
+            {/* Etapa — só aparece se a obra tem etapas */}
+            {obraSel && etapasDaObra(obraSel.id).length > 0 && (
+              <div className="form-group">
+                <label className="form-label">Etapa (opcional)</label>
+                <select className="form-select" value={formLanc.etapa_id || ''} onChange={e => fl('etapa_id', e.target.value)}>
+                  <option value="">Sem etapa específica</option>
+                  {etapasDaObra(obraSel.id).map(et => (
+                    <option key={et.id} value={et.id}>{et.nome}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="form-group" style={{ gridColumn: '1/-1' }}>
               <label className="form-label">Observações</label>
               <textarea className="form-textarea" value={formLanc.obs || ''} onChange={e => fl('obs', e.target.value)} />
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Modal Etapa */}
+      {modalEtapa && (
+        <Modal title={editingEtapa ? 'Editar Etapa' : 'Nova Etapa'} onClose={() => setModalEtapa(false)} onSave={saveEtapa}>
+          <div className="form-grid form-grid-2">
+            <div className="form-group" style={{ gridColumn: '1/-1' }}>
+              <label className="form-label">Nome da Etapa *</label>
+              <input className="form-input" value={formEtapa.nome} onChange={e => fe('nome', e.target.value)}
+                placeholder="Ex: Demolição, Elétrica, Revestimento..." autoFocus />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Valor Orçado</label>
+              <input className="form-input" type="number" step="0.01" value={formEtapa.valor_orcado || ''}
+                onChange={e => fe('valor_orcado', e.target.value)} placeholder="0,00" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Status</label>
+              <select className="form-select" value={formEtapa.status} onChange={e => fe('status', e.target.value)}>
+                {STATUS_ETAPA.map(s => <option key={s} value={s}>{LETAPA_LABEL[s]}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Data Início</label>
+              <input className="form-input" type="date" value={formEtapa.data_inicio || ''} onChange={e => fe('data_inicio', e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Data Fim Previsto</label>
+              <input className="form-input" type="date" value={formEtapa.data_fim || ''} onChange={e => fe('data_fim', e.target.value)} />
+            </div>
+            <div className="form-group" style={{ gridColumn: '1/-1' }}>
+              <label className="form-label">Descrição</label>
+              <textarea className="form-textarea" value={formEtapa.descricao || ''} onChange={e => fe('descricao', e.target.value)} />
             </div>
           </div>
         </Modal>
@@ -681,6 +800,12 @@ export default function Obras() {
           message={`Excluir a obra "${deleting.nome}"? Todos os lançamentos vinculados também serão removidos.`}
           onConfirm={destroy} onCancel={() => setDeleting(null)} />
       )}
+      {deletingEtapa && (
+        <ConfirmDialog
+          message={`Excluir a etapa "${deletingEtapa.nome}"? Os lançamentos vinculados a ela perderão a referência de etapa.`}
+          onConfirm={destroyEtapa} onCancel={() => setDeletingEtapa(null)} />
+      )}
+
       {deletingLanc && (
         <ConfirmDialog
           message={`Excluir o lançamento "${deletingLanc.descricao}"?${deletingLanc.caixa_id ? '\n\nAtenção: o lançamento correspondente no Caixa também será removido e o saldo da conta será revertido.' : ''}`}
@@ -737,7 +862,7 @@ export default function Obras() {
 
 // ── Painel de detalhe da obra (lançamentos + relatório) ──────────────────────
 
-function PainelDetalhe({ obra, lancs, fontes, empresa, tab, onTab, onNewLanc, onEditLanc, onDeleteLanc }) {
+function PainelDetalhe({ obra, lancs, etapas, fontes, empresa, tab, onTab, onNewLanc, onEditLanc, onDeleteLanc, onNewEtapa, onEditEtapa, onDeleteEtapa, etapaExpanded, onEtapaExpand }) {
   const fmt = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
 
   // Agrupa lançamentos por fonte de pagamento para o relatório
@@ -772,6 +897,7 @@ function PainelDetalhe({ obra, lancs, fontes, empresa, tab, onTab, onNewLanc, on
           <div style={{ display: 'flex', gap: 4, background: 'var(--bg3)', borderRadius: 8, padding: 3 }}>
             {[
               { id: 'lancamentos', label: 'Lançamentos' },
+              { id: 'etapas',      label: `Etapas${etapas.length > 0 ? ` (${etapas.length})` : ''}` },
               { id: 'relatorio',   label: 'Relatório Final' },
             ].map(t => (
               <button key={t.id} onClick={() => onTab(t.id)}
@@ -785,12 +911,19 @@ function PainelDetalhe({ obra, lancs, fontes, empresa, tab, onTab, onNewLanc, on
               </button>
             ))}
           </div>
-          <button className="btn btn-primary btn-sm" onClick={onNewLanc}>
-            <Plus size={13} /> Novo Lançamento
-          </button>
+          {tab !== 'etapas' && (
+            <button className="btn btn-primary btn-sm" onClick={onNewLanc}>
+              <Plus size={13} /> Novo Lançamento
+            </button>
+          )}
+          {tab === 'etapas' && (
+            <button className="btn btn-primary btn-sm" onClick={onNewEtapa}>
+              <Plus size={13} /> Nova Etapa
+            </button>
+          )}
           <button
             className="btn btn-secondary btn-sm"
-            onClick={() => imprimirRelatorioObra({ obra, lancamentos: lancs, empresa })}
+            onClick={() => imprimirRelatorioObra({ obra, lancamentos: lancs, etapas, empresa })}
             title="Imprimir / Salvar PDF"
             style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             🖨️ Imprimir
@@ -860,6 +993,19 @@ function PainelDetalhe({ obra, lancs, fontes, empresa, tab, onTab, onNewLanc, on
               </table>
           }
         </>
+      )}
+
+      {tab === 'etapas' && (
+        <PainelEtapas
+          obra={obra}
+          etapas={etapas}
+          lancs={lancs}
+          expanded={etapaExpanded}
+          onExpand={onEtapaExpand}
+          onEdit={onEditEtapa}
+          onDelete={onDeleteEtapa}
+          onNewLanc={onNewLanc}
+        />
       )}
 
       {tab === 'relatorio' && (
@@ -947,6 +1093,151 @@ function PainelDetalhe({ obra, lancs, fontes, empresa, tab, onTab, onNewLanc, on
     </div>
   )
 }
+
+// ── Painel de Etapas ─────────────────────────────────────────────────────────
+
+function PainelEtapas({ obra, etapas, lancs, expanded, onExpand, onEdit, onDelete, onNewLanc }) {
+  const fmt = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
+
+  // Estatísticas gerais
+  const totalOrcado    = etapas.reduce((s, e) => s + Number(e.valor_orcado || 0), 0)
+  const totalRealizado = lancs.filter(l => l.tipo === 'despesa').reduce((s, l) => s + Number(l.valor || 0), 0)
+  const totalSaldo     = totalOrcado - totalRealizado
+  const concluidas     = etapas.filter(e => e.status === 'concluida').length
+  const progresso      = etapas.length > 0 ? Math.round((concluidas / etapas.length) * 100) : 0
+
+  // Lançamentos por etapa
+  const lancsPorEtapa = (etapaId) => lancs.filter(l => l.etapa_id === etapaId)
+  const gastoPorEtapa = (etapaId) => lancsPorEtapa(etapaId)
+    .filter(l => l.tipo === 'despesa').reduce((s, l) => s + Number(l.valor || 0), 0)
+
+  if (etapas.length === 0) return (
+    <div style={{ padding: '20px 0', textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}>
+      Nenhuma etapa cadastrada. Clique em "Nova Etapa" para começar.
+    </div>
+  )
+
+  return (
+    <div>
+      {/* Stats */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10, marginBottom: 14 }}>
+        {[
+          { label: 'Orçado total',  value: totalOrcado,    color: 'var(--accent)' },
+          { label: 'Realizado',     value: totalRealizado, color: 'var(--red)'    },
+          { label: 'Saldo',         value: totalSaldo,     color: totalSaldo >= 0 ? 'var(--green)' : 'var(--red)' },
+          { label: 'Progresso',     value: null,           color: 'var(--accent)' },
+        ].map((s, i) => (
+          <div key={i} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+            <div style={{ fontSize: 10, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 4 }}>{s.label}</div>
+            {s.value !== null
+              ? <div style={{ fontFamily: 'var(--mono)', fontWeight: 700, fontSize: 14, color: s.color }}>{fmt(s.value)}</div>
+              : <div>
+                  <div style={{ fontFamily: 'var(--mono)', fontWeight: 700, fontSize: 14, color: s.color }}>{progresso}%</div>
+                  <div style={{ height: 4, background: 'var(--bg3)', borderRadius: 2, marginTop: 4, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${progresso}%`, background: 'var(--accent)', borderRadius: 2 }} />
+                  </div>
+                </div>
+            }
+          </div>
+        ))}
+      </div>
+
+      {/* Lista de etapas */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {etapas.map(etapa => {
+          const isOpen  = expanded === etapa.id
+          const gasto   = gastoPorEtapa(etapa.id)
+          const orcado  = Number(etapa.valor_orcado || 0)
+          const saldo   = orcado - gasto
+          const lancEtapa = lancsPorEtapa(etapa.id)
+          const pct     = orcado > 0 ? Math.min(100, Math.round((gasto / orcado) * 100)) : 0
+          const alerta  = orcado > 0 && pct >= 80 && pct < 100
+          const estourou = orcado > 0 && gasto > orcado
+
+          return (
+            <div key={etapa.id} style={{ background: 'var(--bg2)', border: `1px solid ${isOpen ? 'var(--border2)' : 'var(--border)'}`, borderRadius: 10, overflow: 'hidden' }}>
+              {/* Linha da etapa */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', cursor: 'pointer' }}
+                onClick={() => onExpand(isOpen ? null : etapa.id)}>
+                {isOpen ? <ChevronUp size={13} color="var(--accent)" /> : <ChevronDown size={13} color="var(--text3)" />}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={{ fontWeight: 600, fontSize: 13 }}>{etapa.nome}</span>
+                    <span className={`badge ${LETAPA_COLOR[etapa.status]}`} style={{ fontSize: 10 }}>{LETAPA_LABEL[etapa.status]}</span>
+                    {estourou && <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', background: 'var(--red)', borderRadius: 4, padding: '1px 5px' }}>!</span>}
+                    {alerta && !estourou && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--yellow)', border: '1px solid var(--yellow)', borderRadius: 4, padding: '1px 5px' }}>{pct}%</span>}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
+                    {lancEtapa.length} lançamento{lancEtapa.length !== 1 ? 's' : ''}
+                    {etapa.data_inicio && ` · iniciada ${fmtDate(etapa.data_inicio)}`}
+                  </div>
+                </div>
+                {/* Valores */}
+                <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexShrink: 0 }}>
+                  {orcado > 0 && (
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 10, color: 'var(--text3)' }}>Orçado</div>
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: 12, fontWeight: 600 }}>{fmt(orcado)}</div>
+                    </div>
+                  )}
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: 10, color: 'var(--text3)' }}>Realizado</div>
+                    <div style={{ fontFamily: 'var(--mono)', fontSize: 12, fontWeight: 600, color: gasto > 0 ? 'var(--red)' : 'var(--text3)' }}>{fmt(gasto)}</div>
+                  </div>
+                  {orcado > 0 && (
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 10, color: 'var(--text3)' }}>Saldo</div>
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: 12, fontWeight: 700, color: saldo >= 0 ? 'var(--green)' : 'var(--red)' }}>{fmt(saldo)}</div>
+                    </div>
+                  )}
+                </div>
+                {/* Ações */}
+                <div onClick={e => e.stopPropagation()} style={{ display: 'flex', gap: 4 }}>
+                  <button className="icon-btn edit" onClick={() => onEdit(etapa)}><Pencil size={13} /></button>
+                  <button className="icon-btn del"  onClick={() => onDelete(etapa)}><Trash2 size={13} /></button>
+                </div>
+              </div>
+
+              {/* Barra de progresso */}
+              {orcado > 0 && (
+                <div style={{ height: 3, background: 'var(--bg3)', margin: '0 14px 8px' }}>
+                  <div style={{ height: '100%', width: `${Math.min(100, pct)}%`, background: estourou ? 'var(--red)' : alerta ? 'var(--yellow)' : 'var(--accent)', transition: 'width .3s' }} />
+                </div>
+              )}
+
+              {/* Lançamentos da etapa */}
+              {isOpen && (
+                <div style={{ background: 'var(--bg3)', borderTop: '1px solid var(--border)', padding: '12px 14px' }}>
+                  {lancEtapa.length === 0
+                    ? <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 10 }}>Nenhum lançamento nesta etapa.</div>
+                    : <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
+                        {lancEtapa.map(l => (
+                          <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, padding: '5px 0', borderBottom: '1px solid var(--border)' }}>
+                            <div>
+                              <span style={{ fontWeight: 500 }}>{l.descricao}</span>
+                              <span style={{ color: 'var(--text3)', marginLeft: 8 }}>{fmtDate(l.data_ref)}</span>
+                              {l.pago_por && <span style={{ color: 'var(--text3)', marginLeft: 6, fontSize: 11 }}>· {l.pago_por}</span>}
+                            </div>
+                            <span style={{ fontFamily: 'var(--mono)', fontWeight: 600, color: l.tipo === 'despesa' ? 'var(--red)' : 'var(--green)', flexShrink: 0 }}>
+                              {l.tipo === 'despesa' ? '−' : '+'} {fmt(l.valor)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                  }
+                  <button className="btn btn-primary btn-sm" onClick={onNewLanc} style={{ fontSize: 11 }}>
+                    <Plus size={12} /> Lançamento nesta etapa
+                  </button>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 
 function RelatCard({ label, value, color }) {
   const fmt = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })

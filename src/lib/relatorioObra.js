@@ -15,7 +15,7 @@ const fmtD = dt => {
   return d.toLocaleDateString('pt-BR')
 }
 
-export function imprimirRelatorioObra({ obra, lancamentos = [], empresa = null }) {
+export function imprimirRelatorioObra({ obra, lancamentos = [], etapas = [], empresa = null }) {
   // ── Cálculos ──────────────────────────────────────────────────────────────
   const despesas  = lancamentos.filter(l => l.tipo === 'despesa')
   const receitas  = lancamentos.filter(l => l.tipo === 'receita')
@@ -65,6 +65,51 @@ export function imprimirRelatorioObra({ obra, lancamentos = [], empresa = null }
     planejamento: 'Planejamento', em_andamento: 'Em Andamento',
     concluida: 'Concluída', cancelada: 'Cancelada'
   }[obra.status] || obra.status
+
+
+  // ── Seção de etapas ──────────────────────────────────────────────────────
+  const lancPorEtapa = (etId) => lancamentos.filter(l => l.etapa_id === etId)
+  const gastoPorEtapa = (etId) => lancPorEtapa(etId)
+    .filter(l => l.tipo === 'despesa').reduce((s, l) => s + Number(l.valor || 0), 0)
+
+  const etapasHtml = etapas.length === 0 ? '' : `
+    <div class="secao">
+      <div class="secao-titulo">Etapas da Obra</div>
+      <table class="tabela-lanc">
+        <thead>
+          <tr>
+            <th>Etapa</th><th>Status</th><th class="num">Orçado</th>
+            <th class="num">Realizado</th><th class="num">Saldo</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${etapas.map(e => {
+            const gasto  = gastoPorEtapa(e.id)
+            const orcado = Number(e.valor_orcado || 0)
+            const saldo  = orcado - gasto
+            const statusLabel = { pendente:'Pendente', em_andamento:'Em Andamento', concluida:'Concluída', cancelada:'Cancelada' }[e.status] || e.status
+            return `<tr>
+              <td><strong>${e.nome}</strong>${e.descricao ? '<br><span class="obs">'+e.descricao+'</span>' : ''}</td>
+              <td><span class="badge ${e.status === 'concluida' ? 'badge-pos' : e.status === 'em_andamento' ? 'badge-neg' : ''}" style="background:#f1f5f9;color:#475569">${statusLabel}</span></td>
+              <td class="num">${orcado > 0 ? fmt(orcado) : '—'}</td>
+              <td class="num neg">${fmt(gasto)}</td>
+              <td class="num ${saldo >= 0 ? 'pos' : 'neg'}">${orcado > 0 ? fmt(saldo) : '—'}</td>
+            </tr>`
+          }).join('')}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td colspan="2" class="num" style="font-weight:600;color:#666">Total</td>
+            <td class="num" style="font-weight:700">${fmt(etapas.reduce((s,e) => s+Number(e.valor_orcado||0),0))}</td>
+            <td class="num neg" style="font-weight:700">${fmt(totalDesp)}</td>
+            <td class="num ${totalDesp <= etapas.reduce((s,e)=>s+Number(e.valor_orcado||0),0) ? 'pos':'neg'}" style="font-weight:700">
+              ${fmt(etapas.reduce((s,e)=>s+Number(e.valor_orcado||0),0) - totalDesp)}
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  `
 
   // ── Seção resumo por fonte ────────────────────────────────────────────────
   const fontesHtml = Object.entries(grupos).map(([nome, g]) => `
@@ -358,6 +403,8 @@ export function imprimirRelatorioObra({ obra, lancamentos = [], empresa = null }
       <p style="font-size:13px;color:#475569">${obra.obs}</p>
     </div>
   ` : ''}
+
+  ${etapasHtml}
 
   <!-- Resumo por fonte de pagamento -->
   <div class="secao">

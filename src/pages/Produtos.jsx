@@ -29,7 +29,7 @@ const EMPTY_CAT = { nome:'', tipo:'produto', descricao:'' }
 
 export default function Produtos() {
   const toast = useToast()
-  const { entidadeAtiva } = useEntidade()
+  const { entidadeAtiva, pode } = useEntidade()
   const [rows, setRows]       = useState([])
   const [cats, setCats]       = useState([])
   const [loading, setLoading] = useState(true)

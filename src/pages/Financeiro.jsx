@@ -31,7 +31,7 @@ export default function Financeiro({ module }) {
   const cfg = configs[module]
   const { user } = useAuth()
   const toast = useToast()
-  const { entidadeAtiva } = useEntidade()
+  const { entidadeAtiva, pode } = useEntidade()
   const [rows, setRows] = useState([])
   const [contas, setContas] = useState([])
   const [loading, setLoading] = useState(true)
@@ -195,7 +195,7 @@ export default function Financeiro({ module }) {
           <option value="nao">Pendentes</option>
           <option value="sim">{pagoLabel}s</option>
         </select>
-        <button className="btn btn-primary" onClick={openNew}><Plus size={15} /> {cfg.newLabel}</button>
+        {pode('lancar') && <button className="btn btn-primary" onClick={openNew}><Plus size={15} /> {cfg.newLabel}</button>
       </div>
 
       <div className="card">

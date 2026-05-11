@@ -22,7 +22,7 @@ const EMPTY = {
 
 export default function Pessoas() {
   const toast = useToast()
-  const { entidadeAtiva } = useEntidade()
+  const { entidadeAtiva, pode } = useEntidade()
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -137,7 +137,7 @@ export default function Pessoas() {
           <option value="false">Inativos</option>
           <option value="">Todos</option>
         </select>
-        <button className="btn btn-primary" onClick={openNew}><Plus size={15} /> Nova Pessoa</button>
+        {pode('lancar') && <button className="btn btn-primary" onClick={openNew}><Plus size={15} /> Nova Pessoa</button>
       </div>
 
       <div className="card">

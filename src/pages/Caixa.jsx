@@ -14,7 +14,7 @@ const EMPTY_LANC   = { data:today(), tipo:'entrada', descricao:'', valor:'', cat
 
 export default function Caixa() {
   const toast = useToast()
-  const { entidadeAtiva } = useEntidade()
+  const { entidadeAtiva, pode } = useEntidade()
   const [rows, setRows]         = useState([])
   const [contas, setContas]     = useState([])
   const [loading, setLoading]   = useState(true)
