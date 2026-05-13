@@ -73,10 +73,7 @@ export default function Cartoes() {
   const faturaAtual = faturas.find(f => f.cartao_id === cartaoSel?.id && f.mes_ref === mesRef)
   const faturaFechada = !!faturaAtual
   const totalFatura = lancamentos.reduce((s, r) => s + Number(r.valor_total || 0), 0)
-  const percLimite = cartaoSel ? Math.min(100, (totalFatura / Number(cartaoSel.limite || 1)
-        .eq('entidade_id', entidadeAtiva?.id)
-        .eq('entidade_id', entidadeAtiva?.id)
-        .eq('entidade_id', entidadeAtiva?.id)) * 100) : 0
+  const percLimite = cartaoSel ? Math.min(100, (totalFatura / Number(cartaoSel.limite || 1)) * 100) : 0
 
   function mudaMes(delta) {
     const [ano, mes] = mesRef.split('-').map(Number)
@@ -126,7 +123,7 @@ export default function Cartoes() {
     if (!formCartao.nome?.trim()) return toast('Nome obrigatório', 'error')
     let error
     if (editingCartao) ({ error } = await supabase.from('cartoes').update(formCartao).eq('id', editingCartao))
-    else ({ error } = await supabase.from('cartoes').insert(formCartao))
+    else ({ error } = await supabase.from('cartoes').insert({entidade_id: entidadeAtiva?.id || null, ...formCartao))
     if (error) { toast(error.message, 'error'); return }
     toast('Cartão salvo!', 'success'); setModalCartao(false); loadAll()
   }
@@ -146,6 +143,7 @@ export default function Cartoes() {
   function openEditLanc(l) { setFormLanc({...l, parcelado: false, num_parcelas: 2}); setEditingLanc(l.id); setModalLanc(true) }
 
   async function saveLanc() {
+    if (!entidadeAtiva?.id) return toast('Selecione uma entidade antes de salvar', 'error')
     if (!formLanc.descricao?.trim()) return toast('Descrição obrigatória', 'error')
     if (!formLanc.valor) return toast('Valor obrigatório', 'error')
     if (faturaFechada) return toast('Fatura fechada — não é possível adicionar lançamentos', 'error')
