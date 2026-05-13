@@ -123,7 +123,7 @@ export default function Cartoes() {
     if (!formCartao.nome?.trim()) return toast('Nome obrigatório', 'error')
     let error
     if (editingCartao) ({ error } = await supabase.from('cartoes').update(formCartao).eq('id', editingCartao))
-    else ({ error } = await supabase.from('cartoes').insert({entidade_id: entidadeAtiva?.id || null, ...formCartao))
+    else ({ error } = await supabase.from('cartoes').insert({entidade_id: entidadeAtiva?.id || null, ...formCartao}))
     if (error) { toast(error.message, 'error'); return }
     toast('Cartão salvo!', 'success'); setModalCartao(false); loadAll()
   }
