@@ -478,6 +478,7 @@ export default function EntradaEstoque() {
 
       // 1. Salva entrada no histórico
       const { data:entrada, error:errE } = await supabase.from('entradas_estoque').insert({
+        entidade_id: entidadeAtiva?.id || null,
         numero_nf:nota.numero, fornecedor_id:nota.fornecedor_id||null,
         fornecedor_nome:nota.fornecedor_nome, data_emissao:nota.data_emissao,
         chave_nfe:nota.chave_nfe, total:totalNota, obs:nota.obs, itens:itensProc,
@@ -505,6 +506,7 @@ export default function EntradaEstoque() {
 
       // 3. Cria registro em Compras
       const { data:compra } = await supabase.from('compras').insert({
+        entidade_id: entidadeAtiva?.id || null,
         data: nota.data_emissao,
         descricao: `NF ${nota.numero||'s/n'} — ${nota.fornecedor_nome||'Fornecedor'}`,
         fornecedor: nota.fornecedor_nome||'',
@@ -522,7 +524,7 @@ export default function EntradaEstoque() {
           // Usa exatamente as duplicatas do XML — valores e datas originais
           for (let i=0; i<dupsXML.length; i++) {
             const dup = dupsXML[i]
-            await supabase.from('contas_pagar').insert({
+            await supabase.from('contas_pagar').insert({entidade_id: entidadeAtiva?.id || null,
               data_emissao: today(),
               descricao: dupsXML.length>1
                 ? `NF ${nota.numero||'s/n'} — ${nota.fornecedor_nome} (${dup.nDup||i+1}/${dupsXML.length})`
@@ -552,7 +554,7 @@ export default function EntradaEstoque() {
             venc.setDate(venc.getDate()+p*Number(fin.intervalo_dias))
             const vencStr = venc.toISOString().split('T')[0]
             const valorParcela = ((parcelaCentavos + (p === nParcelas - 1 ? restoCentavos : 0)) / 100).toFixed(2)
-            await supabase.from('contas_pagar').insert({
+            await supabase.from('contas_pagar').insert({entidade_id: entidadeAtiva?.id || null,
               data_emissao: today(),
               descricao: nParcelas>1
                 ? `NF ${nota.numero||'s/n'} — ${nota.fornecedor_nome} (${p+1}/${nParcelas})`
