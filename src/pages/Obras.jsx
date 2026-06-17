@@ -5,7 +5,7 @@ import { useEntidade } from '../contexts/EntidadeContext'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import {
-  Plus, Search, Pencil, Trash2, Power, HardHat,
+  Plus, Search, Pencil, Trash2, Power, HardHat, Copy,
   CheckCircle, ChevronDown, ChevronUp, Wallet,
   AlertCircle, Camera, X, TrendingUp, TrendingDown, Layers, GripVertical
 } from 'lucide-react'
@@ -66,6 +66,8 @@ export default function Obras() {
   const [form, setForm]       = useState(EMPTY_OBRA)
   const [editing, setEditing] = useState(null)
   const [deleting, setDeleting] = useState(null)
+  const [duplicando, setDuplicando] = useState(null)  // obra sendo duplicada
+  const [formDup, setFormDup] = useState({ nome: '', data_inicio: today(), copiar_etapas: true })
 
   // Detalhe da obra
   const [obraSel, setObraSel]       = useState(null)
@@ -180,6 +182,46 @@ export default function Obras() {
     else         ({ error } = await supabase.from('obras').insert(sanitize({...payload, entidade_id: entidadeAtiva?.id || null})))
     if (error) { toast(error.message, 'error'); return }
     toast('Salvo!', 'success'); setModal(false); load()
+  }
+
+  async function duplicarObra() {
+    if (!formDup.nome?.trim()) return toast('Nome obrigatório', 'error')
+    // Cria nova obra baseada na original
+    const { data: novaObra, error } = await supabase.from('obras').insert({
+      entidade_id:     entidadeAtiva?.id || null,
+      nome:            formDup.nome,
+      cliente_id:      duplicando.cliente_id || null,
+      cliente_nome:    duplicando.cliente_nome || null,
+      status:          'em_andamento',
+      valor_contratado: null,  // não copia — cada período tem o seu
+      data_inicio:     formDup.data_inicio || today(),
+      data_fim:        null,
+      obs:             duplicando.obs || null,
+    }).select().single()
+    if (error) { toast(error.message, 'error'); return }
+
+    // Copia etapas se solicitado
+    if (formDup.copiar_etapas) {
+      const etapasOrig = etapasMap[duplicando.id] || []
+      if (etapasOrig.length > 0) {
+        const novasEtapas = etapasOrig.map(e => ({
+          entidade_id:  entidadeAtiva?.id || null,
+          obra_id:      novaObra.id,
+          nome:         e.nome,
+          descricao:    e.descricao || null,
+          ordem:        e.ordem,
+          valor_orcado: null,  // zera orçamento — novo período
+          status:       'pendente',
+          data_inicio:  null,
+          data_fim:     null,
+        }))
+        await supabase.from('obra_etapas').insert(novasEtapas)
+      }
+    }
+
+    toast('Obra duplicada!', 'success')
+    setDuplicando(null)
+    load()
   }
 
   async function toggleAtivo(r) {
@@ -582,9 +624,10 @@ export default function Obras() {
                             <td className="text-muted" style={{ fontSize: 12 }}>{fmtDate(r.data_fim)}</td>
                             <td onClick={e => e.stopPropagation()}>
                               <div className="action-btns">
-                                <button className="icon-btn edit"   onClick={() => openEdit(r)}><Pencil size={14} /></button>
-                                <button className="icon-btn toggle" onClick={() => toggleAtivo(r)}><Power size={14} /></button>
-                                <button className="icon-btn del"    onClick={() => setDeleting(r)}><Trash2 size={14} /></button>
+                                <button className="icon-btn edit"   onClick={() => openEdit(r)} title="Editar"><Pencil size={14} /></button>
+                                <button className="icon-btn"        onClick={() => { setDuplicando(r); setFormDup({ nome: r.nome + ' — cópia', data_inicio: today(), copiar_etapas: true }) }} title="Duplicar / Novo mês" style={{ color: 'var(--accent)' }}><Copy size={14} /></button>
+                                <button className="icon-btn toggle" onClick={() => toggleAtivo(r)} title="Ativar/Desativar"><Power size={14} /></button>
+                                <button className="icon-btn del"    onClick={() => setDeleting(r)} title="Excluir"><Trash2 size={14} /></button>
                               </div>
                             </td>
                           </tr>
@@ -796,6 +839,36 @@ export default function Obras() {
             <div className="form-group" style={{ gridColumn: '1/-1' }}>
               <label className="form-label">Descrição</label>
               <textarea className="form-textarea" value={formEtapa.descricao || ''} onChange={e => fe('descricao', e.target.value)} />
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Modal Duplicar Obra */}
+      {duplicando && (
+        <Modal title={`Duplicar — ${duplicando.nome}`} onClose={() => setDuplicando(null)} onSave={duplicarObra}>
+          <div className="form-grid form-grid-1">
+            <div className="form-group">
+              <label className="form-label">Nome da nova obra *</label>
+              <input className="form-input" value={formDup.nome}
+                onChange={e => setFormDup(p => ({ ...p, nome: e.target.value }))}
+                placeholder="Ex: João Silva — Junho/2025" autoFocus />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Data de início</label>
+              <input className="form-input" type="date" value={formDup.data_inicio}
+                onChange={e => setFormDup(p => ({ ...p, data_inicio: e.target.value }))} />
+            </div>
+            <div className="form-group">
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
+                <input type="checkbox" checked={formDup.copiar_etapas}
+                  onChange={e => setFormDup(p => ({ ...p, copiar_etapas: e.target.checked }))}
+                  style={{ width: 15, height: 15 }} />
+                Copiar etapas da obra original
+              </label>
+              <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4, paddingLeft: 23 }}>
+                Copia a estrutura das etapas sem os lançamentos — cada período começa do zero
+              </div>
             </div>
           </div>
         </Modal>
