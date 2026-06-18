@@ -10,7 +10,7 @@ import { today } from '../lib/utils.js'
 
 const fmt = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
 
-const EMPTY_CARTAO = { nome: '', bandeira: '', titular_id: '', titular_nome: '', limite: '', dia_vencimento: '', dia_fechamento: '', obs: '', ativo: true }
+const EMPTY_CARTAO = { nome: '', bandeira: '', titular_id: '', titular_nome: '', limite: '', dia_vencimento: '', dia_fechamento: '', obs: '', ativo: true, compartilhado: false }
 const EMPTY_LANC   = { data: today(), descricao: '', categoria: '', valor: '', parcelado: false, num_parcelas: 2, obs: '' }
 const bandeiras    = ['Visa','Mastercard','Elo','American Express','Hipercard','Outro']
 
@@ -45,7 +45,7 @@ export default function Cartoes() {
     if (!entidadeAtiva?.id) { setLoading(false); return }
     setLoading(true)
     const [{ data: c }, { data: m }, { data: f }] = await Promise.all([
-      supabase.from('cartoes').select('*').eq('entidade_id', entidadeAtiva?.id).order('nome'),
+      supabase.from('cartoes').select('*').or(`entidade_id.eq.${entidadeAtiva?.id},compartilhado.eq.true`).order('nome'),
       supabase.from('pessoas').select('id,nome').eq('tipo','membro').eq('ativo',true).order('nome'),
       supabase.from('faturas_cartao').select('*').eq('entidade_id', entidadeAtiva?.id).order('mes_ref', { ascending: false }),
     ])
@@ -223,7 +223,11 @@ export default function Cartoes() {
                   <div style={{ position:'absolute', top:0, left:0, right:0, height:3, background:'linear-gradient(90deg, var(--accent), var(--accent2))' }} />
                   <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:12 }}>
                     <div>
-                      <div style={{ fontWeight:700, fontSize:15 }}>{c.nome}</div>
+                      <div style={{ fontWeight:700, fontSize:15, display:'flex', alignItems:'center', gap:6 }}>
+                  {c.nome}
+                  {c.compartilhado && <span className="badge badge-blue" style={{ fontSize:9 }}>Compartilhado</span>}
+                  {c.compartilhado && c.entidade_id !== entidadeAtiva?.id && <span className="badge badge-gray" style={{ fontSize:9 }}>Outra entidade</span>}
+                </div>
                       <div style={{ color:'var(--text2)', fontSize:12, marginTop:2 }}>{c.bandeira} · {c.titular_nome || '—'}</div>
                     </div>
                     <CreditCard size={24} color="var(--accent)" />
@@ -284,6 +288,17 @@ export default function Cartoes() {
             <div className="form-group">
               <label className="form-label">Dia de Vencimento</label>
               <input className="form-input" type="number" min={1} max={31} value={formCartao.dia_vencimento} onChange={e => fc('dia_vencimento', e.target.value)} placeholder="Ex: 5" />
+            </div>
+            <div className="form-group" style={{ gridColumn:'1/-1' }}>
+              <label style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer', fontSize:13 }}>
+                <input type="checkbox" checked={formCartao.compartilhado || false}
+                  onChange={e => fc('compartilhado', e.target.checked)}
+                  style={{ width:15, height:15 }} />
+                Cartão compartilhado entre entidades
+              </label>
+              <div style={{ fontSize:11, color:'var(--text3)', marginTop:4, paddingLeft:23 }}>
+                Quando marcado, este cartão aparece em todas as entidades que você tem acesso
+              </div>
             </div>
             <div className="form-group" style={{ gridColumn:'1/-1' }}>
               <label className="form-label">Observações</label>
