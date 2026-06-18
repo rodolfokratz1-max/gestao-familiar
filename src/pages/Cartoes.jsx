@@ -45,9 +45,9 @@ export default function Cartoes() {
     if (!entidadeAtiva?.id) { setLoading(false); return }
     setLoading(true)
     const [{ data: c }, { data: m }, { data: f }] = await Promise.all([
-      supabase.from('cartoes').select('*').order('nome'),
+      supabase.from('cartoes').select('*').eq('entidade_id', entidadeAtiva?.id).order('nome'),
       supabase.from('pessoas').select('id,nome').eq('tipo','membro').eq('ativo',true).order('nome'),
-      supabase.from('faturas_cartao').select('*').order('mes_ref', { ascending: false }),
+      supabase.from('faturas_cartao').select('*').eq('entidade_id', entidadeAtiva?.id).order('mes_ref', { ascending: false }),
     ])
     setCartoes(c || [])
     setMembros(m || [])

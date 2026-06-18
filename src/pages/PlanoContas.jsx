@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useToast } from '../contexts/ToastContext'
+import { useEntidade } from '../contexts/EntidadeContext'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { Plus, Pencil, Trash2, ChevronDown, ChevronRight, TrendingUp, TrendingDown, FolderOpen, Tag } from 'lucide-react'
@@ -27,6 +28,7 @@ const EMPTY_SUB   = { nome: '', descricao: '' }
 
 export default function PlanoContas() {
   const toast = useToast()
+  const { entidadeAtiva } = useEntidade()
   const [grupos, setGrupos] = useState([])
   const [subs, setSubs] = useState([])
   const [loading, setLoading] = useState(true)
@@ -45,7 +47,7 @@ export default function PlanoContas() {
 
   const [importando, setImportando] = useState(false)
 
-  useEffect(() => { loadAll() }, [])
+  useEffect(() => { if (entidadeAtiva?.id) loadAll() }, [entidadeAtiva?.id])
 
   async function loadAll() {
     if (!entidadeAtiva?.id) { setLoading(false); return }
