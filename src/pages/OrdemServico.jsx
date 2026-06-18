@@ -8,10 +8,11 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import {
   Plus, Search, Pencil, Trash2, Power, ChevronLeft,
   FileText, Package, Wrench, CheckCircle, Clock,
-  AlertCircle, XCircle, DollarSign, Eye, Printer
+  AlertCircle, XCircle, DollarSign, Eye, Printer, Receipt
 } from 'lucide-react'
 import { bloquear, verificarExclusao } from '../lib/integridade'
 import { today, fmtDate } from '../lib/utils.js'
+import { gerarRecibo } from '../lib/recibo'
 
 const fmt = v => 'R$ ' + Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2})
 
@@ -34,7 +35,8 @@ const EMPTY_ITEM = { descricao:'', quantidade:1, valor_unit:0, pago:false, obs:'
 export default function OrdemServico() {
   const { user } = useAuth()
   const toast = useToast()
-  const { entidadeAtiva, pode } = useEntidade()
+  const { entidadeAtiva, pode, entidades } = useEntidade()
+  const empresa = entidades?.find(e => e.id === entidadeAtiva?.id) || null
   const [view, setView] = useState('lista') // lista | detalhe
   const [os, setOs] = useState([])
   const [clientes, setClientes] = useState([])
@@ -220,6 +222,19 @@ export default function OrdemServico() {
   async function destroyItem() {
     await supabase.from('os_itens').delete().eq('id', deletingItem.id)
     toast('Item excluído', 'success'); setDeletingItem(null); loadItens(osSel.id)
+  }
+
+  function handleReciboOs() {
+    const totalOS = itens.reduce((s, i) => s + Number(i.quantidade||1) * Number(i.valor_unit||0), 0)
+    gerarRecibo({
+      numero:     osSel?.numero || osSel?.id?.slice(-4).toUpperCase(),
+      valor:      totalOS,
+      cliente:    osSel?.cliente_nome || '',
+      formaPgto:  '',
+      referencia: `OS ${osSel?.numero} — ${osSel?.descricao || ''}`,
+      data:       osSel?.data_recebimento || osSel?.data_abertura,
+      empresa,
+    })
   }
 
   async function printOs() {
@@ -665,6 +680,7 @@ export default function OrdemServico() {
           <span className="badge badge-red">⚠ Prazo vencido</span>
         )}
         <div style={{ flex:1 }} />
+        {jaRecebido && <button className="btn btn-secondary btn-sm" onClick={handleReciboOs} style={{ color: 'var(--accent)', borderColor: 'var(--accent)' }}><Receipt size={13} /> Gerar Recibo</button>}
         <button className="btn btn-secondary btn-sm" onClick={printOs}><Printer size={13} /> Imprimir / PDF</button>
         <button className="btn btn-secondary btn-sm" onClick={() => openEditOs(osSel)}><Pencil size={13} /> Editar</button>
         <button className="btn btn-sm btn-danger" onClick={() => setDeletingOs(osSel)}><Trash2 size={13} /></button>
