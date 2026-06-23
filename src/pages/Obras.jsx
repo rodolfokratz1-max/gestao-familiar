@@ -547,7 +547,7 @@ export default function Obras() {
           <div className="stat-value red text-mono">{fmt(totalGasto)}</div>
         </div>
         <div className={`stat-card ${totalMargem >= 0 ? 'green' : 'red'}`}>
-          <div className="stat-label">Margem (rec. − gastos)</div>
+          <div className="stat-label">A Receber (rec. − gastos)</div>
           <div className={`stat-value ${totalMargem >= 0 ? 'green' : 'red'} text-mono`}>{fmt(totalMargem)}</div>
         </div>
       </div>
