@@ -27,7 +27,6 @@ import Obras from './pages/Obras'
 import Entidades from './pages/Entidades'
 import TransferenciaEntidades from './pages/TransferenciaEntidades'
 import ObrasFontes from './pages/ObrasFontes'
-import ServicoRecorrente from './pages/ServicoRecorrente'
 import { VERSION } from './version'
 import { EntidadeProvider, useEntidade } from './contexts/EntidadeContext'
 import SeletorEntidade from './components/SeletorEntidade'
@@ -37,7 +36,7 @@ import {
   Wallet, ShoppingCart, CreditCard, HandCoins, Menu, X,
   Landmark, BarChart2, LogOut, Shield, ClipboardList,
   Building2, Repeat2, ListTree, ArrowLeftRight, BarChart,
-  Target, PackagePlus, MessageCircle, HardHat, Coins
+  Target, PackagePlus, MessageCircle, HardHat
 } from 'lucide-react'
 
 function getNav() {
@@ -74,9 +73,6 @@ function getNav() {
       { id: 'obras',        label: 'Obras / Projetos',    icon: HardHat },
       { id: 'obras_fontes', label: 'Fontes de Pagamento', icon: Wallet  },
     ]},
-    { group: 'Serviço Recorrente', items: [
-      { id: 'servico_recorrente', label: 'Conta Corrente', icon: Coins },
-    ]},
     { group: 'Sistema', items: [
       { id: 'entidades',             label: 'Entidades',             icon: Building2 },
       { id: 'transferencias_entidades', label: 'Transf. entre Entidades', icon: ArrowLeftRight },
@@ -99,7 +95,6 @@ function getTitle(page) {
     compras:'Compras', os:'Ordens de Serviço',
     entrada_estoque:'Entrada de Estoque (NF)', inbox_whatsapp: 'Inbox WhatsApp',
     obras:'Obras & Projetos', obras_fontes:'Fontes de Pagamento',
-    servico_recorrente:'Serviço Recorrente',
     entidades:'Entidades', transferencias_entidades:'Transferências entre Entidades', empresa:'Dados da Empresa', usuarios:'Gerenciar Usuários',
   }
   return map[page] || ''
@@ -128,7 +123,6 @@ function PageContent({ page, onNavigate }) {
   if (page === 'inbox_whatsapp') return <InboxWhatsApp />
   if (page === 'obras')          return <Obras />
   if (page === 'obras_fontes')   return <ObrasFontes />
-  if (page === 'servico_recorrente') return <ServicoRecorrente />
   if (page === 'entidades')             return <Entidades />
   if (page === 'transferencias_entidades') return <TransferenciaEntidades />
   if (page === 'empresa')         return <Empresa />
