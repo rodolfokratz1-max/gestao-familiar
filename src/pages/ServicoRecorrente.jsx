@@ -296,7 +296,8 @@ export default function ServicoRecorrente() {
       </div>
 
       {/* Modal de lançamento */}
-      <Modal open={modalLanc} onClose={() => setModalLanc(false)} title={editingLanc ? 'Editar lançamento' : 'Novo lançamento'}>
+      {modalLanc && (
+      <Modal title={editingLanc ? 'Editar lançamento' : 'Novo lançamento'} onClose={() => setModalLanc(false)} onSave={salvarLanc}>
         <div className="form-grid">
           <label>Tipo</label>
           <select
@@ -373,21 +374,16 @@ export default function ServicoRecorrente() {
           />
         </div>
 
-        <div className="modal-actions">
-          <button className="btn" onClick={() => setModalLanc(false)}>Cancelar</button>
-          <button className="btn btn-primary" disabled={savingLanc} onClick={salvarLanc}>
-            {savingLanc ? 'Salvando...' : 'Salvar'}
-          </button>
-        </div>
       </Modal>
+      )}
 
-      <ConfirmDialog
-        open={!!deletingLanc}
-        title="Remover lançamento?"
-        message="Essa ação não pode ser desfeita."
-        onCancel={() => setDeletingLanc(null)}
-        onConfirm={confirmarExclusao}
-      />
+      {deletingLanc && (
+        <ConfirmDialog
+          message={`Remover o lançamento "${deletingLanc.descricao}"? Essa ação não pode ser desfeita.`}
+          onConfirm={confirmarExclusao}
+          onCancel={() => setDeletingLanc(null)}
+        />
+      )}
     </div>
   )
 }
