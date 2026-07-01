@@ -50,6 +50,7 @@ export default function ServicoRecorrente() {
   const [tipos, setTipos]         = useState([])
   const [clienteSel, setClienteSel] = useState(null)
   const [lancamentos, setLancamentos] = useState([])
+  const [lancamentosEmp, setLancamentosEmp] = useState([])  // empréstimos acumulados (todos os meses)
   const [loading, setLoading]     = useState(true)
 
   const [mesRef, setMesRef] = useState(() => {
@@ -133,6 +134,16 @@ export default function ServicoRecorrente() {
       .eq('mes_referencia', inicio)
     setSaldoTipoMes(porTipo || [])
 
+    // Busca TODOS os lançamentos de empréstimo (sem filtro de mês)
+    const { data: emps } = await supabase
+      .from('servico_lancamento')
+      .select('*, tipo_lancamento_servico:tipo_id (codigo, nome_exibicao, ledger, natureza)')
+      .eq('entidade_id', entidadeAtiva.id)
+      .eq('cliente_id', clienteSel)
+      .in('tipo_id', [5, 6])  // emprestimo e pagamento_emprestimo
+      .order('data_lancamento')
+    setLancamentosEmp(emps || [])
+
     setLoading(false)
   }
 
@@ -178,9 +189,12 @@ export default function ServicoRecorrente() {
 
   function handleRelatorio() {
     const cli = clientes.find(c => c.id === clienteSel)
+    // Combina lançamentos do mês com todos os empréstimos (sem duplicar)
+    const idsNoMes = new Set(lancamentos.map(l => l.id))
+    const empExtras = lancamentosEmp.filter(l => !idsNoMes.has(l.id))
     gerarRelatorioServico({
       cliente:      cli,
-      lancamentos:  lancamentos,
+      lancamentos:  [...lancamentos, ...empExtras],
       mesRef,
       empresa,
     })
