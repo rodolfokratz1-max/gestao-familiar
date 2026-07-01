@@ -34,7 +34,7 @@ export function gerarRelatorioServico({ cliente, lancamentos = [], mesRef, empre
   const empresaEstado = empresa?.estado || ''
   const empresaTel    = empresa?.telefone || ''
   const logoHtml      = empresa?.logo_base64
-    ? `<img src="${empresa.logo_base64}" style="max-height:52px;max-width:100px;object-fit:contain" alt="Logo">`
+    ? '<img src="' + empresa.logo_base64 + '" style="max-height:52px;max-width:100px;object-fit:contain" alt="Logo">'
     : `<div style="width:48px;height:48px;background:#1a2744;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#e8a030">${(empresaNome).charAt(0)}</div>`
 
   const clienteNome = cliente?.pessoas?.nome || cliente?.descricao || 'Cliente'
@@ -172,6 +172,57 @@ export function gerarRelatorioServico({ cliente, lancamentos = [], mesRef, empre
       </div>
     </div>`
 
+
+  // Pré-calcula seções condicionais para evitar template literal aninhado
+  const htmlResumoPorEle = matPorEle.length > 0
+    ? '<div class="resumo-card gray"><div class="rc-label">Material pago por ele</div><div class="rc-val gray">' + fmt(totalMatPorEle) + '</div></div>'
+    : '<div></div>'
+
+  const htmlRecMensal = recebimentosMensal.length > 0
+    ? '<table class="tabela" style="margin-top:6px"><thead><tr><th>Recebimentos do valor mensal</th><th>Data</th><th class=\"num\">Valor</th></tr></thead><tbody>' + rowsRecMensal + '</tbody></table>'
+    : ''
+
+  const htmlRecMat = recebimentos.length > 0
+    ? '<table class="tabela" style="margin-top:8px"><thead><tr><th>Recebimentos de material</th><th>Data</th><th>Forma</th><th class=\"num\">Valor</th></tr></thead><tbody>' + rowsRec + '</tbody></table>'
+    : ''
+
+  const htmlLogoEmp = empresa?.logo_base64
+    ? '<img src="' + empresa.logo_base64 + '" style="max-height:52px;max-width:100px;object-fit:contain" alt="Logo">'
+    : '<div style="width:48px;height:48px;background:#1a2744;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#e8a030">' + (empresaNome).charAt(0) + '</div>'
+
+  const htmlEmpDet = [
+    empresaCnpj   ? '<div class="emp-det">CNPJ/CPF: ' + empresaCnpj + '</div>'   : '',
+    empresaCidade ? '<div class="emp-det">' + empresaCidade + (empresaEstado ? ' — ' + empresaEstado : '') + '</div>' : '',
+    empresaTel    ? '<div class="emp-det">' + empresaTel + '</div>'               : '',
+  ].join('')
+
+
+  // Seções HTML pré-calculadas (evita template literal aninhado)
+  const _s1 = matPorEle.length > 0
+    ? '<div class="resumo-card gray"><div class="rc-label">Material pago por ele</div><div class="rc-val gray">' + fmt(totalMatPorEle) + '</div></div>'
+    : '<div></div>'
+
+  const _s2 = valorMensal.length > 0
+    ? '<div class="secao"><div class="secao-titulo">Valor Mensal</div><table class="tabela"><thead><tr><th>Descrição</th><th>Local</th><th>Data</th><th class=\"num\">Valor</th></tr></thead><tbody>' + rowsValorMensal + '</tbody></table>'
+      + (recebimentosMensal.length > 0 ? '<table class="tabela" style="margin-top:6px"><thead><tr><th>Recebimentos do valor mensal</th><th>Data</th><th class=\"num\">Valor</th></tr></thead><tbody>' + rowsRecMensal + '</tbody></table>' : '')
+      + '<div style="display:flex;justify-content:space-between;border-top:1px solid #ccc;padding-top:5px;margin-top:4px;font-size:11px"><div style="display:flex;gap:16px;font-weight:500"><span>Lançado: <strong style="font-family:\'DM Mono\',monospace;color:#e53e3e">' + fmt(totalValorMensal) + '</strong></span><span>Recebido: <strong style="font-family:\'DM Mono\',monospace;color:#38a169">' + fmt(totalRecebidoMensal) + '</strong></span></div><div style="font-weight:700">Diferença: <span style="font-family:\'DM Mono\',monospace;color:' + (saldoValorMensal > 0 ? '#e53e3e' : '#38a169') + '">' + fmt(Math.abs(saldoValorMensal)) + (saldoValorMensal > 0 ? ' a receber' : ' quitado') + '</span></div></div></div>'
+    : ''
+
+  const _s3 = matPorMim.length > 0
+    ? '<div class="secao"><div class="secao-titulo">Materiais e Serviços — Pagos por Mim</div><table class="tabela"><thead><tr><th>Descrição</th><th>Local</th><th>Data</th><th class=\"num\">Qtde</th><th class=\"num\">Unit.</th><th class=\"num\">Total</th></tr></thead><tbody>' + rowsMat + '</tbody></table>'
+      + '<div style="display:flex;justify-content:flex-end;border-top:1px solid #ccc;padding-top:5px;margin-top:2px;font-weight:700;font-size:11px"><span style="margin-right:12px">Total materiais pagos por mim</span><span style="font-family:\'DM Mono\',monospace;color:#e53e3e">' + fmt(totalMatPorMim) + '</span></div>'
+      + (recebimentos.length > 0 ? '<table class="tabela" style="margin-top:8px"><thead><tr><th>Recebimentos de material</th><th>Data</th><th>Forma</th><th class=\"num\">Valor</th></tr></thead><tbody>' + rowsRec + '</tbody></table><div style="display:flex;justify-content:space-between;border-top:1px solid #ccc;padding-top:5px;margin-top:4px;font-size:11px"><div style="display:flex;gap:16px;font-weight:500"><span>Materiais: <strong style="font-family:\'DM Mono\',monospace;color:#e53e3e">' + fmt(totalMatPorMim) + '</strong></span><span>Recebido: <strong style="font-family:\'DM Mono\',monospace;color:#38a169">' + fmt(totalRecebidoMat) + '</strong></span></div><div style="font-weight:700">Diferença: <span style="font-family:\'DM Mono\',monospace;color:' + (totalMatPorMim - totalRecebidoMat > 0 ? '#e53e3e' : '#38a169') + '">' + fmt(Math.abs(totalMatPorMim - totalRecebidoMat)) + (totalMatPorMim - totalRecebidoMat > 0 ? ' a receber' : ' quitado') + '</span></div></div>' : '')
+      + '</div>'
+    : ''
+
+  const _s4 = totalValorMensal > 0
+    ? '<div class="ac-row"><span class="ac-label">Valor mensal pendente</span><span class="ac-val" style="color:#e53e3e">' + fmt(saldoValorMensal > 0 ? saldoValorMensal : 0) + '</span></div>'
+    : ''
+
+  const _s5 = totalMatPorMim > 0
+    ? '<div class="ac-row"><span class="ac-label">Materiais a receber</span><span class="ac-val" style="color:#e53e3e">' + fmt(Math.max(0, totalMatPorMim - totalRecebidoMat)) + '</span></div>'
+    : ''
+
   const html = `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -256,12 +307,10 @@ body{font-family:'DM Sans',sans-serif;background:#e8e8e8;padding:24px 16px;displ
 
   <div class="header">
     <div class="logo-area">
-      ${logoHtml}
+      ${htmlLogoEmp}
       <div>
         <div class="emp-nome">${empresaNome}</div>
-        ${empresaCnpj ? `<div class="emp-det">CNPJ/CPF: ${empresaCnpj}</div>` : ''}
-        ${empresaCidade ? `<div class="emp-det">${empresaCidade}${empresaEstado ? ' — ' + empresaEstado : ''}</div>` : ''}
-        ${empresaTel ? `<div class="emp-det">${empresaTel}</div>` : ''}
+${htmlEmpDet}
       </div>
     </div>
     <div class="doc-title">
@@ -291,68 +340,16 @@ body{font-family:'DM Sans',sans-serif;background:#e8e8e8;padding:24px 16px;displ
       <div class="rc-label">Material pago por mim</div>
       <div class="rc-val red">${fmt(totalMatPorMim)}</div>
     </div>
-    ${matPorEle.length > 0 ? `
-    <div class="resumo-card gray">
-      <div class="rc-label">Material pago por ele</div>
-      <div class="rc-val gray">${fmt(totalMatPorEle)}</div>
-    </div>` : '<div></div>'}
+    ${_s1}
     <div class="resumo-card green">
       <div class="rc-label">Recebido no mês</div>
       <div class="rc-val green">${fmt(totalRecebido)}</div>
     </div>
   </div>
 
-  ${valorMensal.length > 0 ? `
-  <div class="secao">
-    <div class="secao-titulo">Valor Mensal</div>
-    <table class="tabela">
-      <thead><tr><th>Descrição</th><th>Local</th><th>Data</th><th class="num">Valor</th></tr></thead>
-      <tbody>\${rowsValorMensal}</tbody>
-    </table>
-    \${recebimentosMensal.length > 0 ? `
-    <table class="tabela" style="margin-top:6px">
-      <thead><tr><th>Recebimentos do valor mensal</th><th>Data</th><th class="num">Valor</th></tr></thead>
-      <tbody>\${rowsRecMensal}</tbody>
-    </table>` : ''}
-    <div style="display:flex;justify-content:space-between;border-top:1px solid #ccc;padding-top:5px;margin-top:4px;font-size:11px">
-      <div style="display:flex;gap:16px;font-weight:500">
-        <span>Lançado: <strong style="font-family:'DM Mono',monospace;color:#e53e3e">\${fmt(totalValorMensal)}</strong></span>
-        <span>Recebido: <strong style="font-family:'DM Mono',monospace;color:#38a169">\${fmt(totalRecebidoMensal)}</strong></span>
-      </div>
-      <div style="font-weight:700">
-        Diferença: <span style="font-family:'DM Mono',monospace;color:\${saldoValorMensal > 0 ? '#e53e3e' : '#38a169'}">\${fmt(Math.abs(saldoValorMensal))}\${saldoValorMensal > 0 ? ' a receber' : ' quitado'}</span>
-      </div>
-    </div>
-  </div>` : ''}
+  ${_s2}
 
-  ${matPorMim.length > 0 ? `
-  <div class="secao">
-    <div class="secao-titulo">Materiais e Serviços — Pagos por Mim</div>
-    <table class="tabela">
-      <thead>
-        <tr><th>Descrição</th><th>Local</th><th>Data</th><th class="num">Qtde</th><th class="num">Unit.</th><th class="num">Total</th></tr>
-      </thead>
-      <tbody>${rowsMat}</tbody>
-    </table>
-    <div style="display:flex;justify-content:flex-end;border-top:1px solid #ccc;padding-top:5px;margin-top:2px;font-weight:700;font-size:11px">
-      <span style="margin-right:12px">Total materiais pagos por mim</span>
-      <span style="font-family:'DM Mono',monospace;color:#e53e3e">${fmt(totalMatPorMim)}</span>
-    </div>
-    ${recebimentos.length > 0 ? `
-    <table class="tabela" style="margin-top:8px">
-      <thead><tr><th>Recebimentos de material</th><th>Data</th><th>Forma</th><th class="num">Valor</th></tr></thead>
-      <tbody>${rowsRec}</tbody>
-    </table>
-    <div style="display:flex;justify-content:space-between;border-top:1px solid #ccc;padding-top:5px;margin-top:4px;font-size:11px">
-      <div style="display:flex;gap:16px;font-weight:500">
-        <span>Materiais: <strong style="font-family:'DM Mono',monospace;color:#e53e3e">${fmt(totalMatPorMim)}</strong></span>
-        <span>Recebido: <strong style="font-family:'DM Mono',monospace;color:#38a169">${fmt(totalRecebidoMat)}</strong></span>
-      </div>
-      <div style="font-weight:700">
-        Diferença: <span style="font-family:'DM Mono',monospace;color:${totalMatPorMim - totalRecebidoMat > 0 ? '#e53e3e' : '#38a169'}">${fmt(Math.abs(totalMatPorMim - totalRecebidoMat))} ${totalMatPorMim - totalRecebidoMat > 0 ? 'a receber' : 'quitado'}</span>
-      </div>
-    </div>` : ''}
-  </div>` : ''}
+  ${_s3}
 
   ${secaoEle}
 
@@ -360,16 +357,8 @@ body{font-family:'DM Sans',sans-serif;background:#e8e8e8;padding:24px 16px;displ
 
   <div class="acerto-mes">
     <div class="ac-title">Acerto do Mês — ${mesLabel}</div>
-    ${totalValorMensal > 0 ? `
-    <div class="ac-row">
-      <span class="ac-label">Valor mensal pendente</span>
-      <span class="ac-val" style="color:#e53e3e">${fmt(saldoValorMensal > 0 ? saldoValorMensal : 0)}</span>
-    </div>` : ''}
-    ${totalMatPorMim > 0 ? `
-    <div class="ac-row">
-      <span class="ac-label">Materiais a receber</span>
-      <span class="ac-val" style="color:#e53e3e">${fmt(Math.max(0, totalMatPorMim - totalRecebidoMat))}</span>
-    </div>` : ''}
+    ${_s4}
+    ${_s5}
     <div class="ac-row total">
       <span class="ac-label">Total a receber deste mês</span>
       <span class="ac-val">${fmt(saldoMes > 0 ? saldoMes : 0)}</span>
