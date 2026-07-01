@@ -15,7 +15,9 @@ const fmt = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractio
 
 const TIPO_ICON = {
   material: Hammer,
-  salario: Wallet,
+  valor_mensal: Wallet,
+  valor_mensal_recebido: Wallet,
+  salario: Wallet,  // retrocompatibilidade
   pix: QrCode,
   dinheiro: Banknote,
   emprestimo: Coins,
