@@ -6,9 +6,10 @@ import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import {
   Plus, Pencil, Trash2, Power, Wallet, Coins,
-  Hammer, Banknote, QrCode, Users
+  Hammer, Banknote, QrCode, Users, FileText
 } from 'lucide-react'
 import { today, fmtDate } from '../lib/utils.js'
+import { gerarRelatorioServico } from '../lib/relatorioServico'
 
 const fmt = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
 
@@ -37,7 +38,8 @@ const EMPTY_LANC = {
 
 export default function ServicoRecorrente() {
   const toast = useToast()
-  const { entidadeAtiva, pode } = useEntidade()
+  const { entidadeAtiva, pode, entidades } = useEntidade()
+  const empresa = entidades?.find(e => e.id === entidadeAtiva?.id) || null
 
   const sanitize = (obj) => Object.fromEntries(
     Object.entries(obj).map(([k, v]) => [k, v === '' ? null : v])
@@ -174,6 +176,16 @@ export default function ServicoRecorrente() {
     loadAuxiliar()
   }
 
+  function handleRelatorio() {
+    const cli = clientes.find(c => c.id === clienteSel)
+    gerarRelatorioServico({
+      cliente:      cli,
+      lancamentos:  lancamentos,
+      mesRef,
+      empresa,
+    })
+  }
+
   const fc = (k, v) => setFormCliente(p => ({ ...p, [k]: v }))
 
   // ── LANÇAMENTO ───────────────────────────────────────────────────────────────
@@ -302,6 +314,11 @@ export default function ServicoRecorrente() {
         {pode('lancar') && (
           <button className="btn btn-secondary" onClick={() => setListaClientes(v => !v)}>
             <Users size={15} /> {listaClientes ? 'Ver Lançamentos' : 'Gerenciar Clientes'}
+          </button>
+        )}
+        {!listaClientes && (
+          <button className="btn btn-secondary" onClick={handleRelatorio}>
+            <FileText size={15} /> Relatório
           </button>
         )}
         {!listaClientes && pode('lancar') && (
