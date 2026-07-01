@@ -135,8 +135,8 @@ export default function ServicoRecorrente() {
     setSaldoTipoMes(porTipo || [])
 
     // Busca empréstimos até o fim do mês de referência (não acumula além do mês)
-    const [anoRef, mesRef] = mesRef.split('-').map(Number)
-    const fimMesEmp = new Date(anoRef, mesRef, 0).toISOString().slice(0,10)
+    const [anoEmp, mesEmp] = mesRef.split('-').map(Number)
+    const fimMesEmp = new Date(anoEmp, mesEmp, 0).toISOString().slice(0,10)
     const { data: emps } = await supabase
       .from('servico_lancamento')
       .select('*, tipo_lancamento_servico:tipo_id (codigo, nome_exibicao, ledger, natureza)')
