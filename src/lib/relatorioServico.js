@@ -207,7 +207,17 @@ body{font-family:'DM Sans',sans-serif;background:#e8e8e8;padding:24px 16px;displ
 .rodape{margin-top:10mm;padding-top:5mm;border-top:1px dashed #ddd;display:flex;justify-content:space-between;align-items:center}
 .rodape span{font-size:9px;color:#bbb}
 .rodape strong{color:#999}
-@media print{body{background:#fff;padding:0}.btn-print{display:none}.doc{box-shadow:none;padding:10mm 12mm}}
+@media print{
+  body{background:#fff;padding:0}
+  .btn-print{display:none}
+  .doc{box-shadow:none;padding:10mm 12mm}
+  .tabela tfoot{display:table-row-group}
+  .tabela thead{display:table-header-group}
+  .tabela tr{page-break-inside:avoid}
+  .acerto-mes{page-break-inside:avoid}
+  .emprestimo-bloco{page-break-inside:avoid}
+  .secao{page-break-inside:avoid}
+}
 </style>
 </head>
 <body>
@@ -269,10 +279,11 @@ body{font-family:'DM Sans',sans-serif;background:#e8e8e8;padding:24px 16px;displ
         <tr><th>Descrição</th><th>Local</th><th>Data</th><th class="num">Qtde</th><th class="num">Unit.</th><th class="num">Total</th></tr>
       </thead>
       <tbody>${rowsMat}</tbody>
-      <tfoot>
-        <tr><td colspan="5">Total materiais pagos por mim</td><td class="num neg">${fmt(totalMatPorMim)}</td></tr>
-      </tfoot>
     </table>
+    <div style="display:flex;justify-content:flex-end;border-top:1px solid #ccc;padding-top:5px;margin-top:2px;font-weight:700;font-size:11px">
+      <span style="margin-right:12px">Total materiais pagos por mim</span>
+      <span style="font-family:'DM Mono',monospace;color:#e53e3e">${fmt(totalMatPorMim)}</span>
+    </div>
   </div>
 
   ${secaoEle}
@@ -283,10 +294,11 @@ body{font-family:'DM Sans',sans-serif;background:#e8e8e8;padding:24px 16px;displ
     <table class="tabela">
       <thead><tr><th>Descrição</th><th>Data</th><th>Forma</th><th class="num">Valor</th></tr></thead>
       <tbody>${rowsRec}</tbody>
-      <tfoot>
-        <tr><td colspan="3">Total recebido no mês</td><td class="num pos">${fmt(totalRecebido)}</td></tr>
-      </tfoot>
     </table>
+    <div style="display:flex;justify-content:flex-end;border-top:1px solid #ccc;padding-top:5px;margin-top:2px;font-weight:700;font-size:11px">
+      <span style="margin-right:12px">Total recebido no mês</span>
+      <span style="font-family:'DM Mono',monospace;color:#38a169">${fmt(totalRecebido)}</span>
+    </div>
   </div>` : ''}
 
   <div class="acerto-mes">
