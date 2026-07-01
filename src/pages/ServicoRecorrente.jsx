@@ -29,7 +29,10 @@ const MESES = [
 const EMPTY_CLIENTE = { pessoa_id: '', descricao: '', ativo: true }
 const EMPTY_LANC = {
   tipo_id: '', descricao: '', local_ambiente: '',
-  data_lancamento: today(), qtde: 1, valor_unitario: '', observacao: ''
+  data_lancamento: today(),
+  mes_fechamento: (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}` })(),
+  qtde: 1, valor_unitario: '', observacao: '',
+  pago_por_cliente: false,
 }
 
 export default function ServicoRecorrente() {
@@ -183,10 +186,13 @@ export default function ServicoRecorrente() {
   }
 
   function abrirEditarLanc(l) {
+    const mf = l.mes_fechamento ? l.mes_fechamento.slice(0,7) : l.data_lancamento.slice(0,7)
     setFormLanc({
       tipo_id: l.tipo_id, descricao: l.descricao,
       local_ambiente: l.local_ambiente || '', data_lancamento: l.data_lancamento,
-      qtde: l.qtde, valor_unitario: l.valor_unitario, observacao: l.observacao || ''
+      mes_fechamento: mf,
+      qtde: l.qtde, valor_unitario: l.valor_unitario, observacao: l.observacao || '',
+      pago_por_cliente: l.pago_por_cliente || false,
     })
     setEditingLanc(l.id)
     setModalLanc(true)
@@ -202,8 +208,10 @@ export default function ServicoRecorrente() {
     setSavingLanc(true)
     const payload = sanitize({
       ...formLanc,
-      entidade_id: entidadeAtiva.id,
-      cliente_id: clienteSel,
+      entidade_id:      entidadeAtiva.id,
+      cliente_id:       clienteSel,
+      mes_fechamento:   formLanc.mes_fechamento ? `${formLanc.mes_fechamento}-01` : null,
+      pago_por_cliente: formLanc.pago_por_cliente || false,
     })
 
     let error
@@ -393,7 +401,7 @@ export default function ServicoRecorrente() {
                 : <div className="table-wrap">
                     <table>
                       <thead><tr>
-                        <th>Tipo</th><th>Descrição</th><th>Local</th><th>Data</th><th>Valor</th><th>Ações</th>
+                        <th>Tipo</th><th>Descrição</th><th>Local</th><th>Data</th><th></th><th>Valor</th><th>Ações</th>
                       </tr></thead>
                       <tbody>
                         {lancamentos.map(l => {
@@ -411,6 +419,11 @@ export default function ServicoRecorrente() {
                               </td>
                               <td className="font-bold">{l.descricao}</td>
                               <td className="text-muted">{l.local_ambiente || '—'}</td>
+                              <td>
+                                {l.pago_por_cliente && (
+                                  <span className="badge badge-blue" style={{ fontSize: 10 }}>Pago por ele</span>
+                                )}
+                              </td>
                               <td className="text-muted" style={{ fontSize: 12 }}>{fmtDate(l.data_lancamento)}</td>
                               <td className="text-mono font-bold" style={{ color: cor }}>{sinal} {fmt(l.valor_total)}</td>
                               <td>
@@ -492,6 +505,25 @@ export default function ServicoRecorrente() {
                     · {tipoSelecionado.ledger === 'emprestimo' ? 'Ledger: Empréstimo' : 'Ledger: Conta corrente'}
                   </span>
                 )}
+              </div>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Mês de fechamento</label>
+              <input className="form-input" type="month" value={formLanc.mes_fechamento}
+                onChange={e => fl('mes_fechamento', e.target.value)} />
+              <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
+                Mês ao qual este lançamento pertence no acerto
+              </div>
+            </div>
+            <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 24 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
+                <input type="checkbox" checked={formLanc.pago_por_cliente || false}
+                  onChange={e => fl('pago_por_cliente', e.target.checked)}
+                  style={{ width: 15, height: 15 }} />
+                Material pago pelo cliente
+              </label>
+              <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+                Não entra no saldo a receber
               </div>
             </div>
             <div className="form-group" style={{ gridColumn: '1/-1' }}>
