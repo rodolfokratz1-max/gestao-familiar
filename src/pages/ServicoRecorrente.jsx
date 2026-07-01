@@ -113,8 +113,7 @@ export default function ServicoRecorrente() {
       .select('*, tipo_lancamento_servico:tipo_id (codigo, nome_exibicao, ledger, natureza)')
       .eq('entidade_id', entidadeAtiva.id)
       .eq('cliente_id', clienteSel)
-      .gte('data_lancamento', inicio)
-      .lte('data_lancamento', fim)
+      .or(`mes_fechamento.eq.${inicio},and(mes_fechamento.is.null,data_lancamento.gte.${inicio},data_lancamento.lte.${fim})`)
       .order('data_lancamento', { ascending: false })
 
     if (error) { toast(error.message, 'error'); setLoading(false); return }
