@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { today, fmtDate } from '../lib/utils.js'
 import { gerarRelatorioServico } from '../lib/relatorioServico'
+import { gerarRelatorioServicoAnual } from '../lib/relatorioServicoAnual'
 
 const fmt = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
 
@@ -191,6 +192,19 @@ export default function ServicoRecorrente() {
     loadAuxiliar()
   }
 
+  function handleRelatorioAnual() {
+    const cli = clientes.find(c => c.id === clienteSel)
+    const ano = mesRef.split('-')[0]
+    gerarRelatorioServicoAnual({
+      cliente:    cli,
+      ano,
+      empresa,
+      supabase,
+      clienteId:  clienteSel,
+      entidadeId: entidadeAtiva?.id,
+    })
+  }
+
   function handleRelatorio() {
     const cli = clientes.find(c => c.id === clienteSel)
     // Combina lançamentos do mês com todos os empréstimos (sem duplicar)
@@ -337,6 +351,11 @@ export default function ServicoRecorrente() {
         {!listaClientes && (
           <button className="btn btn-secondary" onClick={handleRelatorio}>
             <FileText size={15} /> Relatório
+          </button>
+        )}
+        {!listaClientes && (
+          <button className="btn btn-secondary" onClick={handleRelatorioAnual}>
+            <FileText size={15} /> Resumo Anual
           </button>
         )}
         {!listaClientes && pode('lancar') && (
