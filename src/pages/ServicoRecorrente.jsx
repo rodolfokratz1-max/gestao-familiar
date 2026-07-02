@@ -193,8 +193,10 @@ export default function ServicoRecorrente() {
   }
 
   function handleRelatorioAnual() {
+    const anoAtual = mesRef.split('-')[0]
+    const ano = window.prompt('Informe o ano do resumo:', anoAtual)
+    if (!ano || !/^\d{4}$/.test(ano)) return
     const cli = clientes.find(c => c.id === clienteSel)
-    const ano = mesRef.split('-')[0]
     gerarRelatorioServicoAnual({
       cliente:    cli,
       ano,
