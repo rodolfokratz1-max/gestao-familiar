@@ -156,6 +156,7 @@ export default function Cartoes() {
         const base = new Date(formLanc.data + 'T12:00:00')
         const dataParc = new Date(base.getFullYear(), base.getMonth() + i, base.getDate())
         inserts.push({
+          entidade_id: entidadeAtiva?.id || null,
           cartao_id: cartaoSel.id,
           data_compra: dataParc.toISOString().split('T')[0],
           descricao: `${formLanc.descricao} (${i+1}/${n})`,
@@ -172,6 +173,7 @@ export default function Cartoes() {
     }
 
     const payload = {
+      entidade_id: entidadeAtiva?.id || null,
       cartao_id: cartaoSel.id,
       data_compra: formLanc.data,
       descricao: formLanc.descricao,
