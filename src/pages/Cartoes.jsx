@@ -48,7 +48,7 @@ export default function Cartoes() {
     if (!entidadeAtiva?.id) { setLoading(false); return }
     setLoading(true)
     const [{ data: c }, { data: m }, { data: f }] = await Promise.all([
-      supabase.from('cartoes').select('*').or(`entidade_id.eq.${entidadeAtiva?.id},compartilhado.eq.true`).order('nome'),
+      supabase.from('cartoes').select('*').eq('entidade_id', entidadeAtiva?.id).order('nome'),
       supabase.from('pessoas').select('id,nome').eq('tipo','membro').eq('ativo',true).order('nome'),
       supabase.from('faturas_cartao').select('*').eq('entidade_id', entidadeAtiva?.id).order('mes_ref', { ascending: false }),
     ])
@@ -66,7 +66,7 @@ export default function Cartoes() {
       .from('cartao_lancamentos')
       .select('*')
       .eq('cartao_id', cartaoSel.id)
-      .or(`entidade_id.eq.${entidadeAtiva?.id},entidade_id.is.null`)
+      .eq('entidade_id', entidadeAtiva?.id)
       .gte('data_compra', `${ano}-${mes}-01`)
       .lte('data_compra', `${ano}-${mes}-${ultimoDia}`)
       .order('data_compra', { ascending: false })
