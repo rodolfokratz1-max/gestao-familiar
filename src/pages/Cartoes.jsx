@@ -152,11 +152,20 @@ export default function Cartoes() {
       const n = Number(formLanc.num_parcelas)
       const valorParcela = (Number(formLanc.valor) / n).toFixed(2)
       const inserts = []
+      const grupoId = crypto.randomUUID()
+      const base = new Date(formLanc.data + 'T12:00:00')
+      const diaBase = base.getDate()
       for (let i = 0; i < n; i++) {
-        const base = new Date(formLanc.data + 'T12:00:00')
-        const dataParc = new Date(base.getFullYear(), base.getMonth() + i, base.getDate())
+        // Calcula ano e mes da parcela
+        const anoParc = base.getFullYear() + Math.floor((base.getMonth() + i) / 12)
+        const mesParc = (base.getMonth() + i) % 12
+        // Usa o ultimo dia do mes se o dia nao existir (ex: 30/fev → 28/fev)
+        const ultimoDia = new Date(anoParc, mesParc + 1, 0).getDate()
+        const diaParc = Math.min(diaBase, ultimoDia)
+        const dataParc = new Date(anoParc, mesParc, diaParc)
         inserts.push({
           entidade_id: entidadeAtiva?.id || null,
+          grupo_parcela: grupoId,
           cartao_id: cartaoSel.id,
           data_compra: dataParc.toISOString().split('T')[0],
           descricao: `${formLanc.descricao} (${i+1}/${n})`,
@@ -173,7 +182,6 @@ export default function Cartoes() {
     }
 
     const payload = {
-      entidade_id: entidadeAtiva?.id || null,
       cartao_id: cartaoSel.id,
       data_compra: formLanc.data,
       descricao: formLanc.descricao,
@@ -188,6 +196,14 @@ export default function Cartoes() {
     if (error) { toast(error.message, 'error'); return }
     toast('Lançado! A fatura será gerada no fechamento.', 'success')
     setModalLanc(false); loadLancamentos()
+  }
+
+  async function destroyGrupo() {
+    const { error } = await supabase.from('cartao_lancamentos')
+      .delete().eq('grupo_parcela', deletingGrupo.grupo_parcela)
+    if (error) { toast(error.message, 'error'); setDeletingGrupo(null); return }
+    toast('Todas as parcelas removidas!', 'success')
+    setDeletingGrupo(null); loadLancamentos()
   }
 
   async function destroyLanc() {
