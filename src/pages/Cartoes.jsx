@@ -38,6 +38,8 @@ export default function Cartoes() {
   const [deletingCartao, setDeletingCartao] = useState(null)
   const [deletingLanc, setDeletingLanc]     = useState(null)
   const [deletingGrupo, setDeletingGrupo]   = useState(null)
+  const [confirmFechar, setConfirmFechar]    = useState(false)
+  const [confirmReabrir, setConfirmReabrir]  = useState(false)
 
   useEffect(() => { if (entidadeAtiva?.id) loadAll() }, [entidadeAtiva?.id])
   useEffect(() => { if (cartaoSel) loadLancamentos() }, [cartaoSel, mesRef])
@@ -85,6 +87,19 @@ export default function Cartoes() {
 
   const nomeMes = new Date(Number(mesRef.split('-')[0]), Number(mesRef.split('-')[1])-1, 1)
     .toLocaleString('pt-BR', { month: 'long', year: 'numeric' })
+
+  // ── Reabrir fatura ─────────────────────────────────────────
+  async function reabrirFatura() {
+    if (!faturaAtual) return
+    // Remove a conta a pagar gerada
+    await supabase.from('contas_pagar').delete().eq('origem_id', faturaAtual.id).eq('origem_tabela', 'faturas_cartao')
+    // Remove a fatura
+    const { error } = await supabase.from('faturas_cartao').delete().eq('id', faturaAtual.id)
+    if (error) { toast(error.message, 'error'); return }
+    toast('Fatura reaberta!', 'success')
+    setConfirmReabrir(false)
+    loadAll(); loadLancamentos()
+  }
 
   // ── Fechar fatura manualmente ─────────────────────────────
   async function fecharFatura() {
@@ -354,7 +369,7 @@ export default function Cartoes() {
           <button className="btn btn-secondary btn-sm btn-icon" onClick={() => mudaMes(1)}><ChevronRight size={14} /></button>
         </div>
         {!faturaFechada && totalFatura > 0 && (
-          <button className="btn btn-sm" style={{ background:'var(--red)', color:'#fff' }} onClick={fecharFatura}>
+          <button className="btn btn-sm" style={{ background:'var(--red)', color:'#fff' }} onClick={() => setConfirmFechar(true)}>
             <Lock size={14} /> Fechar Fatura
           </button>
         )}
@@ -390,6 +405,11 @@ export default function Cartoes() {
         <div style={{ background:'var(--bg3)', borderRadius:4, height:8, overflow:'hidden' }}>
           <div style={{ height:'100%', borderRadius:4, width:`${percLimite}%`, background: percLimite > 80 ? 'var(--red)' : percLimite > 50 ? 'var(--yellow)' : 'var(--green)', transition:'width .3s' }} />
         </div>
+        {faturaFechada && (
+          <button className="btn btn-sm btn-secondary" onClick={() => setConfirmReabrir(true)}>
+            Reabrir fatura
+          </button>
+        )}
         {faturaFechada && (
           <div style={{ marginTop:10, fontSize:12, color:'var(--red)', display:'flex', alignItems:'center', gap:6 }}>
             <Lock size={12} />
@@ -494,6 +514,22 @@ export default function Cartoes() {
             </div>
           </div>
         </Modal>
+      )}
+      {confirmFechar && (
+        <ConfirmDialog
+          message={`Fechar a fatura de ${cartaoSel?.nome} — ${mesRef}?\n\nValor: R$ ${totalFatura.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}\n\nIsso irá gerar uma conta a pagar. Você poderá reabrir depois se precisar.`}
+          confirmLabel="Fechar fatura"
+          confirmStyle="danger"
+          onConfirm={() => { setConfirmFechar(false); fecharFatura() }}
+          onCancel={() => setConfirmFechar(false)} />
+      )}
+      {confirmReabrir && (
+        <ConfirmDialog
+          message={`Reabrir a fatura de ${cartaoSel?.nome} — ${mesRef}?\n\nIsso irá remover a conta a pagar gerada. Os lançamentos do cartão serão mantidos.`}
+          confirmLabel="Reabrir"
+          confirmStyle="primary"
+          onConfirm={reabrirFatura}
+          onCancel={() => setConfirmReabrir(false)} />
       )}
       {deletingGrupo && (
         <ConfirmDialog
