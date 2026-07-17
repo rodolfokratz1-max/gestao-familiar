@@ -37,6 +37,7 @@ export default function Cartoes() {
   const [editingLanc, setEditingLanc]     = useState(null)
   const [deletingCartao, setDeletingCartao] = useState(null)
   const [deletingLanc, setDeletingLanc]     = useState(null)
+  const [deletingGrupo, setDeletingGrupo]   = useState(null)
 
   useEffect(() => { if (entidadeAtiva?.id) loadAll() }, [entidadeAtiva?.id])
   useEffect(() => { if (cartaoSel) loadLancamentos() }, [cartaoSel, mesRef])
@@ -63,6 +64,7 @@ export default function Cartoes() {
       .from('cartao_lancamentos')
       .select('*')
       .eq('cartao_id', cartaoSel.id)
+      .or(`entidade_id.eq.${entidadeAtiva?.id},entidade_id.is.null`)
       .gte('data_compra', `${ano}-${mes}-01`)
       .lte('data_compra', `${ano}-${mes}-${ultimoDia}`)
       .order('data_compra', { ascending: false })
@@ -424,7 +426,12 @@ export default function Cartoes() {
                         {!faturaFechada && (
                           <div className="action-btns">
                             <button className="icon-btn edit" onClick={() => openEditLanc(r)}><Pencil size={14} /></button>
-                            <button className="icon-btn del" onClick={() => setDeletingLanc(r)}><Trash2 size={14} /></button>
+                            {r.total_parcelas > 1 && r.grupo_parcela && (
+                              <button className="icon-btn del" title={`Excluir todas as ${r.total_parcelas} parcelas`} onClick={() => setDeletingGrupo(r)}>
+                                <Trash2 size={13} /><span style={{ fontSize: 9, marginLeft: 2 }}>{r.total_parcelas}x</span>
+                              </button>
+                            )}
+                            <button className="icon-btn del" title="Excluir esta parcela" onClick={() => setDeletingLanc(r)}><Trash2 size={14} /></button>
                           </div>
                         )}
                       </td>
@@ -487,6 +494,13 @@ export default function Cartoes() {
             </div>
           </div>
         </Modal>
+      )}
+      {deletingGrupo && (
+        <ConfirmDialog
+          message={`Excluir TODAS as ${deletingGrupo.total_parcelas} parcelas desta compra? Essa ação não pode ser desfeita.`}
+          confirmLabel="Excluir todas"
+          onConfirm={destroyGrupo}
+          onCancel={() => setDeletingGrupo(null)} />
       )}
       {deletingLanc && <ConfirmDialog message={`Excluir "${deletingLanc.descricao}"?`} onConfirm={destroyLanc} onCancel={() => setDeletingLanc(null)} />}
     </div>
