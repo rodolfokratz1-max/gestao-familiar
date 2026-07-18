@@ -601,7 +601,8 @@ export default function Obras() {
                             <td className="text-muted" style={{ fontSize: 12 }}>{fmtDate(r.data_fim)}</td>
                             <td onClick={e => e.stopPropagation()}>
                               <div className="action-btns">
-                                <button className="icon-btn edit"   onClick={() => openEdit(r)}><Pencil size={14} /></button>
+                                <button className="icon-btn edit"   onClick={() => openEdit(r)} title="Editar"><Pencil size={14} /></button>
+                                <button className="icon-btn" onClick={() => compartilharObra(r)} title="Compartilhar com cliente" style={{ color: r.token_publico ? 'var(--green)' : 'var(--text3)' }}><Share2 size={14} /></button>
                                 <button className="icon-btn toggle" onClick={() => toggleAtivo(r)}><Power size={14} /></button>
                                 <button className="icon-btn del"    onClick={() => setDeleting(r)}><Trash2 size={14} /></button>
                               </div>
