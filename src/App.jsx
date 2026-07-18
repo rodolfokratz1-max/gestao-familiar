@@ -29,6 +29,7 @@ import TransferenciaEntidades from './pages/TransferenciaEntidades'
 import ObrasFontes from './pages/ObrasFontes'
 import ServicoRecorrente from './pages/ServicoRecorrente'
 import { VERSION } from './version'
+import PortalCliente from './pages/PortalCliente'
 import { EntidadeProvider, useEntidade } from './contexts/EntidadeContext'
 import SeletorEntidade from './components/SeletorEntidade'
 import ErrorBoundary from './components/ErrorBoundary'
@@ -235,6 +236,11 @@ function AppInner() {
 }
 
 export default function App() {
+  // Detecta portal público pelo parâmetro ?obra=TOKEN na URL
+  const params = new URLSearchParams(window.location.search)
+  const obraToken = params.get('obra')
+  if (obraToken) return <PortalCliente token={obraToken} />
+
   return (
     <AuthProvider>
       <ToastProvider>
