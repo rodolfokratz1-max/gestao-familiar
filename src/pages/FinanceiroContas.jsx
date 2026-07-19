@@ -57,7 +57,7 @@ export default function FinanceiroContas({ module }) {
   const [filterStatus, setFilterStatus] = useState('')
   const [modal, setModal] = useState(false)
   const [modalPgto, setModalPgto] = useState(null) // row para pagamento parcial
-  const [pgtoForm, setPgtoForm] = useState({ valor: '', data: today(), forma_pgto: '', conta_id: '', obs: '', juros: '', multa: '', desconto: '' })
+  const [pgtoForm, setPgtoForm] = useState({ valor: '', data: today(), forma_pgto: '', conta_id: '', obs: '', juros: '', multa: '', desconto: '', parcial: false })
   const [form, setForm] = useState(emptyForm())
   const [editing, setEditing] = useState(null)
   const [deleting, setDeleting] = useState(null)
@@ -159,12 +159,19 @@ export default function FinanceiroContas({ module }) {
     const encargos = juros + multa - desconto
     const esperado = saldo + encargos
 
-    // Valor pago deve fechar com original + encargos (tolerância de 0.01 centavo)
-    if (Math.abs(valor - esperado) > 0.01) {
-      return toast(
-        `Valor não fecha: ${fmt(saldo)} + encargos (${fmt(encargos)}) = ${fmt(esperado)} esperado, mas foi informado ${fmt(valor)}`,
-        'error'
-      )
+    if (pgtoForm.parcial) {
+      // Pagamento parcial — só valida que não ultrapassa o saldo + encargos
+      if (valor > esperado + 0.01) {
+        return toast(`Valor informado (${fmt(valor)}) é maior que o saldo (${fmt(esperado)})`, 'error')
+      }
+    } else {
+      // Pagamento total — valor deve fechar exatamente com saldo + encargos
+      if (Math.abs(valor - esperado) > 0.01) {
+        return toast(
+          `Valor não fecha: ${fmt(saldo)} + encargos (${fmt(encargos)}) = ${fmt(esperado)} esperado, mas foi informado ${fmt(valor)}`,
+          'error'
+        )
+      }
     }
 
     const valorTotal = valor
@@ -521,6 +528,17 @@ export default function FinanceiroContas({ module }) {
                   <label className="form-label">Valor original</label>
                   <input className="form-input" type="text" value={fmt(saldoRow(modalPgto))} readOnly
                     style={{ background: 'var(--bg3)', color: 'var(--text2)', cursor: 'default' }} />
+                </div>
+                <div className="form-group" style={{ gridColumn: '1/-1' }}>
+                  <label style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer', fontSize:13 }}>
+                    <input type="checkbox" checked={pgtoForm.parcial || false}
+                      onChange={e => setPgtoForm(p => ({ ...p, parcial: e.target.checked }))}
+                      style={{ width:15, height:15 }} />
+                    Pagamento parcial
+                  </label>
+                  <div style={{ fontSize:11, color:'var(--text3)', marginTop:4, paddingLeft:23 }}>
+                    Marque quando for pagar apenas parte do valor — o saldo fica em aberto
+                  </div>
                 </div>
                 <div className="form-group">
                   <label className="form-label">Valor pago *</label>
