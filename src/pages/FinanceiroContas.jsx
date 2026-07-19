@@ -44,6 +44,7 @@ const emptyForm = () => ({
 
 export default function FinanceiroContas({ module }) {
   const cfg = configs[module]
+  if (!cfg) return <div className="loading"><div className="spinner" /></div>
   const toast = useToast()
   const { entidadeAtiva, pode, entidades } = useEntidade()
   const empresa = entidades?.find(e => e.id === entidadeAtiva?.id) || null
