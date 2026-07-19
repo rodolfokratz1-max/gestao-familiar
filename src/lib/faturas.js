@@ -200,6 +200,12 @@ export async function rolarFaturaAnterior({ faturaAnterior, contaPagar, saldo },
     obs: 'Saldo não pago no vencimento — incorporado à fatura seguinte com juros do rotativo. Não representa saída de caixa.',
   })
 
+  // Marca a conta a pagar como 'rolada' (não é vencida — foi incorporada na próxima fatura)
+  await supabase
+    .from('contas_pagar')
+    .update({ status: 'rolada' })
+    .eq('id', contaPagar.id)
+
   await supabase
     .from('faturas_cartao')
     .update({ status: 'rolada', rolada_para_fatura_id: novaFaturaId })
