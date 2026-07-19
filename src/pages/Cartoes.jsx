@@ -1,664 +1,659 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useToast } from '../contexts/ToastContext'
 import { useEntidade } from '../contexts/EntidadeContext'
+import { mesReferencia, dataVencimento, verificarRotativo, rolarFaturaAnterior } from '../lib/faturas'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
-import { Plus, Search, Pencil, Trash2, Power, CheckCircle, CreditCard, ChevronDown, ChevronUp, Receipt } from 'lucide-react'
-import { SelectCategoria } from '../lib/planoContas'
-import { bloquear, tentarDesbloquear, verificarExclusao } from '../lib/integridade'
-import { today, fmtDate } from '../lib/utils.js'
-import { gerarRecibo } from '../lib/recibo'
+import { Plus, Search, Pencil, Trash2, Power, CreditCard, Receipt, ChevronLeft, ChevronRight, Lock, Clock, CheckCircle } from 'lucide-react'
+import { today } from '../lib/utils.js'
 
 const fmt = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
 
-const FORMAS_PGTO = ['Dinheiro','PIX','Cartão de Crédito','Cartão de Débito','Boleto','Transferência','Cheque','Outro']
+const EMPTY_CARTAO = { nome: '', bandeira: '', titular_id: '', titular_nome: '', limite: '', dia_vencimento: '', dia_fechamento: '', obs: '', ativo: true, compartilhado: false }
+const EMPTY_LANC   = { data: today(), descricao: '', categoria: '', valor: '', parcelado: false, num_parcelas: 2, obs: '' }
+const bandeiras    = ['Visa','Mastercard','Elo','American Express','Hipercard','Outro']
 
-const configs = {
-  contas_receber: {
-    table: 'contas_receber', title: 'Contas a Receber', newLabel: 'Nova Conta a Receber',
-    pagoField: 'recebido', pagoLabel: 'Recebido', pessoaLabel: 'Cliente (de quem receber)',
-    pessoaTipo: ['cliente','ambos'], dataLabel: 'Data Emissão',
-  },
-  contas_pagar: {
-    table: 'contas_pagar', title: 'Contas a Pagar', newLabel: 'Nova Conta a Pagar',
-    pagoField: 'pago', pagoLabel: 'Pago', pessoaLabel: 'Fornecedor / Para quem pagar',
-    pessoaTipo: ['fornecedor','ambos','membro'], dataLabel: 'Data Emissão',
-  },
-}
-
-// Converte strings vazias em null para campos UUID
-const sanitize = (obj) => {
-  const uuids = ['pessoa_id','conta_id','responsavel_id']
-  const out = { ...obj }
-  uuids.forEach(k => { if (out[k] === '' || out[k] === undefined) out[k] = null })
-  return out
-}
-
-const emptyForm = () => ({
-  data_emissao: today(), descricao: '', categoria: '', valor: '', vencimento: '',
-  pessoa_id: '', pessoa_nome: '', responsavel_id: '', responsavel_nome: '', forma_pgto: '', conta_id: '',
-  parcelado: false, num_parcelas: 2,
-  obs: '', ativo: true,
-})
-
-export default function FinanceiroContas({ module }) {
-  const cfg = configs[module]
+export default function Cartoes() {
   const toast = useToast()
-  const { entidadeAtiva, pode, entidades } = useEntidade()
-  const empresa = entidades?.find(e => e.id === entidadeAtiva?.id) || null
-  const [rows, setRows] = useState([])
-  const [pagamentos, setPagamentos] = useState([]) // pagamentos parciais
-  const [pessoas, setPessoas] = useState([])
-  const [contas, setContas] = useState([])
+  const { entidadeAtiva } = useEntidade()
+  const [view, setView] = useState('cartoes')
+  const [cartoes, setCartoes] = useState([])
   const [membros, setMembros] = useState([])
+  const [lancamentos, setLancamentos] = useState([])
+  const [faturas, setFaturas] = useState([])
   const [loading, setLoading] = useState(true)
+  const [cartaoSel, setCartaoSel] = useState(null)
+  const [mesRef, setMesRef] = useState(() => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`
+  })
   const [search, setSearch] = useState('')
-  const [filterStatus, setFilterStatus] = useState('')
-  const [modal, setModal] = useState(false)
-  const [modalPgto, setModalPgto] = useState(null) // row para pagamento parcial
-  const [pgtoForm, setPgtoForm] = useState({ valor: '', data: today(), forma_pgto: '', conta_id: '', obs: '', juros: '', multa: '', desconto: '', parcial: false })
-  const [form, setForm] = useState(emptyForm())
-  const [editing, setEditing] = useState(null)
-  const [deleting, setDeleting] = useState(null)
-  const [expanded, setExpanded] = useState({})
+  const [modalCartao, setModalCartao] = useState(false)
+  const [modalLanc, setModalLanc]     = useState(false)
+  const [formCartao, setFormCartao]   = useState(EMPTY_CARTAO)
+  const [formLanc, setFormLanc]       = useState(EMPTY_LANC)
+  const [editingCartao, setEditingCartao] = useState(null)
+  const [editingLanc, setEditingLanc]     = useState(null)
+  const [deletingCartao, setDeletingCartao] = useState(null)
+  const [deletingLanc, setDeletingLanc]     = useState(null)
+  const [deletingGrupo, setDeletingGrupo]   = useState(null)
+  const [confirmFechar, setConfirmFechar]    = useState(false)
+  const [confirmReabrir, setConfirmReabrir]  = useState(false)
+  const [rotativoInfo, setRotativoInfo]      = useState(null)   // { faturaAnterior, contaPagar, saldo } ou null
+  const [modalRotativo, setModalRotativo]    = useState(false)
+  const [jurosRotativo, setJurosRotativo]    = useState('')
 
-  useEffect(() => {
-    if (!entidadeAtiva?.id) return
-    setRows([]); setPagamentos([]); setForm(emptyForm()); load()
-  }, [module, entidadeAtiva?.id])
+  useEffect(() => { if (entidadeAtiva?.id) loadAll() }, [entidadeAtiva?.id])
+  useEffect(() => { if (cartaoSel) loadLancamentos() }, [cartaoSel, mesRef])
 
-  async function load() {
+  async function loadAll() {
     if (!entidadeAtiva?.id) { setLoading(false); return }
     setLoading(true)
-    const [{ data: r }, { data: p }, { data: c }, { data: m }, { data: pgs }] = await Promise.all([
-      supabase.from(cfg.table).select('*').eq('entidade_id', entidadeAtiva?.id).order('data_emissao', { ascending: false }),
-      supabase.from('pessoas').select('id,nome,tipo').in('tipo', cfg.pessoaTipo).eq('ativo', true).eq('entidade_id', entidadeAtiva?.id).order('nome'),
-      supabase.from('contas').select('id,nome,tipo').eq('ativo', true).eq('entidade_id', entidadeAtiva?.id).order('nome'),
-      supabase.from('pessoas').select('id,nome').eq('tipo','membro').eq('ativo',true).eq('entidade_id', entidadeAtiva?.id).order('nome'),
-      supabase.from('pagamentos_parciais').select('*').eq('tabela_origem', cfg.table).eq('entidade_id', entidadeAtiva?.id).order('data'),
+    const [{ data: c }, { data: m }, { data: f }] = await Promise.all([
+      supabase.from('cartoes').select('*').eq('entidade_id', entidadeAtiva?.id).order('nome'),
+      supabase.from('pessoas').select('id,nome').eq('tipo','membro').eq('ativo',true).order('nome'),
+      supabase.from('faturas_cartao').select('*').eq('entidade_id', entidadeAtiva?.id).order('mes_ref', { ascending: false }),
     ])
-    setRows(r || [])
-    setPessoas(p || [])
-    setContas(c || [])
+    setCartoes(c || [])
     setMembros(m || [])
-    setPagamentos(pgs || [])
+    setFaturas(f || [])
     setLoading(false)
   }
 
-  const getPagamentosRow = (rowId) => pagamentos.filter(p => p.origem_id === rowId)
-  const totalPagoRow = (rowId) => getPagamentosRow(rowId).reduce((s, p) => {
-    const enc = Number(p.juros || 0) + Number(p.multa || 0) - Number(p.desconto || 0)
-    return s + Number(p.valor || 0) - enc
-  }, 0)
-  const saldoRow = (row) => Number(row.valor || 0) - totalPagoRow(row.id)
-
-  const filtered = rows.filter(r => {
-    const q = search.toLowerCase()
-    const matchS = !q || r.descricao?.toLowerCase().includes(q) || r.pessoa_nome?.toLowerCase().includes(q)
-    const saldo = saldoRow(r)
-    const isPago = saldo <= 0
-    const matchF = filterStatus === '' ? true : filterStatus === 'pago' ? isPago : !isPago
-    return matchS && matchF
-  })
-
-  const totalGeral    = rows.reduce((s, r) => s + Number(r.valor || 0), 0)
-  const totalPago     = rows.reduce((s, r) => s + totalPagoRow(r.id), 0)
-  const totalPendente = totalGeral - totalPago
-
-  function openNew() { setForm(emptyForm()); setEditing(null); setModal(true) }
-  function openEdit(r) { setForm({ ...r, parcelado: false, num_parcelas: 2 }); setEditing(r.id); setModal(true) }
-
-  async function save() {
-    if (!entidadeAtiva?.id) return toast('Selecione uma entidade antes de salvar', 'error')
-    if (!form.descricao?.trim()) return toast('Descrição é obrigatória', 'error')
-    if (!form.valor) return toast('Valor é obrigatório', 'error')
-
-    // Se parcelado, cria N registros
-    if (!editing && form.parcelado && Number(form.num_parcelas) > 1) {
-      const n = Number(form.num_parcelas)
-      const valorParcela = (Number(form.valor) / n).toFixed(2)
-      const inserts = []
-      for (let i = 0; i < n; i++) {
-        const venc = form.vencimento ? new Date(form.vencimento) : new Date()
-        venc.setMonth(venc.getMonth() + i)
-        inserts.push({
-          ...form,
-          parcelado: false,
-          num_parcelas: null,
-          valor: valorParcela,
-          descricao: `${form.descricao} (${i + 1}/${n})`,
-          vencimento: venc.toISOString().split('T')[0],
-          [cfg.pagoField]: false,
-        })
-      }
-      const { error } = await supabase.from(cfg.table).insert(inserts.map(s => ({...sanitize(s), entidade_id: entidadeAtiva?.id || null})))
-      if (error) { toast(error.message, 'error'); return }
-      toast(`${n} parcelas criadas!`, 'success')
-      setModal(false); load(); return
-    }
-
-    const payload = sanitize({ ...form, [cfg.pagoField]: false })
-    let error
-    if (editing) ({ error } = await supabase.from(cfg.table).update(payload).eq('id', editing))
-    else ({ error } = await supabase.from(cfg.table).insert(sanitize({...payload, entidade_id: entidadeAtiva?.id || null})))
-    if (error) { toast(error.message, 'error'); return }
-    toast('Salvo!', 'success'); setModal(false); load()
+  async function loadLancamentos() {
+    if (!entidadeAtiva?.id) { setLoading(false); return }
+    const [ano, mes] = mesRef.split('-')
+    const ultimoDia = new Date(Number(ano), Number(mes), 0).getDate()
+    const { data } = await supabase
+      .from('cartao_lancamentos')
+      .select('*')
+      .eq('cartao_id', cartaoSel.id)
+      .eq('entidade_id', entidadeAtiva?.id)
+      .gte('data_compra', `${ano}-${mes}-01`)
+      .lte('data_compra', `${ano}-${mes}-${ultimoDia}`)
+      .order('data_compra', { ascending: false })
+    setLancamentos(data || [])
   }
 
-  // Pagamento parcial ou total
-  async function registrarPagamento() {
-    const row = modalPgto
-    const valor = Number(pgtoForm.valor)
-    if (!valor || valor <= 0) return toast('Informe o valor pago', 'error')
-    const saldo = saldoRow(row)
+  // Status da fatura do mês selecionado
+  const faturaAtual = faturas.find(f => f.cartao_id === cartaoSel?.id && f.mes_ref === mesRef)
+  const faturaFechada = !!faturaAtual
+  const totalFatura = lancamentos.reduce((s, r) => s + Number(r.valor_total || 0), 0)
+  const percLimite = cartaoSel ? Math.min(100, (totalFatura / Number(cartaoSel.limite || 1)) * 100) : 0
 
-    const juros    = Number(pgtoForm.juros)    || 0
-    const multa    = Number(pgtoForm.multa)    || 0
-    const desconto = Number(pgtoForm.desconto) || 0
-    const encargos = juros + multa - desconto
-    const esperado = saldo + encargos
+  function mudaMes(delta) {
+    const [ano, mes] = mesRef.split('-').map(Number)
+    const d = new Date(ano, mes - 1 + delta, 1)
+    setMesRef(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`)
+  }
 
-    if (pgtoForm.parcial) {
-      // Pagamento parcial — só valida que não ultrapassa o saldo + encargos
-      if (valor > esperado + 0.01) {
-        return toast(`Valor informado (${fmt(valor)}) é maior que o saldo (${fmt(esperado)})`, 'error')
-      }
-    } else {
-      // Pagamento total — valor deve fechar exatamente com saldo + encargos
-      if (Math.abs(valor - esperado) > 0.01) {
-        return toast(
-          `Valor não fecha: ${fmt(saldo)} + encargos (${fmt(encargos)}) = ${fmt(esperado)} esperado, mas foi informado ${fmt(valor)}`,
-          'error'
-        )
-      }
+  const nomeMes = new Date(Number(mesRef.split('-')[0]), Number(mesRef.split('-')[1])-1, 1)
+    .toLocaleString('pt-BR', { month: 'long', year: 'numeric' })
+
+  // ── Reabrir fatura ─────────────────────────────────────────
+  async function reabrirFatura() {
+    if (!faturaAtual) return
+    if (faturaAtual.status === 'rolada') {
+      toast('Esta fatura já foi rolada para o mês seguinte — não pode ser reaberta. Reabra a fatura seguinte se precisar corrigir algo.', 'error')
+      setConfirmReabrir(false)
+      return
     }
 
-    const valorTotal = valor
+    // Se esta fatura recebeu uma rolagem, desfaz a rolagem primeiro (evita violação de FK)
+    if (Number(faturaAtual.saldo_rotativo_anterior || 0) > 0) {
+      const { data: fatAnterior } = await supabase
+        .from('faturas_cartao')
+        .select('id')
+        .eq('rolada_para_fatura_id', faturaAtual.id)
+        .maybeSingle()
 
-    // Registra pagamento parcial
-    const { error: e1 } = await supabase.from('pagamentos_parciais').insert({entidade_id: entidadeAtiva?.id || null,
-      tabela_origem: cfg.table,
-      origem_id: row.id,
-      valor: valorTotal,
-      juros,
-      multa,
-      desconto,
-      data: pgtoForm.data,
-      forma_pgto: pgtoForm.forma_pgto,
-      conta_id: pgtoForm.conta_id || null,
-      obs: pgtoForm.obs,
-    })
-    if (e1) { toast(e1.message, 'error'); return }
+      if (fatAnterior) {
+        // Remove o link e reseta o status da fatura anterior
+        await supabase.from('faturas_cartao')
+          .update({ rolada_para_fatura_id: null, status: 'fechada' })
+          .eq('id', fatAnterior.id)
 
-    // Lança no caixa o valor ORIGINAL (sem encargos)
-    const tipo = cfg.table === 'contas_receber' ? 'entrada' : 'saida'
-    const caixaPayload = {
-      data: pgtoForm.data,
-      tipo,
-      descricao: `${cfg.pagoLabel}: ${row.descricao}`,
-      valor: saldo,  // ← valor original, não o valor pago com encargos
-      categoria: pgtoForm.categoria || (cfg.table === 'contas_receber' ? 'Recebimento' : 'Pagamento'),
-      obs: pgtoForm.obs || null,
-    }
-    if (pgtoForm.conta_id) caixaPayload.conta_id = pgtoForm.conta_id
-    if (row.id) caixaPayload.origem_id = row.id
-    if (cfg.table) caixaPayload.origem_tabela = cfg.table
-
-    const { error: eCaixa } = await supabase.from('caixa').insert({...caixaPayload, entidade_id: entidadeAtiva?.id || null})
-    if (eCaixa) {
-      toast('Aviso: pagamento registrado mas erro ao lançar no Caixa: ' + eCaixa.message, 'error')
-      console.error('Erro caixa:', eCaixa)
-    }
-
-    // Lança encargos no caixa apenas se houver juros ou multa (saída extra)
-    // Desconto puro não gera lançamento — já está refletido no valor menor debitado
-    if (juros > 0 || multa > 0) {
-      const encargosPayload = {
-        data: pgtoForm.data,
-        tipo: 'saida',
-        descricao: `Encargos (juros/multa): ${row.descricao}`,
-        valor: juros + multa,
-        categoria: 'Encargos Financeiros',
-        obs: [
-          juros > 0 ? `Juros: ${fmt(juros)}`   : '',
-          multa > 0 ? `Multa: ${fmt(multa)}`   : '',
-          desconto > 0 ? `Desconto: -${fmt(desconto)}` : '',
-        ].filter(Boolean).join(' | ') || null,
-        origem_id: row.id,
-        origem_tabela: cfg.table,
-      }
-      if (pgtoForm.conta_id) encargosPayload.conta_id = pgtoForm.conta_id
-      const { error: eEnc } = await supabase.from('caixa').insert({...encargosPayload, entidade_id: entidadeAtiva?.id || null})
-      if (eEnc) {
-        toast('Aviso: encargos não lançados no Caixa: ' + eEnc.message, 'error')
-        console.error('Erro encargos caixa:', eEnc)
-      }
-    }
-
-    // Atualiza saldo da conta: debita o valor total pago (original + encargos)
-    if (pgtoForm.conta_id) {
-      const { data: contaData } = await supabase.from('contas').select('saldo_atual').eq('id', pgtoForm.conta_id).single()
-      if (contaData) {
-        const novoSaldo = Number(contaData.saldo_atual || 0) + (tipo === 'entrada' ? saldo : -valor)
-        await supabase.from('contas').update({ saldo_atual: novoSaldo }).eq('id', pgtoForm.conta_id)
-      }
-    }
-
-    // Quitação: totalPagoRow já desconta encargos, soma apenas o valor original de cada pagamento
-    const novoTotalOriginalPago = totalPagoRow(row.id) + saldo
-    const parcelaQuitada = novoTotalOriginalPago >= Number(row.valor) - 0.01
-    if (parcelaQuitada) {
-      await supabase.from(cfg.table).update({ [cfg.pagoField]: true }).eq('id', row.id)
-    }
-
-    // Sincroniza status da Compra vinculada (se existir) com base nas parcelas pagas
-    if (cfg.table === 'contas_pagar' && row.origem_id && row.origem_tabela) {
-      const { data: todasParcelas } = await supabase
-        .from('contas_pagar')
-        .select('id, valor, pago')
-        .eq('origem_tabela', row.origem_tabela)
-        .eq('origem_id', row.origem_id)
-        .eq('ativo', true)
-      if (todasParcelas && todasParcelas.length > 0) {
-        const pagas = todasParcelas.filter(p => p.pago).length
-        const pagasAjustado = parcelaQuitada && !todasParcelas.find(p => p.id === row.id)?.pago
-          ? pagas + 1
-          : pagas
-        const total_p = todasParcelas.length
-        const novoStatus = pagasAjustado === 0 ? 'pendente' : pagasAjustado >= total_p ? 'pago' : 'parcial'
-        if (row.origem_tabela === 'compras') {
-          await supabase.from('compras').update({ status: novoStatus }).eq('id', row.origem_id)
-        } else if (row.origem_tabela === 'entradas_estoque') {
-          await supabase.from('compras').update({ status: novoStatus }).eq('origem_id', row.origem_id).eq('origem_tabela', 'entradas_estoque')
+        // Reseta status da conta a pagar anterior para pendente
+        const { data: cpAnterior } = await supabase
+          .from('contas_pagar')
+          .select('id')
+          .eq('origem_id', fatAnterior.id)
+          .eq('origem_tabela', 'faturas_cartao')
+          .maybeSingle()
+        if (cpAnterior) {
+          await supabase.from('contas_pagar').update({ status: 'pendente' }).eq('id', cpAnterior.id)
+          // Remove o pagamento parcial de rolagem da conta anterior
+          await supabase.from('pagamentos_parciais')
+            .delete()
+            .eq('tabela_origem', 'contas_pagar')
+            .eq('origem_id', cpAnterior.id)
+            .eq('forma_pgto', 'Rolagem para próxima fatura')
         }
       }
     }
 
-    // Bloqueia a conta pagar/receber e a compra vinculada (se existir)
-    await bloquear(cfg.table, row.id)
-    if (row.origem_tabela === 'compras' && row.origem_id) {
-      await bloquear('compras', row.origem_id)
-    }
-    if (row.origem_tabela === 'entradas_estoque' && row.origem_id) {
-      await bloquear('entradas_estoque', row.origem_id)
-    }
-
-    toast('Pagamento registrado!', 'success')
-    setModalPgto(null)
-    setPgtoForm({ valor: '', data: today(), forma_pgto: '', conta_id: '', obs: '', juros: '', multa: '', desconto: '' })
-    load()
+    // Remove a conta a pagar gerada por esta fatura
+    await supabase.from('contas_pagar').delete().eq('origem_id', faturaAtual.id).eq('origem_tabela', 'faturas_cartao')
+    // Remove a fatura
+    const { error } = await supabase.from('faturas_cartao').delete().eq('id', faturaAtual.id)
+    if (error) { toast(error.message, 'error'); return }
+    toast('Fatura reaberta!', 'success')
+    setConfirmReabrir(false)
+    loadAll(); loadLancamentos()
   }
 
-  async function toggleAtivo(r) {
-    await supabase.from(cfg.table).update({ ativo: !r.ativo }).eq('id', r.id); load()
-  }
+  // ── Verifica rotativo ANTES de abrir a confirmação de fechamento ──
+  // Se houver fatura anterior vencida e não paga, pede o juros do rotativo
+  // antes de prosseguir. Se não houver, mantém o fluxo de sempre.
+  async function iniciarFechamento() {
+    if (!totalFatura) return toast('Fatura sem lançamentos', 'info')
+    if (faturaFechada) return toast('Fatura já fechada', 'info')
 
-  async function destroy() {
-    const { pode, motivos } = await verificarExclusao(cfg.table, deleting)
-    if (!pode) {
-      toast(`Não é possível excluir: ${motivos.join('; ')}.`, 'error')
-      setDeleting(null)
-      return
+    const rotativo = await verificarRotativo(cartaoSel.id)
+    if (rotativo) {
+      setRotativoInfo(rotativo)
+      setJurosRotativo('')
+      setModalRotativo(true)
+    } else {
+      setRotativoInfo(null)
+      setConfirmFechar(true)
     }
-    await supabase.from(cfg.table).delete().eq('id', deleting.id)
-    await supabase.from('pagamentos_parciais').delete().eq('origem_id', deleting.id)
-    toast('Excluído', 'success'); setDeleting(null); load()
   }
 
-  const f = (k, v) => setForm(p => ({ ...p, [k]: v }))
-  const isVencido = r => saldoRow(r) > 0 && r.vencimento && r.vencimento < today()
-  const toggleExpand = id => setExpanded(p => ({ ...p, [id]: !p[id] }))
+  // ── Fechar fatura manualmente ─────────────────────────────
+  // Se rotativoInfo estiver preenchido, incorpora o saldo anterior + juros
+  // informado ao total da nova fatura, e encerra contabilmente a fatura antiga.
+  async function fecharFatura() {
+    const cartao = cartaoSel
+    const venc = dataVencimento(mesRef, cartao.dia_vencimento)
+    const [anoRef, mesNum] = mesRef.split('-')
+    const nomeM = new Date(Number(anoRef), Number(mesNum)-1, 1).toLocaleString('pt-BR', { month: 'long', year: 'numeric' })
 
-  return (
+    const saldoAnterior = rotativoInfo?.saldo || 0
+    const juros = Number(jurosRotativo || 0)
+    const totalComRotativo = totalFatura + saldoAnterior + juros
+
+    // Cria registro de fatura fechada
+    const { data: fat, error: e1 } = await supabase.from('faturas_cartao').insert({entidade_id: entidadeAtiva?.id || null, 
+      cartao_id: cartao.id, cartao_nome: cartao.nome,
+      mes_ref: mesRef, total: totalComRotativo,
+      vencimento: venc, status: 'fechada',
+      saldo_rotativo_anterior: saldoAnterior,
+      juros_rotativo: juros,
+    }).select().single()
+    if (e1) { toast(e1.message, 'error'); return }
+
+    // Se veio de rotativo, encerra contabilmente a fatura antiga e liga as duas
+    if (rotativoInfo) {
+      await rolarFaturaAnterior(rotativoInfo, fat.id)
+    }
+
+    const descricaoRotativo = rotativoInfo
+      ? ` (inclui R$${saldoAnterior.toFixed(2)} não pago do mês anterior + R$${juros.toFixed(2)} de juros rotativo)`
+      : ''
+
+    // Gera UMA conta a pagar
+    await supabase.from('contas_pagar').insert({entidade_id: entidadeAtiva?.id || null, 
+      data_emissao: today(),
+      descricao: `Fatura ${cartao.nome} — ${nomeM}${descricaoRotativo}`,
+      valor: totalComRotativo, vencimento: venc,
+      pago: false, categoria: 'Cartão de Crédito',
+      origem_id: fat.id, origem_tabela: 'faturas_cartao', ativo: true,
+    })
+
+    toast(`✅ Fatura fechada! R$${totalComRotativo.toFixed(2)} gerado em Contas a Pagar`, 'success')
+    setRotativoInfo(null); setJurosRotativo(''); setModalRotativo(false)
+    loadAll(); loadLancamentos()
+  }
+
+  // ── Cartão CRUD ───────────────────────────────────────────
+  function openNewCartao() { setFormCartao(EMPTY_CARTAO); setEditingCartao(null); setModalCartao(true) }
+  function openEditCartao(c) { setFormCartao({...c}); setEditingCartao(c.id); setModalCartao(true) }
+
+  async function saveCartao() {
+    if (!formCartao.nome?.trim()) return toast('Nome obrigatório', 'error')
+    let error
+    if (editingCartao) ({ error } = await supabase.from('cartoes').update(formCartao).eq('id', editingCartao))
+    else ({ error } = await supabase.from('cartoes').insert({entidade_id: entidadeAtiva?.id || null, ...formCartao}))
+    if (error) { toast(error.message, 'error'); return }
+    toast('Cartão salvo!', 'success'); setModalCartao(false); loadAll()
+  }
+
+  async function toggleCartao(c) {
+    await supabase.from('cartoes').update({ ativo: !c.ativo }).eq('id', c.id); loadAll()
+  }
+
+  async function destroyCartao() {
+    await supabase.from('cartoes').delete().eq('id', deletingCartao.id)
+    toast('Excluído', 'success'); setDeletingCartao(null); loadAll()
+    if (cartaoSel?.id === deletingCartao.id) { setCartaoSel(null); setView('cartoes') }
+  }
+
+  // ── Lançamento CRUD ───────────────────────────────────────
+  function openNewLanc() { setFormLanc(EMPTY_LANC); setEditingLanc(null); setModalLanc(true) }
+  function openEditLanc(l) { setFormLanc({...l, parcelado: false, num_parcelas: 2}); setEditingLanc(l.id); setModalLanc(true) }
+
+  async function saveLanc() {
+    if (!entidadeAtiva?.id) return toast('Selecione uma entidade antes de salvar', 'error')
+    if (!formLanc.descricao?.trim()) return toast('Descrição obrigatória', 'error')
+    if (!formLanc.valor) return toast('Valor obrigatório', 'error')
+    if (faturaFechada) return toast('Fatura fechada — não é possível adicionar lançamentos', 'error')
+
+    if (!editingLanc && formLanc.parcelado && Number(formLanc.num_parcelas) > 1) {
+      const n = Number(formLanc.num_parcelas)
+      const valorParcela = (Number(formLanc.valor) / n).toFixed(2)
+      const inserts = []
+      const grupoId = crypto.randomUUID()
+      const base = new Date(formLanc.data + 'T12:00:00')
+      const diaBase = base.getDate()
+      for (let i = 0; i < n; i++) {
+        // Calcula ano e mes da parcela
+        const anoParc = base.getFullYear() + Math.floor((base.getMonth() + i) / 12)
+        const mesParc = (base.getMonth() + i) % 12
+        // Usa o ultimo dia do mes se o dia nao existir (ex: 30/fev → 28/fev)
+        const ultimoDia = new Date(anoParc, mesParc + 1, 0).getDate()
+        const diaParc = Math.min(diaBase, ultimoDia)
+        const dataParc = new Date(anoParc, mesParc, diaParc)
+        inserts.push({
+          entidade_id: entidadeAtiva?.id || null,
+          grupo_parcela: grupoId,
+          cartao_id: cartaoSel.id,
+          data_compra: dataParc.toISOString().split('T')[0],
+          descricao: `${formLanc.descricao} (${i+1}/${n})`,
+          categoria: formLanc.categoria,
+          valor_total: valorParcela,
+          num_parcela: i+1, total_parcelas: n,
+          obs: formLanc.obs,
+        })
+      }
+      const { error } = await supabase.from('cartao_lancamentos').insert(inserts)
+      if (error) { toast(error.message, 'error'); return }
+      toast(`${n} parcelas lançadas! A fatura será gerada automaticamente no fechamento.`, 'success')
+      setModalLanc(false); loadLancamentos(); return
+    }
+
+    const payload = {
+      cartao_id: cartaoSel.id,
+      data_compra: formLanc.data,
+      descricao: formLanc.descricao,
+      categoria: formLanc.categoria,
+      valor_total: formLanc.valor,
+      num_parcela: 1, total_parcelas: 1,
+      obs: formLanc.obs,
+    }
+    let error
+    if (editingLanc) ({ error } = await supabase.from('cartao_lancamentos').update(payload).eq('id', editingLanc))
+    else ({ error } = await supabase.from('cartao_lancamentos').insert(payload))
+    if (error) { toast(error.message, 'error'); return }
+    toast('Lançado! A fatura será gerada no fechamento.', 'success')
+    setModalLanc(false); loadLancamentos()
+  }
+
+  async function destroyGrupo() {
+    const { error } = await supabase.from('cartao_lancamentos')
+      .delete().eq('grupo_parcela', deletingGrupo.grupo_parcela)
+    if (error) { toast(error.message, 'error'); setDeletingGrupo(null); return }
+    toast('Todas as parcelas removidas!', 'success')
+    setDeletingGrupo(null); loadLancamentos()
+  }
+
+  async function destroyLanc() {
+    await supabase.from('cartao_lancamentos').delete().eq('id', deletingLanc.id)
+    toast('Lançamento excluído', 'success'); setDeletingLanc(null); loadLancamentos()
+  }
+
+  const fc = (k, v) => setFormCartao(p => ({...p, [k]: v}))
+  const fl = (k, v) => setFormLanc(p => ({...p, [k]: v}))
+  const filteredLanc = lancamentos.filter(r => {
+    const q = search.toLowerCase()
+    return !q || r.descricao?.toLowerCase().includes(q) || r.categoria?.toLowerCase().includes(q)
+  })
+
+  // ── VIEW: Lista de cartões ────────────────────────────────
+  if (view === 'cartoes') return (
     <div>
-      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(3,1fr)', marginBottom: 16 }}>
-        <div className="stat-card blue"><div className="stat-label">Total</div><div className="stat-value blue text-mono">{fmt(totalGeral)}</div></div>
-        <div className="stat-card green"><div className="stat-label">{cfg.pagoLabel}</div><div className="stat-value green text-mono">{fmt(totalPago)}</div></div>
-        <div className="stat-card yellow"><div className="stat-label">Pendente</div><div className="stat-value yellow text-mono">{fmt(totalPendente)}</div></div>
-      </div>
-
       <div className="toolbar">
         <div className="search-wrap">
           <Search size={14} />
-          <input className="search-input" placeholder="Buscar descrição, pessoa..." value={search} onChange={e => setSearch(e.target.value)} />
+          <input className="search-input" placeholder="Buscar cartão..." value={search} onChange={e => setSearch(e.target.value)} />
         </div>
-        <select className="form-select" style={{ width: 'auto' }} value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
-          <option value="">Todos</option>
-          <option value="aberto">Em Aberto</option>
-          <option value="pago">{cfg.pagoLabel}s</option>
-        </select>
-        {pode('lancar') && <button className="btn btn-primary" onClick={openNew}><Plus size={15} /> {cfg.newLabel}</button>}
+        <button className="btn btn-primary" onClick={openNewCartao}><Plus size={15} /> Novo Cartão</button>
       </div>
 
+      {loading ? <div className="loading"><div className="spinner" /></div> :
+        cartoes.length === 0 ? <div className="empty-state"><CreditCard size={40} /><p>Nenhum cartão cadastrado</p></div> : (
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(300px,1fr))', gap:16 }}>
+            {cartoes.filter(c => !search || c.nome.toLowerCase().includes(search.toLowerCase())).map(c => {
+              const faturasCartao = faturas.filter(f => f.cartao_id === c.id)
+              const faturaAberta = faturasCartao.find(f => f.status === 'fechada' && !f.pago && !f.rolada_para_fatura_id)
+              return (
+                <div key={c.id} className="card" style={{ opacity: c.ativo ? 1 : .5, cursor:'pointer', position:'relative', overflow:'hidden' }}
+                  onClick={() => { setCartaoSel(c); setView('fatura'); setSearch('') }}>
+                  <div style={{ position:'absolute', top:0, left:0, right:0, height:3, background:'linear-gradient(90deg, var(--accent), var(--accent2))' }} />
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:12 }}>
+                    <div>
+                      <div style={{ fontWeight:700, fontSize:15, display:'flex', alignItems:'center', gap:6 }}>
+                  {c.nome}
+                  {c.compartilhado && <span className="badge badge-blue" style={{ fontSize:9 }}>Compartilhado</span>}
+                  {c.compartilhado && c.entidade_id !== entidadeAtiva?.id && <span className="badge badge-gray" style={{ fontSize:9 }}>Outra entidade</span>}
+                </div>
+                      <div style={{ color:'var(--text2)', fontSize:12, marginTop:2 }}>{c.bandeira} · {c.titular_nome || '—'}</div>
+                    </div>
+                    <CreditCard size={24} color="var(--accent)" />
+                  </div>
+                  <div style={{ display:'flex', justifyContent:'space-between', fontSize:12, color:'var(--text2)', marginBottom:8 }}>
+                    <span>Fecha dia <strong style={{ color:'var(--text)' }}>{c.dia_fechamento || '—'}</strong></span>
+                    <span>Vence dia <strong style={{ color:'var(--text)' }}>{c.dia_vencimento || '—'}</strong></span>
+                    <span>Limite <strong style={{ color:'var(--green)' }}>{fmt(c.limite)}</strong></span>
+                  </div>
+                  {faturaAberta && (
+                    <div style={{ background:'rgba(248,113,113,.1)', border:'1px solid rgba(248,113,113,.2)', borderRadius:6, padding:'6px 10px', fontSize:12, color:'var(--red)', marginTop:8 }}>
+                      Fatura fechada: <strong>{fmt(faturaAberta.total)}</strong> · vence {faturaAberta.vencimento?.split('-').reverse().join('/')}
+                    </div>
+                  )}
+                  <div style={{ display:'flex', gap:6, marginTop:12 }} onClick={e => e.stopPropagation()}>
+                    <button className="btn btn-sm btn-secondary" onClick={() => openEditCartao(c)}><Pencil size={12} /></button>
+                    <button className="btn btn-sm btn-secondary" onClick={() => toggleCartao(c)}><Power size={12} /></button>
+                    <button className="btn btn-sm btn-danger" onClick={() => setDeletingCartao(c)}><Trash2 size={12} /></button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+      {modalCartao && (
+        <Modal title={editingCartao ? 'Editar Cartão' : 'Novo Cartão'} onClose={() => setModalCartao(false)} onSave={saveCartao}>
+          <div className="form-grid form-grid-2">
+            <div className="form-group" style={{ gridColumn:'1/-1' }}>
+              <label className="form-label">Nome do Cartão *</label>
+              <input className="form-input" value={formCartao.nome} onChange={e => fc('nome', e.target.value)} placeholder="Ex: Nubank, Itaú Visa..." />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Bandeira</label>
+              <select className="form-select" value={formCartao.bandeira} onChange={e => fc('bandeira', e.target.value)}>
+                <option value="">Selecionar...</option>
+                {bandeiras.map(b => <option key={b} value={b}>{b}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Titular</label>
+              <select className="form-select" value={formCartao.titular_id} onChange={e => {
+                const m = membros.find(x => x.id === e.target.value)
+                fc('titular_id', e.target.value); fc('titular_nome', m?.nome || '')
+              }}>
+                <option value="">Selecionar membro...</option>
+                {membros.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Limite (R$)</label>
+              <input className="form-input" type="number" step="0.01" value={formCartao.limite} onChange={e => fc('limite', e.target.value)} placeholder="0,00" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Dia de Fechamento</label>
+              <input className="form-input" type="number" min={1} max={31} value={formCartao.dia_fechamento} onChange={e => fc('dia_fechamento', e.target.value)} placeholder="Ex: 25" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Dia de Vencimento</label>
+              <input className="form-input" type="number" min={1} max={31} value={formCartao.dia_vencimento} onChange={e => fc('dia_vencimento', e.target.value)} placeholder="Ex: 5" />
+            </div>
+            <div className="form-group" style={{ gridColumn:'1/-1' }}>
+              <label style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer', fontSize:13 }}>
+                <input type="checkbox" checked={formCartao.compartilhado || false}
+                  onChange={e => fc('compartilhado', e.target.checked)}
+                  style={{ width:15, height:15 }} />
+                Cartão compartilhado entre entidades
+              </label>
+              <div style={{ fontSize:11, color:'var(--text3)', marginTop:4, paddingLeft:23 }}>
+                Quando marcado, este cartão aparece em todas as entidades que você tem acesso
+              </div>
+            </div>
+            <div className="form-group" style={{ gridColumn:'1/-1' }}>
+              <label className="form-label">Observações</label>
+              <textarea className="form-textarea" value={formCartao.obs} onChange={e => fc('obs', e.target.value)} rows={2} />
+            </div>
+          </div>
+        </Modal>
+      )}
+      {deletingCartao && <ConfirmDialog message={`Excluir cartão "${deletingCartao.nome}"?`} onConfirm={destroyCartao} onCancel={() => setDeletingCartao(null)} />}
+    </div>
+  )
+
+  // ── VIEW: Fatura do cartão ────────────────────────────────
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:20, flexWrap:'wrap' }}>
+        <button className="btn btn-secondary btn-sm" onClick={() => { setView('cartoes'); setSearch('') }}>
+          <ChevronLeft size={14} /> Voltar
+        </button>
+        <CreditCard size={18} color="var(--accent)" />
+        <span style={{ fontWeight:700, fontSize:16 }}>{cartaoSel?.nome}</span>
+        <span className="badge badge-gray">{cartaoSel?.bandeira}</span>
+        <span className="text-muted" style={{ fontSize:12 }}>Titular: {cartaoSel?.titular_nome || '—'}</span>
+        {faturaAtual?.status === 'rolada'
+          ? <span className="badge badge-purple" style={{ display:'flex', alignItems:'center', gap:4 }}>🔁 Rolada para fatura seguinte</span>
+          : faturaFechada
+          ? <span className="badge badge-red" style={{ display:'flex', alignItems:'center', gap:4 }}><Lock size={11} /> Fatura Fechada</span>
+          : <span className="badge badge-yellow" style={{ display:'flex', alignItems:'center', gap:4 }}><Clock size={11} /> Fatura Aberta</span>
+        }
+        <div style={{ flex:1 }} />
+        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+          <button className="btn btn-secondary btn-sm btn-icon" onClick={() => mudaMes(-1)}><ChevronLeft size={14} /></button>
+          <span style={{ fontSize:13, fontWeight:600, textTransform:'capitalize', minWidth:140, textAlign:'center' }}>{nomeMes}</span>
+          <button className="btn btn-secondary btn-sm btn-icon" onClick={() => mudaMes(1)}><ChevronRight size={14} /></button>
+        </div>
+        {!faturaFechada && totalFatura > 0 && (
+          <button className="btn btn-sm" style={{ background:'var(--red)', color:'#fff' }} onClick={iniciarFechamento}>
+            <Lock size={14} /> Fechar Fatura
+          </button>
+        )}
+        {!faturaFechada && (
+          <button className="btn btn-primary btn-sm" onClick={openNewLanc}><Plus size={14} /> Lançamento</button>
+        )}
+      </div>
+
+      {/* Cards resumo */}
+      <div className="stats-grid" style={{ gridTemplateColumns:'repeat(3,1fr)', marginBottom:16 }}>
+        <div className="stat-card red">
+          <div className="stat-label">Total da Fatura</div>
+          <div className="stat-value red text-mono">{fmt(totalFatura)}</div>
+          <div className="stat-sub">{lancamentos.length} lançamentos</div>
+        </div>
+        <div className="stat-card blue">
+          <div className="stat-label">Limite Disponível</div>
+          <div className="stat-value blue text-mono">{fmt(Number(cartaoSel?.limite || 0) - totalFatura)}</div>
+        </div>
+        <div className="stat-card yellow">
+          <div className="stat-label">Vence dia {cartaoSel?.dia_vencimento}</div>
+          <div className="stat-value yellow text-mono">{fmt(cartaoSel?.limite || 0)}</div>
+          <div className="stat-sub">Limite total</div>
+        </div>
+      </div>
+
+      {/* Barra de limite */}
+      <div className="card" style={{ marginBottom:16, padding:'14px 20px' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', fontSize:12, color:'var(--text2)', marginBottom:6 }}>
+          <span>Uso do limite — Fecha dia {cartaoSel?.dia_fechamento}</span>
+          <span>{percLimite.toFixed(1)}%</span>
+        </div>
+        <div style={{ background:'var(--bg3)', borderRadius:4, height:8, overflow:'hidden' }}>
+          <div style={{ height:'100%', borderRadius:4, width:`${percLimite}%`, background: percLimite > 80 ? 'var(--red)' : percLimite > 50 ? 'var(--yellow)' : 'var(--green)', transition:'width .3s' }} />
+        </div>
+        {faturaFechada && (
+          <button className="btn btn-sm btn-secondary" onClick={() => setConfirmReabrir(true)}>
+            Reabrir fatura
+          </button>
+        )}
+        {faturaFechada && (
+          <div style={{ marginTop:10, fontSize:12, color:'var(--red)', display:'flex', alignItems:'center', gap:6 }}>
+            <Lock size={12} />
+            Fatura fechada em {faturaAtual?.vencimento?.split('-').reverse().join('/')} · Gerado em Contas a Pagar automaticamente
+          </div>
+        )}
+        {faturaFechada && Number(faturaAtual?.saldo_rotativo_anterior) > 0 && (
+          <div style={{ marginTop:8, fontSize:12, color:'var(--accent2)', background:'rgba(124,106,247,.1)', border:'1px solid rgba(124,106,247,.3)', borderRadius:8, padding:'8px 12px' }}>
+            🔁 Esta fatura inclui <strong>{fmt(faturaAtual.saldo_rotativo_anterior)}</strong> não pago do mês anterior
+            {Number(faturaAtual?.juros_rotativo) > 0 && <> + <strong>{fmt(faturaAtual.juros_rotativo)}</strong> de juros do rotativo</>}
+          </div>
+        )}
+      </div>
+
+      {/* Toolbar */}
+      <div className="toolbar">
+        <div className="search-wrap">
+          <Search size={14} />
+          <input className="search-input" placeholder="Buscar lançamento..." value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+      </div>
+
+      {/* Tabela */}
       <div className="card">
-        {loading ? <div className="loading"><div className="spinner" /></div> :
-          filtered.length === 0 ? <div className="empty-state"><p>Nenhum registro</p></div> : (
+        {filteredLanc.length === 0
+          ? <div className="empty-state"><Receipt size={36} /><p>Nenhum lançamento neste mês</p></div>
+          : (
             <div className="table-wrap">
               <table>
-                <thead><tr>
-                  <th></th><th>Emissão</th><th>Descrição</th><th>Pessoa</th><th>Responsável</th>
-                  <th>Valor Total</th><th>Pago</th><th>Saldo</th><th>Vencimento</th><th>Status</th><th>Ações</th>
-                </tr></thead>
+                <thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Parcela</th><th>Valor</th><th>Ações</th></tr></thead>
                 <tbody>
-                  {filtered.map(r => {
-                    const pgts = getPagamentosRow(r.id)
-                    const pago = totalPagoRow(r.id)
-                    const saldo = saldoRow(r)
-                    const quitado = saldo <= 0.01
-                    const vencido = isVencido(r)
-                    const rolada = r.status === 'rolada'
-                    const isExp = expanded[r.id]
-                    return (
-                      <>
-                        <tr key={r.id} style={{ opacity: r.ativo ? 1 : .5 }}>
-                          <td>
-                            {pgts.length > 0 && (
-                              <button className="icon-btn" onClick={() => toggleExpand(r.id)}>
-                                {isExp ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                  {filteredLanc.map(r => (
+                    <tr key={r.id}>
+                      <td className="text-mono text-muted" style={{ fontSize:12 }}>{r.data_compra?.split('-').reverse().join('/')}</td>
+                      <td className="font-bold">{r.descricao}</td>
+                      <td className="text-muted">{r.categoria || '—'}</td>
+                      <td>{r.total_parcelas > 1 ? <span className="badge badge-purple">{r.num_parcela}/{r.total_parcelas}</span> : '—'}</td>
+                      <td className="text-mono font-bold text-red">{fmt(r.valor_total)}</td>
+                      <td>
+                        {!faturaFechada && (
+                          <div className="action-btns">
+                            <button className="icon-btn edit" onClick={() => openEditLanc(r)}><Pencil size={14} /></button>
+                            {r.total_parcelas > 1 && r.grupo_parcela && (
+                              <button className="icon-btn del" title={`Excluir todas as ${r.total_parcelas} parcelas`} onClick={() => setDeletingGrupo(r)}>
+                                <Trash2 size={13} /><span style={{ fontSize: 9, marginLeft: 2 }}>{r.total_parcelas}x</span>
                               </button>
                             )}
-                          </td>
-                          <td className="text-mono text-muted" style={{ fontSize: 12 }}>{r.data_emissao?.split('-').reverse().join('/')}</td>
-                          <td className="font-bold">{r.descricao}</td>
-                          <td className="text-muted">{r.pessoa_nome || '—'}</td>
-                      <td className="text-muted" style={{fontSize:12}}>{r.responsavel_nome || '—'}</td>
-                          <td className="text-mono font-bold">{fmt(r.valor)}</td>
-                          <td className="text-mono text-green">{pago > 0 ? fmt(pago) : '—'}</td>
-                          <td className={`text-mono font-bold ${quitado ? 'text-green' : vencido ? 'text-red' : 'text-yellow'}`}>{quitado ? '—' : fmt(saldo)}</td>
-                          <td className={`text-mono ${vencido ? 'text-red' : 'text-muted'}`} style={{ fontSize: 12 }}>
-                            {r.vencimento ? r.vencimento.split('-').reverse().join('/') : '—'}
-                            {vencido && <span className="badge badge-red" style={{ marginLeft: 4 }}>Vencido</span>}
-                          </td>
-                          <td>
-                            {rolada
-                              ? <span className="badge badge-blue">🔁 Rolada</span>
-                              : <span className={`badge ${quitado ? 'badge-green' : pago > 0 ? 'badge-orange' : 'badge-yellow'}`}>
-                                  {quitado ? cfg.pagoLabel : pago > 0 ? 'Parcial' : 'Pendente'}
-                                </span>
-                            }
-                          </td>
-                          <td><div className="action-btns">
-                            <button className="icon-btn edit" title="Editar" onClick={() => openEdit(r)}><Pencil size={14} /></button>
-                            {!quitado && !rolada && <button className="icon-btn" style={{ color: 'var(--green)' }} title="Registrar pagamento" onClick={() => { setModalPgto(r); setPgtoForm({ valor: String(saldo.toFixed(2)), data: today(), forma_pgto: '', conta_id: '', obs: '', juros: '', multa: '', desconto: '' }) }}><CreditCard size={14} /></button>}
-                            {quitado && cfg.tipo === 'receber' && <button className="icon-btn" style={{ color: 'var(--accent)' }} title="Gerar Recibo" onClick={() => handleRecibo(r)}><Receipt size={14} /></button>}
-                            <button className="icon-btn toggle" onClick={() => toggleAtivo(r)}><Power size={14} /></button>
-                            <button className="icon-btn del" onClick={() => setDeleting(r)}><Trash2 size={14} /></button>
-                          </div></td>
-                        </tr>
-                        {isExp && pgts.map(pg => {
-                          const pgJuros    = Number(pg.juros    || 0)
-                          const pgMulta    = Number(pg.multa    || 0)
-                          const pgDesconto = Number(pg.desconto || 0)
-                          const temEncargos = pgJuros > 0 || pgMulta > 0 || pgDesconto > 0
-                          return (
-                            <tr key={pg.id} style={{ background: 'rgba(52,211,153,.05)' }}>
-                              <td></td>
-                              <td className="text-mono text-muted" style={{ fontSize: 11 }}>{pg.data?.split('-').reverse().join('/')}</td>
-                              <td colSpan={2} style={{ fontSize: 12, color: 'var(--green)' }}>
-                                ↳ Pagamento: {pg.forma_pgto || '—'}
-                                {temEncargos && (
-                                  <span style={{ marginLeft: 8, color: 'var(--text3)', fontSize: 11 }}>
-                                    {pgJuros    > 0 && <span style={{ color: 'var(--red)'    }}> Juros: {fmt(pgJuros)}</span>}
-                                    {pgMulta    > 0 && <span style={{ color: 'var(--red)'    }}> Multa: {fmt(pgMulta)}</span>}
-                                    {pgDesconto > 0 && <span style={{ color: 'var(--green)'  }}> Desconto: -{fmt(pgDesconto)}</span>}
-                                  </span>
-                                )}
-                                {pg.obs && <span style={{ marginLeft: 8, color: 'var(--text3)', fontSize: 11 }}>• {pg.obs}</span>}
-                              </td>
-                              <td colSpan={2} className="text-mono text-green" style={{ fontSize: 12 }}>{fmt(pg.valor)}</td>
-                              <td colSpan={4} className="text-muted" style={{ fontSize: 12 }}>{pg.forma_pgto || '—'}</td>
-                            </tr>
-                          )
-                        })}
-                      </>
-                    )
-                  })}
+                            <button className="icon-btn del" title="Excluir esta parcela" onClick={() => setDeletingLanc(r)}><Trash2 size={14} /></button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  <tr style={{ borderTop:'2px solid var(--border)' }}>
+                    <td colSpan={4} style={{ textAlign:'right', fontWeight:700, padding:'12px 14px', color:'var(--text2)', fontSize:12 }}>TOTAL:</td>
+                    <td className="text-mono font-bold text-red" style={{ padding:'12px 14px' }}>{fmt(totalFatura)}</td>
+                    <td></td>
+                  </tr>
                 </tbody>
               </table>
             </div>
           )}
       </div>
 
-      {/* Modal novo/editar */}
-      {modal && (
-        <Modal title={editing ? 'Editar' : cfg.newLabel} onClose={() => setModal(false)} onSave={save}>
+      {/* Modal lançamento */}
+      {modalLanc && (
+        <Modal title={editingLanc ? 'Editar Lançamento' : 'Novo Lançamento'} onClose={() => setModalLanc(false)} onSave={saveLanc}>
+          <div style={{ background:'rgba(79,142,247,.08)', border:'1px solid rgba(79,142,247,.2)', borderRadius:8, padding:'8px 12px', marginBottom:16, fontSize:12, color:'var(--accent)' }}>
+            ℹ️ A Conta a Pagar será gerada automaticamente quando a fatura fechar no dia <strong>{cartaoSel?.dia_fechamento}</strong>.
+          </div>
           <div className="form-grid form-grid-2">
             <div className="form-group">
-              <label className="form-label">{cfg.dataLabel} *</label>
-              <input className="form-input" type="date" value={form.data_emissao} onChange={e => f('data_emissao', e.target.value)} />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Vencimento</label>
-              <input className="form-input" type="date" value={form.vencimento} onChange={e => f('vencimento', e.target.value)} />
-            </div>
-            <div className="form-group" style={{ gridColumn: '1/-1' }}>
-              <label className="form-label">Descrição *</label>
-              <input className="form-input" value={form.descricao} onChange={e => f('descricao', e.target.value)} placeholder="Descrição do lançamento" />
+              <label className="form-label">Data da Compra *</label>
+              <input className="form-input" type="date" value={formLanc.data} onChange={e => fl('data', e.target.value)} />
             </div>
             <div className="form-group">
               <label className="form-label">Valor *</label>
-              <input className="form-input" type="number" step="0.01" value={form.valor} onChange={e => f('valor', e.target.value)} placeholder="0,00" />
+              <input className="form-input" type="number" step="0.01" value={formLanc.valor} onChange={e => fl('valor', e.target.value)} placeholder="0,00" />
+            </div>
+            <div className="form-group" style={{ gridColumn:'1/-1' }}>
+              <label className="form-label">Descrição *</label>
+              <input className="form-input" value={formLanc.descricao} onChange={e => fl('descricao', e.target.value)} placeholder="O que foi comprado" />
             </div>
             <div className="form-group">
               <label className="form-label">Categoria</label>
-              <SelectCategoria value={form.categoria || ''} onChange={v => f('categoria', v)}
-                tipo={module === 'contas_receber' ? 'receita' : 'despesa'} />
+              <input className="form-input" value={formLanc.categoria} onChange={e => fl('categoria', e.target.value)} placeholder="Ex: Alimentação, Lazer..." />
             </div>
-            <div className="form-group">
-              <label className="form-label">Forma de Pagamento</label>
-              <select className="form-select" value={form.forma_pgto} onChange={e => f('forma_pgto', e.target.value)}>
-                <option value="">Selecionar...</option>
-                {FORMAS_PGTO.map(o => <option key={o} value={o}>{o}</option>)}
-              </select>
-            </div>
-            <div className="form-group" style={{ gridColumn: '1/-1' }}>
-              <label className="form-label">{cfg.pessoaLabel}</label>
-              <select className="form-select" value={form.pessoa_id} onChange={e => {
-                const p = pessoas.find(x => x.id === e.target.value)
-                f('pessoa_id', e.target.value); f('pessoa_nome', p?.nome || '')
-              }}>
-                <option value="">Selecionar...</option>
-                {pessoas.map(p => <option key={p.id} value={p.id}>{p.nome}</option>)}
-              </select>
-            </div>
-            <div className="form-group">
-              <label className="form-label">Conta / Carteira</label>
-              <select className="form-select" value={form.conta_id} onChange={e => f('conta_id', e.target.value)}>
-                <option value="">Selecionar...</option>
-                {contas.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
-              </select>
-            </div>
-            {module === 'contas_pagar' && (
-              <div className="form-group">
-                <label className="form-label">Responsável (membro)</label>
-                <select className="form-select" value={form.responsavel_id} onChange={e => {
-                  const m = membros.find(x => x.id === e.target.value)
-                  f('responsavel_id', e.target.value); f('responsavel_nome', m?.nome || '')
-                }}>
-                  <option value="">Selecionar membro...</option>
-                  {membros.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
-                </select>
+            {!editingLanc && (
+              <div className="form-group" style={{ display:'flex', flexDirection:'row', alignItems:'center', gap:10, paddingTop:20 }}>
+                <input type="checkbox" id="parc" checked={formLanc.parcelado} onChange={e => fl('parcelado', e.target.checked)} style={{ width:16, height:16 }} />
+                <label htmlFor="parc" className="form-label" style={{ margin:0, cursor:'pointer' }}>Parcelar</label>
               </div>
             )}
-            {!editing && (
-              <div className="form-group" style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 10, paddingTop: 20 }}>
-                <input type="checkbox" id="parcelado" checked={form.parcelado} onChange={e => f('parcelado', e.target.checked)} style={{ width: 16, height: 16 }} />
-                <label htmlFor="parcelado" className="form-label" style={{ margin: 0, cursor: 'pointer' }}>Parcelar</label>
-              </div>
-            )}
-            {!editing && form.parcelado && (
+            {!editingLanc && formLanc.parcelado && (
               <div className="form-group">
                 <label className="form-label">Nº de Parcelas</label>
-                <input className="form-input" type="number" min={2} max={60} value={form.num_parcelas} onChange={e => f('num_parcelas', e.target.value)} />
+                <input className="form-input" type="number" min={2} max={48} value={formLanc.num_parcelas} onChange={e => fl('num_parcelas', e.target.value)} />
               </div>
             )}
-            {!editing && form.parcelado && form.num_parcelas > 1 && (
-              <div style={{ gridColumn: '1/-1', background: 'rgba(79,142,247,.1)', border: '1px solid rgba(79,142,247,.3)', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: 'var(--accent)' }}>
-                Serão criadas <strong>{form.num_parcelas} parcelas</strong> de <strong>{fmt(Number(form.valor || 0) / Number(form.num_parcelas))}</strong> cada, com vencimentos mensais a partir da data informada.
+            {!editingLanc && formLanc.parcelado && (
+              <div style={{ gridColumn:'1/-1', background:'rgba(124,106,247,.1)', border:'1px solid rgba(124,106,247,.3)', borderRadius:8, padding:'10px 14px', fontSize:12, color:'var(--accent2)' }}>
+                {formLanc.num_parcelas}x de <strong>{fmt(Number(formLanc.valor||0)/Number(formLanc.num_parcelas))}</strong> — cada parcela cai na fatura do mês correspondente.
               </div>
             )}
-            <div className="form-group" style={{ gridColumn: '1/-1' }}>
+            <div className="form-group" style={{ gridColumn:'1/-1' }}>
               <label className="form-label">Observações</label>
-              <textarea className="form-textarea" value={form.obs} onChange={e => f('obs', e.target.value)} />
+              <textarea className="form-textarea" value={formLanc.obs} onChange={e => fl('obs', e.target.value)} rows={2} />
             </div>
           </div>
         </Modal>
       )}
-
-      {/* Modal pagamento parcial */}
-      {modalPgto && (
-        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setModalPgto(null)}>
-          <div className="modal">
-            <div className="modal-header">
-              <span className="modal-title">Registrar Pagamento</span>
-              <button className="icon-btn" onClick={() => setModalPgto(null)}>✕</button>
+      {confirmFechar && (
+        <ConfirmDialog
+          message={`Fechar a fatura de ${cartaoSel?.nome} — ${mesRef}?\n\nValor: R$ ${totalFatura.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}\n\nIsso irá gerar uma conta a pagar. Você poderá reabrir depois se precisar.`}
+          confirmLabel="Fechar fatura"
+          confirmStyle="danger"
+          onConfirm={() => { setConfirmFechar(false); fecharFatura() }}
+          onCancel={() => setConfirmFechar(false)} />
+      )}
+      {modalRotativo && rotativoInfo && (
+        <Modal
+          title="⚠️ Fatura anterior não foi paga — rotativo"
+          onClose={() => { setModalRotativo(false); setRotativoInfo(null); setJurosRotativo('') }}
+          onSave={() => { setModalRotativo(false); fecharFatura() }}
+        >
+          <div style={{ background:'rgba(248,113,113,.1)', border:'1px solid rgba(248,113,113,.25)', borderRadius:8, padding:'10px 14px', marginBottom:16, fontSize:13, color:'var(--red)', lineHeight:1.5 }}>
+            A fatura de <strong>{rotativoInfo.faturaAnterior.mes_ref}</strong> venceu em{' '}
+            {rotativoInfo.faturaAnterior.vencimento?.split('-').reverse().join('/')} e ainda tem saldo de{' '}
+            <strong>{fmt(rotativoInfo.saldo)}</strong> não pago.
+          </div>
+          <p style={{ fontSize:13, color:'var(--text2)', marginBottom:14 }}>
+            Isso é o <strong>rotativo do cartão</strong> — a operadora vai incorporar esse saldo na fatura
+            deste mês, junto com juros. Informe abaixo o valor do juros cobrado (aparece no extrato/app do banco):
+          </p>
+          <div className="form-grid form-grid-2">
+            <div className="form-group">
+              <label className="form-label">Saldo não pago (mês anterior)</label>
+              <input className="form-input" value={fmt(rotativoInfo.saldo)} disabled />
             </div>
-            <div className="modal-body">
-              <div style={{ background: 'var(--bg3)', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13 }}>
-                <div style={{ color: 'var(--text2)', marginBottom: 4 }}>{modalPgto.descricao}</div>
-                <div style={{ display: 'flex', gap: 16 }}>
-                  <span>Total: <strong className="text-mono">{fmt(modalPgto.valor)}</strong></span>
-                  <span>Pago: <strong className="text-mono text-green">{fmt(totalPagoRow(modalPgto.id))}</strong></span>
-                  <span>Saldo: <strong className="text-mono text-yellow">{fmt(saldoRow(modalPgto))}</strong></span>
-                </div>
-              </div>
-              <div className="form-grid form-grid-2">
-                <div className="form-group">
-                  <label className="form-label">Valor original</label>
-                  <input className="form-input" type="text" value={fmt(saldoRow(modalPgto))} readOnly
-                    style={{ background: 'var(--bg3)', color: 'var(--text2)', cursor: 'default' }} />
-                </div>
-                <div className="form-group" style={{ gridColumn: '1/-1' }}>
-                  <label style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer', fontSize:13 }}>
-                    <input type="checkbox" checked={pgtoForm.parcial || false}
-                      onChange={e => setPgtoForm(p => ({ ...p, parcial: e.target.checked }))}
-                      style={{ width:15, height:15 }} />
-                    Pagamento parcial
-                  </label>
-                  <div style={{ fontSize:11, color:'var(--text3)', marginTop:4, paddingLeft:23 }}>
-                    Marque quando for pagar apenas parte do valor — o saldo fica em aberto
-                  </div>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Valor pago *</label>
-                  <input className="form-input" type="number" step="0.01" value={pgtoForm.valor}
-                    onChange={e => setPgtoForm(p => ({ ...p, valor: e.target.value }))}
-                    onBlur={e => {
-                      const valorPago = Number(e.target.value) || 0
-                      const saldo = saldoRow(modalPgto)
-                      const diff = Number((valorPago - saldo).toFixed(2))
-                      if (diff > 0) {
-                        // Acréscimo → joga em Juros, zera Desconto
-                        setPgtoForm(p => ({ ...p, juros: String(diff), multa: '', desconto: '' }))
-                      } else if (diff < 0) {
-                        // Desconto → joga em Desconto, zera Juros e Multa
-                        setPgtoForm(p => ({ ...p, juros: '', multa: '', desconto: String(Math.abs(diff)) }))
-                      } else {
-                        // Igual → limpa encargos
-                        setPgtoForm(p => ({ ...p, juros: '', multa: '', desconto: '' }))
-                      }
-                    }}
-                    autoFocus />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Data *</label>
-                  <input className="form-input" type="date" value={pgtoForm.data} onChange={e => setPgtoForm(p => ({ ...p, data: e.target.value }))} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Forma de Pagamento *</label>
-                  <select className="form-select" value={pgtoForm.forma_pgto} onChange={e => setPgtoForm(p => ({ ...p, forma_pgto: e.target.value }))}>
-                    <option value="">Selecionar...</option>
-                    {FORMAS_PGTO.map(o => <option key={o} value={o}>{o}</option>)}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Conta / Carteira</label>
-                  <select className="form-select" value={pgtoForm.conta_id} onChange={e => setPgtoForm(p => ({ ...p, conta_id: e.target.value }))}>
-                    <option value="">Sem conta (não atualiza saldo)</option>
-                    {contas.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
-                  </select>
-                </div>
-                {/* Encargos */}
-                <div className="form-group" style={{ gridColumn: '1/-1' }}>
-                  <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px' }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', marginBottom: 10 }}>Encargos / Desconto</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-                      <div className="form-group" style={{ marginBottom: 0 }}>
-                        <label className="form-label">Juros (R$)</label>
-                        <input className="form-input" type="number" step="0.01" min="0" placeholder="0,00"
-                          value={pgtoForm.juros} onChange={e => setPgtoForm(p => ({ ...p, juros: e.target.value }))} />
-                      </div>
-                      <div className="form-group" style={{ marginBottom: 0 }}>
-                        <label className="form-label">Multa (R$)</label>
-                        <input className="form-input" type="number" step="0.01" min="0" placeholder="0,00"
-                          value={pgtoForm.multa} onChange={e => setPgtoForm(p => ({ ...p, multa: e.target.value }))} />
-                      </div>
-                      <div className="form-group" style={{ marginBottom: 0 }}>
-                        <label className="form-label">Desconto (R$)</label>
-                        <input className="form-input" type="number" step="0.01" min="0" placeholder="0,00"
-                          value={pgtoForm.desconto} onChange={e => setPgtoForm(p => ({ ...p, desconto: e.target.value }))} />
-                      </div>
-                    </div>
-                    {(() => {
-                      const saldo = saldoRow(modalPgto)
-                      const valorPago = Number(pgtoForm.valor) || 0
-                      const j = Number(pgtoForm.juros) || 0
-                      const m = Number(pgtoForm.multa) || 0
-                      const d = Number(pgtoForm.desconto) || 0
-                      const enc = j + m - d
-                      const esperado = Number((saldo + enc).toFixed(2))
-                      const fechou = Math.abs(valorPago - esperado) <= 0.01
-                      const temEncargos = j > 0 || m > 0 || d > 0
-                      if (!temEncargos && valorPago === 0) return null
-                      return (
-                        <div style={{ marginTop: 10, display: 'flex', gap: 12, fontSize: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-                          <span style={{ color: 'var(--text2)' }}>
-                            Original: <strong className="text-mono">{fmt(saldo)}</strong>
-                          </span>
-                          {temEncargos && (
-                            <span style={{ color: enc > 0 ? 'var(--red)' : 'var(--green)' }}>
-                              Encargos: <strong className="text-mono">{enc >= 0 ? '+' : ''}{fmt(enc)}</strong>
-                            </span>
-                          )}
-                          <span style={{ color: fechou ? 'var(--green)' : 'var(--red)', fontWeight: 600 }}>
-                            {fechou ? '✓' : '✗'} Esperado: <strong className="text-mono">{fmt(esperado)}</strong>
-                          </span>
-                          {!fechou && valorPago > 0 && (
-                            <span style={{ color: 'var(--red)', fontWeight: 600 }}>
-                              Diferença: <strong className="text-mono">{fmt(Number((valorPago - esperado).toFixed(2)))}</strong>
-                            </span>
-                          )}
-                          {temEncargos && (j > 0 || m > 0) && fechou && (
-                            <span style={{ background: 'rgba(234,179,8,.15)', color: '#a16207', padding: '2px 8px', borderRadius: 5 }}>
-                              Lançamento em "Encargos Financeiros" será gerado
-                            </span>
-                          )}
-                        </div>
-                      )
-                    })()}
-                  </div>
-                </div>
-
-                <div className="form-group" style={{ gridColumn: '1/-1' }}>
-                  <label className="form-label">Observações</label>
-                  <textarea className="form-textarea" value={pgtoForm.obs} onChange={e => setPgtoForm(p => ({ ...p, obs: e.target.value }))} rows={2} />
-                </div>
-              </div>
-              <div style={{ background: 'rgba(79,142,247,.08)', border: '1px solid rgba(79,142,247,.2)', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: 'var(--text2)', marginTop: 4 }}>
-                ℹ️ O pagamento será lançado automaticamente no <strong>Caixa</strong> e no <strong>Fluxo de Caixa</strong>.
-                {pgtoForm.conta_id ? <span style={{ color: 'var(--green)' }}> O saldo da conta selecionada será atualizado.</span> : <span style={{ color: 'var(--yellow)' }}> Selecione uma conta para atualizar o saldo.</span>}
-              </div>
-              <div className="modal-footer">
-                <button className="btn btn-secondary" onClick={() => setModalPgto(null)}>Cancelar</button>
-                <button className="btn btn-primary" onClick={registrarPagamento}><CheckCircle size={15} /> Confirmar Pagamento</button>
-              </div>
+            <div className="form-group">
+              <label className="form-label">Juros do rotativo (R$) *</label>
+              <input className="form-input" type="number" step="0.01" autoFocus
+                value={jurosRotativo} onChange={e => setJurosRotativo(e.target.value)} placeholder="0,00" />
             </div>
           </div>
-        </div>
+          <div style={{ marginTop:14, background:'rgba(124,106,247,.1)', border:'1px solid rgba(124,106,247,.3)', borderRadius:8, padding:'10px 14px', fontSize:13, color:'var(--accent2)' }}>
+            Total da nova fatura: compras do mês (<strong>{fmt(totalFatura)}</strong>) + saldo anterior (<strong>{fmt(rotativoInfo.saldo)}</strong>)
+            {' '}+ juros (<strong>{fmt(Number(jurosRotativo || 0))}</strong>) = <strong>{fmt(totalFatura + rotativoInfo.saldo + Number(jurosRotativo || 0))}</strong>
+          </div>
+        </Modal>
       )}
-
-      {deleting && <ConfirmDialog message={`Excluir "${deleting.descricao}"? Os pagamentos parciais também serão excluídos.`} onConfirm={destroy} onCancel={() => setDeleting(null)} />}
+      {confirmReabrir && (
+        <ConfirmDialog
+          message={`Reabrir a fatura de ${cartaoSel?.nome} — ${mesRef}?\n\nIsso irá remover a conta a pagar gerada. Os lançamentos do cartão serão mantidos.`}
+          confirmLabel="Reabrir"
+          confirmStyle="primary"
+          onConfirm={reabrirFatura}
+          onCancel={() => setConfirmReabrir(false)} />
+      )}
+      {deletingGrupo && (
+        <ConfirmDialog
+          message={`Excluir TODAS as ${deletingGrupo.total_parcelas} parcelas desta compra? Essa ação não pode ser desfeita.`}
+          confirmLabel="Excluir todas"
+          onConfirm={destroyGrupo}
+          onCancel={() => setDeletingGrupo(null)} />
+      )}
+      {deletingLanc && <ConfirmDialog message={`Excluir "${deletingLanc.descricao}"?`} onConfirm={destroyLanc} onCancel={() => setDeletingLanc(null)} />}
     </div>
   )
 }
