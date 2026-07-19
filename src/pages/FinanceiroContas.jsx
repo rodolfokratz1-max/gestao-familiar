@@ -381,7 +381,7 @@ function FinanceiroContasInner({ module }) {
                           <td><div className="action-btns">
                             <button className="icon-btn edit" title="Editar" onClick={() => openEdit(r)}><Pencil size={14} /></button>
                             {!quitado && !rolada && <button className="icon-btn" style={{ color: 'var(--green)' }} title="Registrar pagamento" onClick={() => { setModalPgto(r); setPgtoForm({ valor: String(saldo.toFixed(2)), data: today(), forma_pgto: '', conta_id: '', obs: '', juros: '', multa: '', desconto: '' }) }}><CreditCard size={14} /></button>}
-                            {quitado && cfg.tipo === 'receber' && <button className="icon-btn" style={{ color: 'var(--accent)' }} title="Gerar Recibo" onClick={() => handleRecibo(r)}><Receipt size={14} /></button>}
+                            {quitado && module === 'contas_receber' && <button className="icon-btn" style={{ color: 'var(--accent)' }} title="Gerar Recibo" onClick={() => handleRecibo(r)}><Receipt size={14} /></button>}
                             <button className="icon-btn toggle" onClick={() => toggleAtivo(r)}><Power size={14} /></button>
                             <button className="icon-btn del" onClick={() => setDeleting(r)}><Trash2 size={14} /></button>
                           </div></td>
