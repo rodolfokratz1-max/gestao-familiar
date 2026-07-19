@@ -340,6 +340,7 @@ export default function FinanceiroContas({ module }) {
                     const saldo = saldoRow(r)
                     const quitado = saldo <= 0.01
                     const vencido = isVencido(r)
+                    const rolada = r.status === 'rolada'
                     const isExp = expanded[r.id]
                     return (
                       <>
@@ -362,12 +363,17 @@ export default function FinanceiroContas({ module }) {
                             {r.vencimento ? r.vencimento.split('-').reverse().join('/') : '—'}
                             {vencido && <span className="badge badge-red" style={{ marginLeft: 4 }}>Vencido</span>}
                           </td>
-                          <td><span className={`badge ${quitado ? 'badge-green' : pago > 0 ? 'badge-orange' : 'badge-yellow'}`}>
-                            {quitado ? cfg.pagoLabel : pago > 0 ? 'Parcial' : 'Pendente'}
-                          </span></td>
+                          <td>
+                            {rolada
+                              ? <span className="badge badge-blue">🔁 Rolada</span>
+                              : <span className={`badge ${quitado ? 'badge-green' : pago > 0 ? 'badge-orange' : 'badge-yellow'}`}>
+                                  {quitado ? cfg.pagoLabel : pago > 0 ? 'Parcial' : 'Pendente'}
+                                </span>
+                            }
+                          </td>
                           <td><div className="action-btns">
                             <button className="icon-btn edit" title="Editar" onClick={() => openEdit(r)}><Pencil size={14} /></button>
-                            {!quitado && <button className="icon-btn" style={{ color: 'var(--green)' }} title="Registrar pagamento" onClick={() => { setModalPgto(r); setPgtoForm({ valor: String(saldo.toFixed(2)), data: today(), forma_pgto: '', conta_id: '', obs: '', juros: '', multa: '', desconto: '' }) }}><CreditCard size={14} /></button>}
+                            {!quitado && !rolada && <button className="icon-btn" style={{ color: 'var(--green)' }} title="Registrar pagamento" onClick={() => { setModalPgto(r); setPgtoForm({ valor: String(saldo.toFixed(2)), data: today(), forma_pgto: '', conta_id: '', obs: '', juros: '', multa: '', desconto: '' }) }}><CreditCard size={14} /></button>}
                             {quitado && cfg.tipo === 'receber' && <button className="icon-btn" style={{ color: 'var(--accent)' }} title="Gerar Recibo" onClick={() => handleRecibo(r)}><Receipt size={14} /></button>}
                             <button className="icon-btn toggle" onClick={() => toggleAtivo(r)}><Power size={14} /></button>
                             <button className="icon-btn del" onClick={() => setDeleting(r)}><Trash2 size={14} /></button>

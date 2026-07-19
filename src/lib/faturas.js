@@ -108,6 +108,7 @@ export async function verificarFaturas() {
     // Gera UMA conta a pagar para a fatura inteira
     await supabase.from('contas_pagar').insert({
       data_emissao: hoje.toISOString().split('T')[0],
+      status: 'pendente',
       descricao: `Fatura ${cartao.nome} — ${nomeMes}`,
       valor: totalFatura,
       vencimento,
