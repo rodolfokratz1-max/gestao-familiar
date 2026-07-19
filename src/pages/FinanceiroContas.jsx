@@ -65,12 +65,12 @@ export default function FinanceiroContas({ module }) {
   const [expanded, setExpanded] = useState({})
 
   useEffect(() => {
-    if (!entidadeAtiva?.id) return
+    if (!entidadeAtiva?.id || !cfg) return
     setRows([]); setPagamentos([]); setForm(emptyForm()); load()
   }, [module, entidadeAtiva?.id])
 
   async function load() {
-    if (!entidadeAtiva?.id) { setLoading(false); return }
+    if (!entidadeAtiva?.id || !cfg) { setLoading(false); return }
     setLoading(true)
     const [{ data: r }, { data: p }, { data: c }, { data: m }, { data: pgs }] = await Promise.all([
       supabase.from(cfg.table).select('*').eq('entidade_id', entidadeAtiva?.id).order('data_emissao', { ascending: false }),
