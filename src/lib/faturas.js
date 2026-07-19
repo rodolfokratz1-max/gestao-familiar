@@ -119,3 +119,89 @@ export async function verificarFaturas() {
     })
   }
 }
+
+// ═══════════════════════════════════════════════════════════
+// ROTATIVO — saldo não pago no vencimento incorpora à fatura seguinte
+// (igual ao comportamento real das operadoras de cartão)
+// Tudo abaixo é ADITIVO: nenhuma função acima foi alterada.
+// ═══════════════════════════════════════════════════════════
+
+// Soma pagamentos parciais líquidos (descontando encargos já embutidos)
+// de um título de contas_pagar. Mesma lógica já usada em FinanceiroContas.jsx
+// para decidir quitação — reaproveitada aqui para consistência.
+async function totalPagoLiquido(origemId) {
+  const { data } = await supabase
+    .from('pagamentos_parciais')
+    .select('valor,juros,multa,desconto')
+    .eq('tabela_origem', 'contas_pagar')
+    .eq('origem_id', origemId)
+  return (data || []).reduce((s, p) => {
+    const enc = Number(p.juros || 0) + Number(p.multa || 0) - Number(p.desconto || 0)
+    return s + Number(p.valor || 0) - enc
+  }, 0)
+}
+
+// Verifica se existe fatura anterior desse cartão que:
+// - já foi fechada (status = 'fechada')
+// - já venceu (vencimento < hoje)
+// - ainda não foi rolada (rolada_para_fatura_id IS NULL)
+// - ainda tem saldo em aberto (não foi paga, nem total nem parcialmente até quitar)
+// Retorna null se não houver nada pendente — comportamento normal do dia a dia.
+export async function verificarRotativo(cartaoId) {
+  const hoje = new Date().toISOString().split('T')[0]
+  const { data: anteriores } = await supabase
+    .from('faturas_cartao')
+    .select('*')
+    .eq('cartao_id', cartaoId)
+    .eq('status', 'fechada')
+    .is('rolada_para_fatura_id', null)
+    .lt('vencimento', hoje)
+    .order('mes_ref', { ascending: true })
+
+  if (!anteriores?.length) return null
+
+  // Processa da mais antiga para a mais nova (normalmente só existe uma)
+  for (const fat of anteriores) {
+    const { data: contaPagar } = await supabase
+      .from('contas_pagar')
+      .select('*')
+      .eq('origem_id', fat.id)
+      .eq('origem_tabela', 'faturas_cartao')
+      .single()
+    if (!contaPagar) continue
+
+    const jaPago = await totalPagoLiquido(contaPagar.id)
+    const saldo = Number(contaPagar.valor) - jaPago
+    if (saldo > 0.01) {
+      return { faturaAnterior: fat, contaPagar, saldo: Number(saldo.toFixed(2)) }
+    }
+  }
+  return null
+}
+
+// Encerra contabilmente o saldo da fatura anterior (sem gerar movimento de Caixa,
+// pois nenhum dinheiro saiu — o valor só migrou de título) e liga as duas faturas.
+//
+// IMPORTANTE: isso insere diretamente na tabela pagamentos_parciais, sem passar
+// pela função de pagamento da tela (por isso não lança nada no Caixa). O saldo
+// da fatura antiga passa a ser zero nos cálculos existentes (que já são baseados
+// em valor - totalPagoRow, conforme FinanceiroContas.jsx), sem duplicar valor
+// quando somado junto com a fatura nova.
+export async function rolarFaturaAnterior({ faturaAnterior, contaPagar, saldo }, novaFaturaId) {
+  await supabase.from('pagamentos_parciais').insert({
+    tabela_origem: 'contas_pagar',
+    origem_id: contaPagar.id,
+    valor: saldo,
+    juros: 0,
+    multa: 0,
+    desconto: 0,
+    data: new Date().toISOString().split('T')[0],
+    forma_pgto: 'Rolagem para próxima fatura',
+    obs: 'Saldo não pago no vencimento — incorporado à fatura seguinte com juros do rotativo. Não representa saída de caixa.',
+  })
+
+  await supabase
+    .from('faturas_cartao')
+    .update({ status: 'rolada', rolada_para_fatura_id: novaFaturaId })
+    .eq('id', faturaAnterior.id)
+}

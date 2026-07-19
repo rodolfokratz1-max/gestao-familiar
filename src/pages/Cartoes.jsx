@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useToast } from '../contexts/ToastContext'
 import { useEntidade } from '../contexts/EntidadeContext'
-import { mesReferencia, dataVencimento } from '../lib/faturas'
+import { mesReferencia, dataVencimento, verificarRotativo, rolarFaturaAnterior } from '../lib/faturas'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { Plus, Search, Pencil, Trash2, Power, CreditCard, Receipt, ChevronLeft, ChevronRight, Lock, Clock, CheckCircle } from 'lucide-react'
@@ -40,6 +40,9 @@ export default function Cartoes() {
   const [deletingGrupo, setDeletingGrupo]   = useState(null)
   const [confirmFechar, setConfirmFechar]    = useState(false)
   const [confirmReabrir, setConfirmReabrir]  = useState(false)
+  const [rotativoInfo, setRotativoInfo]      = useState(null)   // { faturaAnterior, contaPagar, saldo } ou null
+  const [modalRotativo, setModalRotativo]    = useState(false)
+  const [jurosRotativo, setJurosRotativo]    = useState('')
 
   useEffect(() => { if (entidadeAtiva?.id) loadAll() }, [entidadeAtiva?.id])
   useEffect(() => { if (cartaoSel) loadLancamentos() }, [cartaoSel, mesRef])
@@ -91,6 +94,11 @@ export default function Cartoes() {
   // ── Reabrir fatura ─────────────────────────────────────────
   async function reabrirFatura() {
     if (!faturaAtual) return
+    if (faturaAtual.status === 'rolada') {
+      toast('Esta fatura já foi rolada para o mês seguinte — não pode ser reaberta. Reabra a fatura seguinte se precisar corrigir algo.', 'error')
+      setConfirmReabrir(false)
+      return
+    }
     // Remove a conta a pagar gerada
     await supabase.from('contas_pagar').delete().eq('origem_id', faturaAtual.id).eq('origem_tabela', 'faturas_cartao')
     // Remove a fatura
@@ -101,34 +109,67 @@ export default function Cartoes() {
     loadAll(); loadLancamentos()
   }
 
-  // ── Fechar fatura manualmente ─────────────────────────────
-  async function fecharFatura() {
+  // ── Verifica rotativo ANTES de abrir a confirmação de fechamento ──
+  // Se houver fatura anterior vencida e não paga, pede o juros do rotativo
+  // antes de prosseguir. Se não houver, mantém o fluxo de sempre.
+  async function iniciarFechamento() {
     if (!totalFatura) return toast('Fatura sem lançamentos', 'info')
     if (faturaFechada) return toast('Fatura já fechada', 'info')
 
+    const rotativo = await verificarRotativo(cartaoSel.id)
+    if (rotativo) {
+      setRotativoInfo(rotativo)
+      setJurosRotativo('')
+      setModalRotativo(true)
+    } else {
+      setRotativoInfo(null)
+      setConfirmFechar(true)
+    }
+  }
+
+  // ── Fechar fatura manualmente ─────────────────────────────
+  // Se rotativoInfo estiver preenchido, incorpora o saldo anterior + juros
+  // informado ao total da nova fatura, e encerra contabilmente a fatura antiga.
+  async function fecharFatura() {
     const cartao = cartaoSel
     const venc = dataVencimento(mesRef, cartao.dia_vencimento)
     const [anoRef, mesNum] = mesRef.split('-')
     const nomeM = new Date(Number(anoRef), Number(mesNum)-1, 1).toLocaleString('pt-BR', { month: 'long', year: 'numeric' })
 
+    const saldoAnterior = rotativoInfo?.saldo || 0
+    const juros = Number(jurosRotativo || 0)
+    const totalComRotativo = totalFatura + saldoAnterior + juros
+
     // Cria registro de fatura fechada
     const { data: fat, error: e1 } = await supabase.from('faturas_cartao').insert({entidade_id: entidadeAtiva?.id || null, 
       cartao_id: cartao.id, cartao_nome: cartao.nome,
-      mes_ref: mesRef, total: totalFatura,
+      mes_ref: mesRef, total: totalComRotativo,
       vencimento: venc, status: 'fechada',
+      saldo_rotativo_anterior: saldoAnterior,
+      juros_rotativo: juros,
     }).select().single()
     if (e1) { toast(e1.message, 'error'); return }
+
+    // Se veio de rotativo, encerra contabilmente a fatura antiga e liga as duas
+    if (rotativoInfo) {
+      await rolarFaturaAnterior(rotativoInfo, fat.id)
+    }
+
+    const descricaoRotativo = rotativoInfo
+      ? ` (inclui R$${saldoAnterior.toFixed(2)} não pago do mês anterior + R$${juros.toFixed(2)} de juros rotativo)`
+      : ''
 
     // Gera UMA conta a pagar
     await supabase.from('contas_pagar').insert({entidade_id: entidadeAtiva?.id || null, 
       data_emissao: today(),
-      descricao: `Fatura ${cartao.nome} — ${nomeM}`,
-      valor: totalFatura, vencimento: venc,
+      descricao: `Fatura ${cartao.nome} — ${nomeM}${descricaoRotativo}`,
+      valor: totalComRotativo, vencimento: venc,
       pago: false, categoria: 'Cartão de Crédito',
       origem_id: fat.id, origem_tabela: 'faturas_cartao', ativo: true,
     })
 
-    toast(`✅ Fatura fechada! R$${totalFatura.toFixed(2)} gerado em Contas a Pagar`, 'success')
+    toast(`✅ Fatura fechada! R$${totalComRotativo.toFixed(2)} gerado em Contas a Pagar`, 'success')
+    setRotativoInfo(null); setJurosRotativo(''); setModalRotativo(false)
     loadAll(); loadLancamentos()
   }
 
@@ -251,7 +292,7 @@ export default function Cartoes() {
           <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(300px,1fr))', gap:16 }}>
             {cartoes.filter(c => !search || c.nome.toLowerCase().includes(search.toLowerCase())).map(c => {
               const faturasCartao = faturas.filter(f => f.cartao_id === c.id)
-              const faturaAberta = faturasCartao.find(f => f.status === 'fechada' && !f.pago)
+              const faturaAberta = faturasCartao.find(f => f.status === 'fechada' && !f.pago && !f.rolada_para_fatura_id)
               return (
                 <div key={c.id} className="card" style={{ opacity: c.ativo ? 1 : .5, cursor:'pointer', position:'relative', overflow:'hidden' }}
                   onClick={() => { setCartaoSel(c); setView('fatura'); setSearch('') }}>
@@ -358,7 +399,9 @@ export default function Cartoes() {
         <span style={{ fontWeight:700, fontSize:16 }}>{cartaoSel?.nome}</span>
         <span className="badge badge-gray">{cartaoSel?.bandeira}</span>
         <span className="text-muted" style={{ fontSize:12 }}>Titular: {cartaoSel?.titular_nome || '—'}</span>
-        {faturaFechada
+        {faturaAtual?.status === 'rolada'
+          ? <span className="badge badge-purple" style={{ display:'flex', alignItems:'center', gap:4 }}>🔁 Rolada para fatura seguinte</span>
+          : faturaFechada
           ? <span className="badge badge-red" style={{ display:'flex', alignItems:'center', gap:4 }}><Lock size={11} /> Fatura Fechada</span>
           : <span className="badge badge-yellow" style={{ display:'flex', alignItems:'center', gap:4 }}><Clock size={11} /> Fatura Aberta</span>
         }
@@ -369,7 +412,7 @@ export default function Cartoes() {
           <button className="btn btn-secondary btn-sm btn-icon" onClick={() => mudaMes(1)}><ChevronRight size={14} /></button>
         </div>
         {!faturaFechada && totalFatura > 0 && (
-          <button className="btn btn-sm" style={{ background:'var(--red)', color:'#fff' }} onClick={() => setConfirmFechar(true)}>
+          <button className="btn btn-sm" style={{ background:'var(--red)', color:'#fff' }} onClick={iniciarFechamento}>
             <Lock size={14} /> Fechar Fatura
           </button>
         )}
@@ -414,6 +457,12 @@ export default function Cartoes() {
           <div style={{ marginTop:10, fontSize:12, color:'var(--red)', display:'flex', alignItems:'center', gap:6 }}>
             <Lock size={12} />
             Fatura fechada em {faturaAtual?.vencimento?.split('-').reverse().join('/')} · Gerado em Contas a Pagar automaticamente
+          </div>
+        )}
+        {faturaFechada && Number(faturaAtual?.saldo_rotativo_anterior) > 0 && (
+          <div style={{ marginTop:8, fontSize:12, color:'var(--accent2)', background:'rgba(124,106,247,.1)', border:'1px solid rgba(124,106,247,.3)', borderRadius:8, padding:'8px 12px' }}>
+            🔁 Esta fatura inclui <strong>{fmt(faturaAtual.saldo_rotativo_anterior)}</strong> não pago do mês anterior
+            {Number(faturaAtual?.juros_rotativo) > 0 && <> + <strong>{fmt(faturaAtual.juros_rotativo)}</strong> de juros do rotativo</>}
           </div>
         )}
       </div>
@@ -522,6 +571,38 @@ export default function Cartoes() {
           confirmStyle="danger"
           onConfirm={() => { setConfirmFechar(false); fecharFatura() }}
           onCancel={() => setConfirmFechar(false)} />
+      )}
+      {modalRotativo && rotativoInfo && (
+        <Modal
+          title="⚠️ Fatura anterior não foi paga — rotativo"
+          onClose={() => { setModalRotativo(false); setRotativoInfo(null); setJurosRotativo('') }}
+          onSave={() => { setModalRotativo(false); fecharFatura() }}
+        >
+          <div style={{ background:'rgba(248,113,113,.1)', border:'1px solid rgba(248,113,113,.25)', borderRadius:8, padding:'10px 14px', marginBottom:16, fontSize:13, color:'var(--red)', lineHeight:1.5 }}>
+            A fatura de <strong>{rotativoInfo.faturaAnterior.mes_ref}</strong> venceu em{' '}
+            {rotativoInfo.faturaAnterior.vencimento?.split('-').reverse().join('/')} e ainda tem saldo de{' '}
+            <strong>{fmt(rotativoInfo.saldo)}</strong> não pago.
+          </div>
+          <p style={{ fontSize:13, color:'var(--text2)', marginBottom:14 }}>
+            Isso é o <strong>rotativo do cartão</strong> — a operadora vai incorporar esse saldo na fatura
+            deste mês, junto com juros. Informe abaixo o valor do juros cobrado (aparece no extrato/app do banco):
+          </p>
+          <div className="form-grid form-grid-2">
+            <div className="form-group">
+              <label className="form-label">Saldo não pago (mês anterior)</label>
+              <input className="form-input" value={fmt(rotativoInfo.saldo)} disabled />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Juros do rotativo (R$) *</label>
+              <input className="form-input" type="number" step="0.01" autoFocus
+                value={jurosRotativo} onChange={e => setJurosRotativo(e.target.value)} placeholder="0,00" />
+            </div>
+          </div>
+          <div style={{ marginTop:14, background:'rgba(124,106,247,.1)', border:'1px solid rgba(124,106,247,.3)', borderRadius:8, padding:'10px 14px', fontSize:13, color:'var(--accent2)' }}>
+            Total da nova fatura: compras do mês (<strong>{fmt(totalFatura)}</strong>) + saldo anterior (<strong>{fmt(rotativoInfo.saldo)}</strong>)
+            {' '}+ juros (<strong>{fmt(Number(jurosRotativo || 0))}</strong>) = <strong>{fmt(totalFatura + rotativoInfo.saldo + Number(jurosRotativo || 0))}</strong>
+          </div>
+        </Modal>
       )}
       {confirmReabrir && (
         <ConfirmDialog
