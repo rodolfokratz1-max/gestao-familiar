@@ -223,6 +223,11 @@ export default function PortalCliente({ token }) {
                         <div style={{ fontSize:11, color:'#888', marginTop:2 }}>
                           {fmtD(l.data_ref)}{l.fonte_nome ? ` · ${l.fonte_nome}` : ''}
                         </div>
+                        {l.obs && (
+                          <div style={{ fontSize:12, color:'#555', marginTop:5, padding:'6px 10px', background:'#f8f7f4', borderRadius:6, borderLeft:'2px solid #e8e8e8', lineHeight:1.5 }}>
+                            {l.obs}
+                          </div>
+                        )}
                         {/* Fotos do lançamento */}
                         {fotos.length > 0 && (
                           <div style={{ display:'flex', gap:6, marginTop:8, flexWrap:'wrap' }}>
@@ -262,9 +267,18 @@ export default function PortalCliente({ token }) {
             <span style={{ fontSize:12, color:'rgba(255,255,255,.7)' }}>Total gasto</span>
             <span style={{ fontFamily:'monospace', fontSize:12, fontWeight:700, color:'#fca5a5' }}>{fmt(totalGasto)}</span>
           </div>
-          <div style={{ display:'flex', justifyContent:'space-between', padding:'10px 0 0', borderTop:'1px solid rgba(255,255,255,.15)', marginTop:6 }}>
-            <span style={{ fontSize:13, fontWeight:700, color:'#fff' }}>Saldo</span>
-            <span style={{ fontFamily:'monospace', fontSize:18, fontWeight:700, color: saldo >= 0 ? '#e8a030' : '#fca5a5' }}>{fmt(Math.abs(saldo))}</span>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 0 0', borderTop:'1px solid rgba(255,255,255,.15)', marginTop:6 }}>
+            <div>
+              <span style={{ fontSize:13, fontWeight:700, color:'#fff' }}>
+                {saldo === 0 ? 'Quitado' : saldo < 0 ? 'A receber do cliente' : 'Saldo'}
+              </span>
+              {saldo < 0 && (
+                <div style={{ fontSize:10, color:'rgba(255,255,255,.4)', marginTop:2 }}>Valor pendente de pagamento</div>
+              )}
+            </div>
+            <span style={{ fontFamily:'monospace', fontSize:18, fontWeight:700, color: saldo === 0 ? '#94a3b8' : saldo < 0 ? '#fca5a5' : '#e8a030' }}>
+              {saldo === 0 ? '—' : fmt(Math.abs(saldo))}
+            </span>
           </div>
         </div>
 
