@@ -42,9 +42,8 @@ const emptyForm = () => ({
   obs: '', ativo: true,
 })
 
-export default function FinanceiroContas({ module }) {
+function FinanceiroContasInner({ module }) {
   const cfg = configs[module]
-  if (!cfg) return <div className="loading"><div className="spinner" /></div>
   const toast = useToast()
   const { entidadeAtiva, pode, entidades } = useEntidade()
   const empresa = entidades?.find(e => e.id === entidadeAtiva?.id) || null
@@ -662,4 +661,10 @@ export default function FinanceiroContas({ module }) {
       {deleting && <ConfirmDialog message={`Excluir "${deleting.descricao}"? Os pagamentos parciais também serão excluídos.`} onConfirm={destroy} onCancel={() => setDeleting(null)} />}
     </div>
   )
+}
+
+export default function FinanceiroContas({ module }) {
+  const cfg = configs[module]
+  if (!cfg) return <div className="loading"><div className="spinner" /></div>
+  return <FinanceiroContasInner module={module} />
 }
