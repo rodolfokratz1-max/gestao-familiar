@@ -99,9 +99,50 @@ export default function Cartoes() {
       setConfirmReabrir(false)
       return
     }
-    // Remove a conta a pagar gerada
+
+    // Se esta fatura veio de uma rolagem, precisa desfazer a rolagem primeiro:
+    // 1. Remove o link rolada_para_fatura_id da fatura anterior
+    // 2. Reseta status da fatura anterior para 'fechada'
+    // 3. Remove o pagamento_parcial de rolagem gerado na conta a pagar anterior
+    if (faturaAtual.saldo_rotativo_anterior > 0) {
+      // Acha a fatura anterior que foi rolada para esta
+      const { data: fatAnterior } = await supabase
+        .from('faturas_cartao')
+        .select('id, origem_id')
+        .eq('rolada_para_fatura_id', faturaAtual.id)
+        .maybeSingle()
+
+      if (fatAnterior) {
+        // Remove link e reseta status da fatura anterior
+        await supabase.from('faturas_cartao')
+          .update({ rolada_para_fatura_id: null, status: 'fechada' })
+          .eq('id', fatAnterior.id)
+
+        // Remove pagamento parcial de rolagem
+        await supabase.from('pagamentos_parciais')
+          .delete()
+          .eq('forma_pgto', 'Rolagem para próxima fatura')
+          .eq('tabela_origem', 'contas_pagar')
+
+        // Reseta status da contas_pagar anterior para pendente
+        const { data: cpAnterior } = await supabase
+          .from('contas_pagar')
+          .select('id')
+          .eq('origem_id', fatAnterior.id)
+          .eq('origem_tabela', 'faturas_cartao')
+          .maybeSingle()
+        if (cpAnterior) {
+          await supabase.from('contas_pagar')
+            .update({ status: 'pendente' })
+            .eq('id', cpAnterior.id)
+        }
+      }
+    }
+
+    // Remove a conta a pagar desta fatura
     await supabase.from('contas_pagar').delete().eq('origem_id', faturaAtual.id).eq('origem_tabela', 'faturas_cartao')
-    // Remove a fatura
+
+    // Agora pode deletar a fatura sem violar FK
     const { error } = await supabase.from('faturas_cartao').delete().eq('id', faturaAtual.id)
     if (error) { toast(error.message, 'error'); return }
     toast('Fatura reaberta!', 'success')
