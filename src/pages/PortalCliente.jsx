@@ -14,16 +14,50 @@ const fmtD = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '�
 const STATUS_LABEL = { pendente: 'Pendente', em_andamento: 'Em andamento', concluida: 'Concluída', cancelada: 'Cancelada' }
 const STATUS_COLOR = { pendente: '#94a3b8', em_andamento: '#2a6ef5', concluida: '#38a169', cancelada: '#e53e3e' }
 
-export default function PortalCliente({ token }) {
+export default function PortalCliente({ token, clienteToken }) {
   const [obra, setObra]       = useState(null)
   const [etapas, setEtapas]   = useState([])
   const [lancs, setLancs]     = useState([])
   const [loading, setLoading] = useState(true)
   const [erro, setErro]       = useState(null)
   const [preview, setPreview] = useState(null)
+  // Modo cliente: lista de obras do cliente (via token do cliente)
+  const [listaObras, setListaObras]   = useState(null)  // null = modo obra única
+  const [clienteNome, setClienteNome] = useState('')
 
-  useEffect(() => { if (token) load() }, [token])
+  useEffect(() => {
+    if (clienteToken) loadCliente()
+    else if (token) load()
+  }, [token, clienteToken])
 
+  // ── Modo cliente: lista todas as obras via RPC segura ──
+  async function loadCliente() {
+    setLoading(true)
+    const { data, error } = await supabase.rpc('get_portal_cliente', { p_token: clienteToken })
+    if (error || !data || data.length === 0) {
+      setErro('Link inválido ou expirado.'); setLoading(false); return
+    }
+    setClienteNome(data[0].cliente_nome || '')
+    setListaObras(data)
+    setLoading(false)
+  }
+
+  // ── Modo cliente: abre uma obra específica via RPC ──
+  async function abrirObra(obraId) {
+    setLoading(true)
+    const { data, error } = await supabase.rpc('get_portal_obra', { p_token: clienteToken, p_obra_id: obraId })
+    if (error || !data) { setErro('Não foi possível abrir esta obra.'); setLoading(false); return }
+    setObra(data.obra)
+    setEtapas(data.etapas || [])
+    setLancs(data.lancamentos || [])
+    setLoading(false)
+  }
+
+  function voltarLista() {
+    setObra(null); setEtapas([]); setLancs([])
+  }
+
+  // ── Modo obra única (link antigo ?obra=) ──
   async function load() {
     setLoading(true)
     const { data: obraData, error } = await supabase
@@ -56,6 +90,49 @@ export default function PortalCliente({ token }) {
       <p style={{ color:'#888', fontSize:12, marginTop:6 }}>Solicite um novo link ao responsável pela obra.</p>
     </div>
   )
+
+  // ── Tela: lista de obras do cliente ──
+  if (listaObras && !obra) {
+    const fmtC = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
+    return (
+      <div style={{ fontFamily:"'DM Sans',sans-serif", background:'#f0efe9', minHeight:'100vh' }}>
+        <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+        <style>{`*{box-sizing:border-box;margin:0;padding:0}`}</style>
+        <div style={{ maxWidth:680, margin:'0 auto', padding:'0 0 40px' }}>
+          <div style={{ background:'#1a2744', padding:'20px 20px 26px' }}>
+            <div style={{ fontSize:9, color:'#e8a030', textTransform:'uppercase', letterSpacing:'.8px', fontWeight:700, marginBottom:6 }}>Portal do Cliente</div>
+            <h1 style={{ fontSize:22, fontWeight:700, color:'#fff', letterSpacing:'-.3px' }}>{clienteNome}</h1>
+            <p style={{ fontSize:12, color:'rgba(255,255,255,.55)', marginTop:4 }}>
+              {listaObras.length === 1 ? '1 obra' : listaObras.length + ' obras'} — toque para acompanhar
+            </p>
+          </div>
+          <div style={{ padding:'14px 16px 0', display:'flex', flexDirection:'column', gap:10 }}>
+            {listaObras.map(ob => {
+              const st = { planejamento:'#94a3b8', em_andamento:'#2a6ef5', concluida:'#38a169', pausada:'#e8a030', cancelada:'#e53e3e' }[ob.status] || '#94a3b8'
+              const stLabel = { planejamento:'Planejamento', em_andamento:'Em andamento', concluida:'Concluída', pausada:'Pausada', cancelada:'Cancelada' }[ob.status] || ob.status
+              return (
+                <div key={ob.obra_id} onClick={() => abrirObra(ob.obra_id)}
+                  style={{ background:'#fff', borderRadius:12, padding:'14px 16px', boxShadow:'0 2px 8px rgba(0,0,0,.07)', cursor:'pointer', borderLeft:'3px solid ' + st }}>
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:10 }}>
+                    <div style={{ fontSize:15, fontWeight:700, color:'#1a2744' }}>{ob.obra_nome}</div>
+                    <span style={{ fontSize:10, fontWeight:600, padding:'2px 8px', borderRadius:20, background:st+'22', color:st, whiteSpace:'nowrap', flexShrink:0 }}>{stLabel}</span>
+                  </div>
+                  <div style={{ display:'flex', gap:16, marginTop:8, fontSize:11, color:'#888' }}>
+                    {Number(ob.valor_contratado) > 0 && <span>Contratado: <strong style={{ fontFamily:'monospace', color:'#2a6ef5' }}>{fmtC(ob.valor_contratado)}</strong></span>}
+                    <span>Gasto: <strong style={{ fontFamily:'monospace', color:'#e53e3e' }}>{fmtC(ob.total_gasto)}</strong></span>
+                    <span>Recebido: <strong style={{ fontFamily:'monospace', color:'#38a169' }}>{fmtC(ob.total_recebido)}</strong></span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          <div style={{ textAlign:'center', padding:'24px 16px 0', fontSize:11, color:'#aaa' }}>
+            <p>Powered by <strong style={{ color:'#888' }}>GestãoFam</strong></p>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   const totalGasto    = lancs.filter(l => l.tipo === 'despesa').reduce((s, l) => s + Number(l.valor || 0), 0)
   const totalRecebido = lancs.filter(l => l.tipo === 'receita').reduce((s, l) => s + Number(l.valor || 0), 0)
@@ -106,6 +183,12 @@ export default function PortalCliente({ token }) {
           </div>
 
           {/* Título da obra */}
+          {listaObras && (
+            <button onClick={voltarLista}
+              style={{ background:'rgba(255,255,255,.12)', border:'none', color:'#fff', fontSize:12, padding:'6px 14px', borderRadius:20, cursor:'pointer', marginBottom:12 }}>
+              ← Minhas obras
+            </button>
+          )}
           <div style={{ fontSize:9, color:'#e8a030', textTransform:'uppercase', letterSpacing:'.8px', fontWeight:700, marginBottom:6 }}>Acompanhamento de obra</div>
           <h1 style={{ fontSize:22, fontWeight:700, color:'#fff', letterSpacing:'-.3px', lineHeight:1.2, marginBottom:6 }}>{obra.nome}</h1>
           {obra.cliente_nome && <p style={{ fontSize:12, color:'rgba(255,255,255,.6)' }}>Cliente: {obra.cliente_nome}</p>}

@@ -4,7 +4,7 @@ import { useToast } from '../contexts/ToastContext'
 import { useEntidade } from '../contexts/EntidadeContext'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
-import { Plus, Search, Pencil, Trash2, Power, Users, ChevronDown, ChevronUp } from 'lucide-react'
+import { Plus, Search, Pencil, Trash2, Power, Users, ChevronDown, ChevronUp, Share2 } from 'lucide-react'
 import { gerarCodigo } from '../lib/codigos'
 
 const UFS = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO']
@@ -64,6 +64,25 @@ export default function Pessoas() {
     setForm({ ...EMPTY, codigo })
     setEditing(null); setSecao('dados'); setModal(true)
   }
+  // Link do Portal do Cliente: um token único que lista todas as obras do cliente
+  async function gerarLinkPortal(r) {
+    let token = r.token_portal
+    if (!token) {
+      token = Array.from(crypto.getRandomValues(new Uint8Array(16)))
+        .map(b => b.toString(16).padStart(2, '0')).join('')
+      const { error } = await supabase.from('pessoas').update({ token_portal: token }).eq('id', r.id)
+      if (error) { toast('Erro ao gerar link: ' + error.message, 'error'); return }
+      load()
+    }
+    const link = `${window.location.origin}${window.location.pathname}?cliente=${token}`
+    try {
+      await navigator.clipboard.writeText(link)
+      toast('Link do portal copiado! O cliente verá todas as obras dele.', 'success')
+    } catch {
+      prompt('Copie o link abaixo:', link)
+    }
+  }
+
   function openEdit(r) {
     setForm({ ...EMPTY, ...r })
     setEditing(r.id); setSecao('dados'); setModal(true)
@@ -166,6 +185,13 @@ export default function Pessoas() {
                         <td>
                           <div className="action-btns">
                             <button className="icon-btn edit" title="Editar" onClick={() => openEdit(r)}><Pencil size={14} /></button>
+                            {(r.tipo === 'cliente' || r.tipo === 'ambos') && (
+                              <button className="icon-btn" title="Link do Portal do Cliente (todas as obras)"
+                                onClick={() => gerarLinkPortal(r)}
+                                style={{ color: r.token_portal ? 'var(--green)' : 'var(--text3)' }}>
+                                <Share2 size={14} />
+                              </button>
+                            )}
                             <button className="icon-btn toggle" title={r.ativo ? 'Desativar' : 'Ativar'} onClick={() => toggleAtivo(r)}><Power size={14} /></button>
                             <button className="icon-btn del" title="Excluir" onClick={() => setDeleting(r)}><Trash2 size={14} /></button>
                           </div>
