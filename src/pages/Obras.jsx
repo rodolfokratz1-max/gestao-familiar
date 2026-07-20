@@ -107,15 +107,51 @@ export default function Obras() {
     setRows(obras || [])
     if ((obras || []).length > 0) {
       const ids = obras.map(o => o.id)
+
+      // Fonte 1: anotações informativas (Cartão do Cliente / Outro — nunca tiveram dinheiro real)
       const { data: lancs } = await supabase
         .from('obra_lancamentos')
         .select('*')
         .in('obra_id', ids)
+        .eq('migrado', false)
         .order('data_ref', { ascending: false })
+
+      // Fonte 2: dinheiro real — lançamentos de Caixa vinculados à obra (modelo unificado)
+      const { data: caixaLancs } = await supabase
+        .from('caixa')
+        .select('*')
+        .in('obra_id', ids)
+        .order('data', { ascending: false })
+
       const mapa = {}
       for (const l of (lancs || [])) {
+        const norm = { ...l, _origem: 'obra_lancamentos' }
         if (!mapa[l.obra_id]) mapa[l.obra_id] = []
-        mapa[l.obra_id].push(l)
+        mapa[l.obra_id].push(norm)
+      }
+      for (const cx of (caixaLancs || [])) {
+        const norm = {
+          id: cx.id,
+          _origem: 'caixa',
+          obra_id: cx.obra_id,
+          etapa_id: cx.obra_etapa_id || null,
+          tipo: cx.tipo === 'entrada' ? 'receita' : 'despesa',
+          descricao: cx.descricao,
+          valor: cx.valor,
+          data_ref: cx.data,
+          obs: cx.obs,
+          pago_por: cx.forma_pgto || '',
+          fonte_id: cx.fonte_id || null,
+          conta_id: cx.conta_id || null,
+          reembolsavel: !!cx.reembolsavel,
+          imagens_url: Array.isArray(cx.imagens_url) ? cx.imagens_url : [],
+          caixa_id: cx.id, // compatibilidade com checks que esperam esse campo
+        }
+        if (!mapa[cx.obra_id]) mapa[cx.obra_id] = []
+        mapa[cx.obra_id].push(norm)
+      }
+      for (const k of Object.keys(mapa)) {
+        mapa[k].sort((a, b) => (b.data_ref || '').localeCompare(a.data_ref || ''))
       }
       setLancamentosMap(mapa)
 
@@ -308,162 +344,106 @@ export default function Obras() {
       const valor = Number(String(formLanc.valor).replace(',', '.'))
       const fonte = fontes.find(f => f.id === formLanc.fonte_id)
 
-      const payload = {
-        obra_id:     obraSel.id,
-        tipo:        formLanc.tipo,
-        descricao:   formLanc.descricao,
-        valor,
-        pago_por:    fonte ? fonte.nome : (formLanc.pago_por || ''),
-        fonte_id:    formLanc.fonte_id || null,
-        conta_id:    formLanc.conta_id || null,
-        reembolsavel: formLanc.reembolsavel,
-        data_ref:    formLanc.data_ref || today(),
-        obs:         formLanc.obs || null,
-        etapa_id:    formLanc.etapa_id || null,
-        imagens_url: formLanc.imagens_url || [],
+      // Fecha o buraco antigo: fonte que movimenta caixa exige conta selecionada,
+      // senão o lançamento sumia silenciosamente sem ir para lugar nenhum
+      if (fonte && FONTES_MOVEM_CAIXA.includes(fonte.tipo) && !formLanc.conta_id) {
+        setSavingLanc(false)
+        return toast('Selecione a conta para este lançamento (ou escolha uma fonte que não movimenta o caixa, como Cartão do Cliente/Outro).', 'error')
       }
 
-      let lancId = editingLanc
+      const moveCaixa = !!(fonte && FONTES_MOVEM_CAIXA.includes(fonte.tipo) && formLanc.conta_id)
+      const tipoCaixa = formLanc.tipo === 'despesa' ? 'saida' : 'entrada'
+
+      // Payload comum para a anotação informativa (Cartão do Cliente / Outro)
+      const payloadInformativo = {
+        obra_id:      obraSel.id,
+        tipo:         formLanc.tipo,
+        descricao:    formLanc.descricao,
+        valor,
+        pago_por:     fonte ? fonte.nome : (formLanc.pago_por || ''),
+        fonte_id:     formLanc.fonte_id || null,
+        conta_id:     null,
+        reembolsavel: formLanc.reembolsavel,
+        data_ref:     formLanc.data_ref || today(),
+        obs:          formLanc.obs || null,
+        etapa_id:     formLanc.etapa_id || null,
+        imagens_url:  formLanc.imagens_url || [],
+      }
+
+      // Payload comum para a linha real de Caixa (modelo unificado)
+      const payloadCaixa = {
+        entidade_id:   entidadeAtiva?.id || null,
+        data:          formLanc.data_ref || today(),
+        tipo:          tipoCaixa,
+        descricao:     `[Obra: ${obraSel.nome}] ${formLanc.descricao}`,
+        valor,
+        categoria:     'Obras',
+        conta_id:      formLanc.conta_id,
+        forma_pgto:    fonte?.nome || 'Outro',
+        obs:           formLanc.obs || null,
+        obra_id:       obraSel.id,
+        obra_etapa_id: formLanc.etapa_id || null,
+        fonte_id:      formLanc.fonte_id || null,
+        reembolsavel:  !!formLanc.reembolsavel,
+        imagens_url:   formLanc.imagens_url || [],
+      }
+
+      async function ajustaSaldo(contaId, delta) {
+        if (!contaId) return
+        const { data: ct } = await supabase.from('contas').select('saldo_atual').eq('id', contaId).single()
+        if (ct) {
+          const novoSaldo = Number(ct.saldo_atual || 0) + delta
+          await supabase.from('contas').update({ saldo_atual: novoSaldo }).eq('id', contaId)
+          setContas(prev => prev.map(c => c.id === contaId ? { ...c, saldo_atual: novoSaldo } : c))
+        }
+      }
 
       if (editingLanc) {
-        // ── Edição: atualiza o lançamento e sincroniza o caixa ───────────────
-        const { error } = await supabase.from('obra_lancamentos').update(payload).eq('id', editingLanc)
-        if (error) { toast(error.message, 'error'); setSavingLanc(false); return }
+        const anterior = Object.values(lancamentosMap).flat().find(l => l.id === editingLanc)
 
-        // Busca o lançamento anterior para saber o que havia no caixa
-        const lancAnterior = Object.values(lancamentosMap).flat().find(l => l.id === editingLanc)
-        const caixaIdAnterior = lancAnterior?.caixa_id || null
+        if (anterior?._origem === 'caixa') {
+          // ── Editando uma linha real de Caixa ──────────────────────────────
+          if (moveCaixa) {
+            // Continua movimentando caixa: atualiza e reconcilia o saldo
+            const { error } = await supabase.from('caixa').update(payloadCaixa).eq('id', editingLanc)
+            if (error) { toast(error.message, 'error'); setSavingLanc(false); return }
 
-        const novaFonteMoveCaixa = fonte && FONTES_MOVEM_CAIXA.includes(fonte.tipo) && formLanc.conta_id
-        const tipoCaixa = formLanc.tipo === 'despesa' ? 'saida' : 'entrada'
-
-        if (caixaIdAnterior) {
-          // Havia lançamento no caixa — busca para reverter saldo
-          const { data: caixaAnt } = await supabase.from('caixa').select('valor,tipo,conta_id').eq('id', caixaIdAnterior).single()
-
-          if (novaFonteMoveCaixa) {
-            // Ainda deve ir ao caixa: atualiza o lançamento existente
-            await supabase.from('caixa').update({
-              data:       formLanc.data_ref || today(),
-              tipo:       tipoCaixa,
-              descricao:  `[Obra: ${obraSel.nome}] ${formLanc.descricao}`,
-              valor,
-              conta_id:   formLanc.conta_id,
-              obs:        `Obra: ${obraSel.nome} | Fonte: ${fonte.nome}`,
-            }).eq('id', caixaIdAnterior)
-
-            // Reverte saldo antigo e aplica novo (mesmo que seja a mesma conta)
-            if (caixaAnt) {
-              const contaAnt = contas.find(c => c.id === caixaAnt.conta_id)
-              if (contaAnt) {
-                const deltaReverter = caixaAnt.tipo === 'saida' ? Number(caixaAnt.valor) : -Number(caixaAnt.valor)
-                const saldoRevertido = Number(contaAnt.saldo_atual || 0) + deltaReverter
-                await supabase.from('contas').update({ saldo_atual: saldoRevertido }).eq('id', caixaAnt.conta_id)
-                setContas(prev => prev.map(c => c.id === caixaAnt.conta_id ? { ...c, saldo_atual: saldoRevertido } : c))
-              }
-              // Aplica novo saldo na (possivelmente nova) conta
-              const contaNova = contas.find(c => c.id === formLanc.conta_id)
-              if (contaNova) {
-                const saldoBase = Number(contaNova.saldo_atual || 0)
-                // Se mesma conta, já foi revertida acima — busca saldo atualizado
-                const saldoAtual = caixaAnt.conta_id === formLanc.conta_id ? saldoBase + (caixaAnt.tipo === 'saida' ? Number(caixaAnt.valor) : -Number(caixaAnt.valor)) : saldoBase
-                const novoSaldo = tipoCaixa === 'saida' ? saldoAtual - valor : saldoAtual + valor
-                await supabase.from('contas').update({ saldo_atual: novoSaldo }).eq('id', formLanc.conta_id)
-                setContas(prev => prev.map(c => c.id === formLanc.conta_id ? { ...c, saldo_atual: novoSaldo } : c))
-              }
-            }
+            const deltaReverso = anterior.tipo === 'receita' ? -Number(anterior.valor) : Number(anterior.valor)
+            await ajustaSaldo(anterior.conta_id, deltaReverso)
+            const deltaNovo = tipoCaixa === 'entrada' ? valor : -valor
+            await ajustaSaldo(formLanc.conta_id, deltaNovo)
           } else {
-            // Mudou para fonte que não movimenta caixa: remove o lançamento do caixa
-            await supabase.from('caixa').delete().eq('id', caixaIdAnterior)
-            await supabase.from('obra_lancamentos').update({ caixa_id: null }).eq('id', editingLanc)
-            // Reverte saldo
-            if (caixaAnt) {
-              const contaAnt = contas.find(c => c.id === caixaAnt.conta_id)
-              if (contaAnt) {
-                const delta = caixaAnt.tipo === 'saida' ? Number(caixaAnt.valor) : -Number(caixaAnt.valor)
-                const novoSaldo = Number(contaAnt.saldo_atual || 0) + delta
-                await supabase.from('contas').update({ saldo_atual: novoSaldo }).eq('id', caixaAnt.conta_id)
-                setContas(prev => prev.map(c => c.id === caixaAnt.conta_id ? { ...c, saldo_atual: novoSaldo } : c))
-              }
-            }
+            // Mudou para fonte informativa: sai do Caixa e vira anotação
+            const deltaReverso = anterior.tipo === 'receita' ? -Number(anterior.valor) : Number(anterior.valor)
+            await ajustaSaldo(anterior.conta_id, deltaReverso)
+            await supabase.from('caixa').delete().eq('id', editingLanc)
+            const { error } = await supabase.from('obra_lancamentos').insert(sanitize({ ...payloadInformativo, entidade_id: entidadeAtiva?.id || null }))
+            if (error) { toast(error.message, 'error'); setSavingLanc(false); return }
           }
-        } else if (novaFonteMoveCaixa) {
-          // Não havia caixa antes, mas agora deve ter: cria
-          const { data: caixaRow } = await supabase.from('caixa').insert({entidade_id: entidadeAtiva?.id || null,
-            data:          formLanc.data_ref || today(),
-            tipo:          tipoCaixa,
-            descricao:     `[Obra: ${obraSel.nome}] ${formLanc.descricao}`,
-            valor,
-            categoria:     'Obras',
-            conta_id:      formLanc.conta_id,
-            forma_pgto:    'Outro',
-            obs:           `Obra: ${obraSel.nome} | Fonte: ${fonte.nome}`,
-            origem_tabela: 'obra_lancamentos',
-            origem_id:     editingLanc,
-          }).select().single()
-          if (caixaRow) {
-            await supabase.from('obra_lancamentos').update({ caixa_id: caixaRow.id }).eq('id', editingLanc)
-            const conta = contas.find(c => c.id === formLanc.conta_id)
-            if (conta) {
-              const novoSaldo = tipoCaixa === 'saida' ? Number(conta.saldo_atual || 0) - valor : Number(conta.saldo_atual || 0) + valor
-              await supabase.from('contas').update({ saldo_atual: novoSaldo }).eq('id', formLanc.conta_id)
-              setContas(prev => prev.map(c => c.id === formLanc.conta_id ? { ...c, saldo_atual: novoSaldo } : c))
-            }
+        } else {
+          // ── Editando uma anotação informativa (ou registro histórico) ─────
+          if (moveCaixa) {
+            // Virou fonte que movimenta caixa: sai da anotação e nasce como Caixa real
+            await supabase.from('obra_lancamentos').delete().eq('id', editingLanc)
+            const { data: caixaRow, error } = await supabase.from('caixa').insert(payloadCaixa).select().single()
+            if (error) { toast(error.message, 'error'); setSavingLanc(false); return }
+            if (caixaRow) await ajustaSaldo(formLanc.conta_id, tipoCaixa === 'entrada' ? valor : -valor)
+          } else {
+            // Continua informativa: update simples
+            const { error } = await supabase.from('obra_lancamentos').update(payloadInformativo).eq('id', editingLanc)
+            if (error) { toast(error.message, 'error'); setSavingLanc(false); return }
           }
         }
 
       } else {
-        // ── Novo lançamento ───────────────────────────────────────────────────
-        const { data, error } = await supabase.from('obra_lancamentos').insert(sanitize({...payload, entidade_id: entidadeAtiva?.id || null})).select().single()
-        if (error) { toast(error.message, 'error'); setSavingLanc(false); return }
-        lancId = data.id
-
-        if (fonte && FONTES_MOVEM_CAIXA.includes(fonte.tipo) && formLanc.conta_id) {
-          const tipoCaixa = formLanc.tipo === 'despesa' ? 'saida' : 'entrada'
-          const { data: caixaRow } = await supabase.from('caixa').insert({entidade_id: entidadeAtiva?.id || null,
-            data:          formLanc.data_ref || today(),
-            tipo:          tipoCaixa,
-            descricao:     `[Obra: ${obraSel.nome}] ${formLanc.descricao}`,
-            valor,
-            categoria:     'Obras',
-            conta_id:      formLanc.conta_id,
-            forma_pgto:    'Outro',
-            obs:           `Obra: ${obraSel.nome} | Fonte: ${fonte.nome}`,
-            origem_tabela: 'obra_lancamentos',
-            origem_id:     lancId,
-          }).select().single()
-          if (caixaRow) {
-            await supabase.from('obra_lancamentos').update({ caixa_id: caixaRow.id }).eq('id', lancId)
-            const conta = contas.find(c => c.id === formLanc.conta_id)
-            if (conta) {
-              const novoSaldo = tipoCaixa === 'saida' ? Number(conta.saldo_atual || 0) - valor : Number(conta.saldo_atual || 0) + valor
-              await supabase.from('contas').update({ saldo_atual: novoSaldo }).eq('id', formLanc.conta_id)
-              setContas(prev => prev.map(c => c.id === formLanc.conta_id ? { ...c, saldo_atual: novoSaldo } : c))
-            }
-          }
-
-          // ── Receita com PIX/Espécie → gera C/R já quitado ─────────────────
-          // Garante rastreabilidade: aparece em Contas Recebidas vinculado à obra
-          if (formLanc.tipo === 'receita' && ['proprio', 'dinheiro_cliente'].includes(fonte.tipo)) {
-            await supabase.from('contas_receber').insert({
-              entidade_id:      entidadeAtiva?.id || null,
-              descricao:        `[Obra: ${obraSel.nome}] ${formLanc.descricao}`,
-              valor,
-              data_emissao:     formLanc.data_ref || today(),
-              vencimento:       formLanc.data_ref || today(),
-              data_recebimento: formLanc.data_ref || today(),
-              recebido:         true,
-              ativo:            true,
-              bloqueado:        false,
-              pessoa_id:        obraSel.cliente_id || null,
-              obs:              `Recebimento via ${fonte.nome} | Obra: ${obraSel.nome}`,
-              origem_tabela:    'obra_lancamentos',
-              origem_id:        lancId,
-              categoria:        'Obras',
-              forma_pgto:       fonte.nome,
-              conta_id:         formLanc.conta_id || null,
-            })
-          }
+        // ── Novo lançamento ──────────────────────────────────────────────────
+        if (moveCaixa) {
+          const { data: caixaRow, error } = await supabase.from('caixa').insert(payloadCaixa).select().single()
+          if (error) { toast(error.message, 'error'); setSavingLanc(false); return }
+          if (caixaRow) await ajustaSaldo(formLanc.conta_id, tipoCaixa === 'entrada' ? valor : -valor)
+        } else {
+          const { error } = await supabase.from('obra_lancamentos').insert(sanitize({ ...payloadInformativo, entidade_id: entidadeAtiva?.id || null }))
+          if (error) { toast(error.message, 'error'); setSavingLanc(false); return }
         }
       }
 
@@ -479,23 +459,39 @@ export default function Obras() {
 
   async function destroyLanc() {
     const lanc = deletingLanc
-    // Se tinha caixa vinculado, reverte
-    if (lanc.caixa_id) {
-      const { data: caixaRow } = await supabase.from('caixa').select('valor,tipo,conta_id').eq('id', lanc.caixa_id).single()
-      if (caixaRow) {
-        await supabase.from('caixa').delete().eq('id', lanc.caixa_id)
-        // Reverte saldo da conta
-        const conta = contas.find(c => c.id === caixaRow.conta_id)
-        if (conta) {
-          const delta = caixaRow.tipo === 'saida' ? Number(caixaRow.valor) : -Number(caixaRow.valor)
-          const novoSaldo = Number(conta.saldo_atual || 0) + delta
-          await supabase.from('contas').update({ saldo_atual: novoSaldo }).eq('id', caixaRow.conta_id)
-          setContas(prev => prev.map(c => c.id === caixaRow.conta_id ? { ...c, saldo_atual: novoSaldo } : c))
+
+    if (lanc._origem === 'caixa') {
+      // ── É uma linha real de Caixa — reverte o saldo antes de excluir ──────
+      if (lanc.conta_id) {
+        const { data: ct } = await supabase.from('contas').select('saldo_atual').eq('id', lanc.conta_id).single()
+        if (ct) {
+          const delta = lanc.tipo === 'receita' ? -Number(lanc.valor) : Number(lanc.valor)
+          const novoSaldo = Number(ct.saldo_atual || 0) + delta
+          await supabase.from('contas').update({ saldo_atual: novoSaldo }).eq('id', lanc.conta_id)
+          setContas(prev => prev.map(c => c.id === lanc.conta_id ? { ...c, saldo_atual: novoSaldo } : c))
         }
       }
+      await supabase.from('caixa').delete().eq('id', lanc.id)
+    } else {
+      // ── Anotação informativa (ou registro histórico ainda não migrado) ────
+      // Mantém o fallback antigo por segurança — cobre casos legados com caixa_id
+      if (lanc.caixa_id) {
+        const { data: caixaRow } = await supabase.from('caixa').select('valor,tipo,conta_id').eq('id', lanc.caixa_id).single()
+        if (caixaRow) {
+          await supabase.from('caixa').delete().eq('id', lanc.caixa_id)
+          const conta = contas.find(c => c.id === caixaRow.conta_id)
+          if (conta) {
+            const delta = caixaRow.tipo === 'saida' ? Number(caixaRow.valor) : -Number(caixaRow.valor)
+            const novoSaldo = Number(conta.saldo_atual || 0) + delta
+            await supabase.from('contas').update({ saldo_atual: novoSaldo }).eq('id', caixaRow.conta_id)
+            setContas(prev => prev.map(c => c.id === caixaRow.conta_id ? { ...c, saldo_atual: novoSaldo } : c))
+          }
+        }
+      }
+      await supabase.from('obra_lancamentos').delete().eq('id', lanc.id)
     }
-    await supabase.from('obra_lancamentos').delete().eq('id', lanc.id)
-    toast('Excluído', 'success'); setDeletingLanc(null); load()
+
+    toast('Excluído — saldo ajustado', 'success'); setDeletingLanc(null); load()
   }
 
   const f  = (k, v) => setForm(p => ({ ...p, [k]: v }))
