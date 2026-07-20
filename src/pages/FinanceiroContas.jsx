@@ -175,6 +175,9 @@ export default function FinanceiroContas({ module }) {
     }
 
     const valorTotal = valor
+    // Principal do pagamento (sem encargos) — é o que abate da dívida e vai ao caixa
+    // Total: principal = saldo | Parcial: principal = valor pago - juros - multa + desconto
+    const principal = Number((valor - juros - multa + desconto).toFixed(2))
 
     // Registra pagamento parcial
     const { error: e1 } = await supabase.from('pagamentos_parciais').insert({entidade_id: entidadeAtiva?.id || null,
@@ -197,7 +200,7 @@ export default function FinanceiroContas({ module }) {
       data: pgtoForm.data,
       tipo,
       descricao: `${cfg.pagoLabel}: ${row.descricao}`,
-      valor: saldo,  // ← valor original, não o valor pago com encargos
+      valor: principal,  // ← principal do pagamento (parcial ou total), sem encargos
       categoria: pgtoForm.categoria || (cfg.table === 'contas_receber' ? 'Recebimento' : 'Pagamento'),
       obs: pgtoForm.obs || null,
     }
@@ -240,7 +243,7 @@ export default function FinanceiroContas({ module }) {
     if (pgtoForm.conta_id) {
       const { data: contaData } = await supabase.from('contas').select('saldo_atual').eq('id', pgtoForm.conta_id).single()
       if (contaData) {
-        const novoSaldo = Number(contaData.saldo_atual || 0) + (tipo === 'entrada' ? saldo : -valor)
+        const novoSaldo = Number(contaData.saldo_atual || 0) + (tipo === 'entrada' ? principal : -valor)
         await supabase.from('contas').update({ saldo_atual: novoSaldo }).eq('id', pgtoForm.conta_id)
       }
     }
