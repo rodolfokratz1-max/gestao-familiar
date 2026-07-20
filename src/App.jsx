@@ -239,6 +239,8 @@ export default function App() {
   // Detecta portal público pelo parâmetro ?obra=TOKEN na URL
   const params = new URLSearchParams(window.location.search)
   const obraToken = params.get('obra')
+  const clienteToken = params.get('cliente')
+  if (clienteToken) return <PortalCliente clienteToken={clienteToken} />
   if (obraToken) return <PortalCliente token={obraToken} />
 
   return (
