@@ -311,6 +311,16 @@ export default function PortalCliente({ token, clienteToken }) {
                             {l.obs}
                           </div>
                         )}
+                        {/* Itens detalhados (materiais) */}
+                        {Array.isArray(l.itens) && l.itens.length > 0 && (
+                          <ul style={{ margin:'6px 0 0', paddingLeft:16, fontSize:11, color:'#666' }}>
+                            {l.itens.map((it, ii) => (
+                              <li key={ii} style={{ marginBottom:2 }}>
+                                {it.quantidade}x {it.descricao} — {fmt(it.valor_unitario)}/un = {fmt(it.valor_total)}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
                         {/* Fotos do lançamento */}
                         {fotos.length > 0 && (
                           <div style={{ display:'flex', gap:6, marginTop:8, flexWrap:'wrap' }}>

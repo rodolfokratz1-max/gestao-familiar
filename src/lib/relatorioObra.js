@@ -15,7 +15,7 @@ const fmtD = dt => {
   return d.toLocaleDateString('pt-BR')
 }
 
-export function imprimirRelatorioObra({ obra, lancamentos = [], etapas = [], empresa = null }) {
+export function imprimirRelatorioObra({ obra, lancamentos = [], etapas = [], empresa = null, itensPorLancamento = {} }) {
   // ── Cálculos ──────────────────────────────────────────────────────────────
   const despesas  = lancamentos.filter(l => l.tipo === 'despesa')
   const receitas  = lancamentos.filter(l => l.tipo === 'receita')
@@ -153,7 +153,13 @@ export function imprimirRelatorioObra({ obra, lancamentos = [], etapas = [], emp
           <tr>
             <td class="data">${fmtD(l.data_ref)}</td>
             <td><span class="badge ${l.tipo === 'despesa' ? 'badge-neg' : 'badge-pos'}">${l.tipo === 'despesa' ? 'Despesa' : 'Receita'}</span></td>
-            <td>${l.descricao}${l.obs ? `<br><span class="obs">${l.obs}</span>` : ''}</td>
+            <td>${l.descricao}${l.obs ? `<br><span class="obs">${l.obs}</span>` : ''}${
+              (itensPorLancamento[l.id] && itensPorLancamento[l.id].length > 0)
+                ? '<ul class="itens-lista">' + itensPorLancamento[l.id].map(it =>
+                    `<li>${it.quantidade}x ${it.descricao} — ${fmt(it.valor_unitario)}/un = ${fmt(it.valor_total)}${it.desconta_estoque ? ' <span class="tag-estoque">estoque</span>' : ''}</li>`
+                  ).join('') + '</ul>'
+                : ''
+            }</td>
             <td class="fonte">${l.pago_por || '—'}</td>
             <td class="centro">${l.reembolsavel ? '♻' : '—'}</td>
             <td class="num ${l.tipo === 'despesa' ? 'neg' : 'pos'}">${l.tipo === 'despesa' ? '−' : '+'} ${fmt(l.valor)}</td>
@@ -294,6 +300,9 @@ export function imprimirRelatorioObra({ obra, lancamentos = [], etapas = [], emp
     .badge-neg { background: #fee2e2; color: #b91c1c }
     .badge-pos { background: #dcfce7; color: #15803d }
     .obs { font-size: 10px; color: #94a3b8; font-style: italic }
+    .itens-lista { margin: 4px 0 0; padding-left: 16px; font-size: 10px; color: #64748b }
+    .itens-lista li { margin-bottom: 2px }
+    .tag-estoque { font-size: 8px; background: #e0e7ff; color: #4338ca; padding: 1px 5px; border-radius: 8px; margin-left: 4px }
     .data  { white-space: nowrap; color: #64748b }
     .fonte { color: #64748b; font-size: 11px }
     .centro { text-align: center }

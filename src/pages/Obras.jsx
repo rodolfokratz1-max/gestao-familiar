@@ -46,6 +46,7 @@ export default function Obras() {
   const [lancamentosMap, setLancamentosMap] = useState({})
   const [clientes, setClientes]             = useState([])
   const [fontes, setFontes]                 = useState([])
+  const [produtos, setProdutos]             = useState([])
   const [contas, setContas]                 = useState([])
   const [empresa, setEmpresa]               = useState(null)
   const [etapasMap, setEtapasMap]           = useState({})  // { obra_id: [etapas] }
@@ -77,6 +78,8 @@ export default function Obras() {
   const [editingLanc, setEditingLanc] = useState(null)
   const [deletingLanc, setDeletingLanc] = useState(null)
   const [savingLanc, setSavingLanc]   = useState(false)
+  const [usarItens, setUsarItens]     = useState(false)
+  const [formItens, setFormItens]     = useState([]) // [{id, produto_id, descricao, quantidade, valor_unitario, desconta_estoque}]
   const [fotoModal, setFotoModal]     = useState(null)  // string | string[]
   const [fotoIdx, setFotoIdx]           = useState(0)
 
@@ -95,6 +98,8 @@ export default function Obras() {
       .then(({ data }) => setFontes(data || []))
     supabase.from('contas').select('id,nome,saldo_atual').eq('ativo', true).eq('entidade_id', entidadeAtiva?.id).order('nome')
       .then(({ data }) => setContas(data || []))
+    supabase.from('produtos').select('id,nome,unidade,preco_custo,estoque').eq('ativo', true).eq('tipo', 'produto').eq('entidade_id', entidadeAtiva?.id).order('nome')
+      .then(({ data }) => setProdutos(data || []))
     supabase.from('entidades').select('*').eq('id', entidadeAtiva?.id).single()
       .then(({ data }) => setEmpresa(data || null))
   }, [entidadeAtiva?.id])
@@ -291,7 +296,7 @@ export default function Obras() {
 
   // ── LANÇAMENTOS ─────────────────────────────────────────────────────────────
 
-  function openNewLanc()   { setFormLanc({ ...EMPTY_LANC }); setEditingLanc(null); setModalLanc(true) }
+  function openNewLanc()   { setFormLanc({ ...EMPTY_LANC }); setEditingLanc(null); setUsarItens(false); setFormItens([]); setModalLanc(true) }
   // Quando fonte muda no formulário, pré-preenche conta sugerida
   function onFonteChange(fonteId) {
     const fonte = fontes.find(f => f.id === fonteId)
@@ -325,11 +330,49 @@ export default function Obras() {
       }
     })
   }
-  function openEditLanc(l) {
+  async function openEditLanc(l) {
     setFormLanc({ ...l, imagens_url: Array.isArray(l.imagens_url) ? l.imagens_url : (l.imagens_url ? [l.imagens_url] : []) })
     setEditingLanc(l.id)
     setModalLanc(true)
+    // Carrega itens estruturados já existentes deste lançamento (se houver)
+    const { data: itens } = await supabase
+      .from('obra_lancamento_itens')
+      .select('*')
+      .eq('origem_tabela', l._origem || 'obra_lancamentos')
+      .eq('origem_id', l.id)
+    if (itens && itens.length > 0) {
+      setUsarItens(true)
+      setFormItens(itens.map(it => ({
+        id: it.id, produto_id: it.produto_id || '', descricao: it.descricao,
+        quantidade: it.quantidade, valor_unitario: it.valor_unitario, desconta_estoque: it.desconta_estoque,
+      })))
+    } else {
+      setUsarItens(false)
+      setFormItens([])
+    }
   }
+
+  // ── Itens estruturados do lançamento (materiais) ────────────────────────────
+  function addItem() {
+    setFormItens(prev => [...prev, {
+      id: null, produto_id: '', descricao: '', quantidade: 1, valor_unitario: 0, desconta_estoque: false,
+    }])
+  }
+  function removeItem(idx) {
+    setFormItens(prev => prev.filter((_, i) => i !== idx))
+  }
+  function updateItem(idx, patch) {
+    setFormItens(prev => prev.map((it, i) => i === idx ? { ...it, ...patch } : it))
+  }
+  function onProdutoItemChange(idx, produtoId) {
+    const p = produtos.find(x => x.id === produtoId)
+    updateItem(idx, {
+      produto_id: produtoId,
+      descricao: p ? p.nome : '',
+      valor_unitario: p ? Number(p.preco_custo || 0) : 0,
+    })
+  }
+  const totalItens = formItens.reduce((s, it) => s + (Number(it.quantidade || 0) * Number(it.valor_unitario || 0)), 0)
 
   // Retorna a fonte selecionada no formulário
   const fonteAtual = fontes.find(f => f.id === formLanc.fonte_id)
@@ -337,11 +380,20 @@ export default function Obras() {
   async function saveLanc() {
     if (!entidadeAtiva?.id) return toast('Selecione uma entidade antes de salvar', 'error')
     if (!formLanc.descricao?.trim()) return toast('Descrição obrigatória', 'error')
-    if (!formLanc.valor || Number(formLanc.valor) <= 0) return toast('Valor deve ser maior que zero', 'error')
+    if (usarItens) {
+      if (formItens.length === 0) return toast('Adicione pelo menos um item', 'error')
+      for (const it of formItens) {
+        if (it.desconta_estoque && !it.produto_id) return toast('Selecione o produto de cada item com desconto de estoque', 'error')
+        if (!it.desconta_estoque && !it.descricao?.trim()) return toast('Descreva cada item que não desconta do estoque', 'error')
+        if (!Number(it.quantidade) || Number(it.quantidade) <= 0) return toast('Quantidade inválida em algum item', 'error')
+      }
+    } else {
+      if (!formLanc.valor || Number(formLanc.valor) <= 0) return toast('Valor deve ser maior que zero', 'error')
+    }
 
     setSavingLanc(true)
     try {
-      const valor = Number(String(formLanc.valor).replace(',', '.'))
+      const valor = usarItens ? Number(totalItens.toFixed(2)) : Number(String(formLanc.valor).replace(',', '.'))
       const fonte = fontes.find(f => f.id === formLanc.fonte_id)
 
       // Fecha o buraco antigo: fonte que movimenta caixa exige conta selecionada,
@@ -398,8 +450,45 @@ export default function Obras() {
         }
       }
 
+      async function ajustaEstoque(produtoId, delta) {
+        if (!produtoId) return
+        const { data: p } = await supabase.from('produtos').select('estoque').eq('id', produtoId).single()
+        if (p) await supabase.from('produtos').update({ estoque: Number(p.estoque || 0) + delta }).eq('id', produtoId)
+      }
+
+      // Remove os itens antigos deste lançamento (se houver) e devolve o estoque descontado
+      async function limpaItensAntigos(origemTabela, origemId) {
+        const { data: antigos } = await supabase.from('obra_lancamento_itens').select('*')
+          .eq('origem_tabela', origemTabela).eq('origem_id', origemId)
+        for (const it of (antigos || [])) {
+          if (it.desconta_estoque && it.produto_id) await ajustaEstoque(it.produto_id, Number(it.quantidade))
+        }
+        await supabase.from('obra_lancamento_itens').delete().eq('origem_tabela', origemTabela).eq('origem_id', origemId)
+      }
+
+      // Grava os itens novos (se usarItens) e desconta o estoque
+      async function gravaItensNovos(origemTabela, origemId) {
+        if (!usarItens || !origemId) return
+        for (const it of formItens) {
+          const qtde = Number(it.quantidade || 0)
+          const unit = Number(it.valor_unitario || 0)
+          await supabase.from('obra_lancamento_itens').insert({
+            origem_tabela: origemTabela, origem_id: origemId,
+            produto_id: it.desconta_estoque ? (it.produto_id || null) : null,
+            descricao: it.descricao || (produtos.find(p => p.id === it.produto_id)?.nome) || '',
+            quantidade: qtde, valor_unitario: unit, valor_total: qtde * unit,
+            desconta_estoque: !!it.desconta_estoque, entidade_id: entidadeAtiva?.id || null,
+          })
+          if (it.desconta_estoque && it.produto_id) await ajustaEstoque(it.produto_id, -qtde)
+        }
+      }
+
+      let novoOrigemTabela = null, novoOrigemId = null
+
       if (editingLanc) {
         const anterior = Object.values(lancamentosMap).flat().find(l => l.id === editingLanc)
+        // Sempre limpa os itens antigos primeiro — devolve estoque e evita duplicar
+        await limpaItensAntigos(anterior?._origem || 'obra_lancamentos', editingLanc)
 
         if (anterior?._origem === 'caixa') {
           // ── Editando uma linha real de Caixa ──────────────────────────────
@@ -412,13 +501,15 @@ export default function Obras() {
             await ajustaSaldo(anterior.conta_id, deltaReverso)
             const deltaNovo = tipoCaixa === 'entrada' ? valor : -valor
             await ajustaSaldo(formLanc.conta_id, deltaNovo)
+            novoOrigemTabela = 'caixa'; novoOrigemId = editingLanc
           } else {
             // Mudou para fonte informativa: sai do Caixa e vira anotação
             const deltaReverso = anterior.tipo === 'receita' ? -Number(anterior.valor) : Number(anterior.valor)
             await ajustaSaldo(anterior.conta_id, deltaReverso)
             await supabase.from('caixa').delete().eq('id', editingLanc)
-            const { error } = await supabase.from('obra_lancamentos').insert(sanitize({ ...payloadInformativo, entidade_id: entidadeAtiva?.id || null }))
+            const { data: novaAnotacao, error } = await supabase.from('obra_lancamentos').insert(sanitize({ ...payloadInformativo, entidade_id: entidadeAtiva?.id || null })).select().single()
             if (error) { toast(error.message, 'error'); setSavingLanc(false); return }
+            novoOrigemTabela = 'obra_lancamentos'; novoOrigemId = novaAnotacao?.id
           }
         } else {
           // ── Editando uma anotação informativa (ou registro histórico) ─────
@@ -428,10 +519,12 @@ export default function Obras() {
             const { data: caixaRow, error } = await supabase.from('caixa').insert(payloadCaixa).select().single()
             if (error) { toast(error.message, 'error'); setSavingLanc(false); return }
             if (caixaRow) await ajustaSaldo(formLanc.conta_id, tipoCaixa === 'entrada' ? valor : -valor)
+            novoOrigemTabela = 'caixa'; novoOrigemId = caixaRow?.id
           } else {
             // Continua informativa: update simples
             const { error } = await supabase.from('obra_lancamentos').update(payloadInformativo).eq('id', editingLanc)
             if (error) { toast(error.message, 'error'); setSavingLanc(false); return }
+            novoOrigemTabela = 'obra_lancamentos'; novoOrigemId = editingLanc
           }
         }
 
@@ -441,11 +534,16 @@ export default function Obras() {
           const { data: caixaRow, error } = await supabase.from('caixa').insert(payloadCaixa).select().single()
           if (error) { toast(error.message, 'error'); setSavingLanc(false); return }
           if (caixaRow) await ajustaSaldo(formLanc.conta_id, tipoCaixa === 'entrada' ? valor : -valor)
+          novoOrigemTabela = 'caixa'; novoOrigemId = caixaRow?.id
         } else {
-          const { error } = await supabase.from('obra_lancamentos').insert(sanitize({ ...payloadInformativo, entidade_id: entidadeAtiva?.id || null }))
+          const { data: novaAnotacao, error } = await supabase.from('obra_lancamentos').insert(sanitize({ ...payloadInformativo, entidade_id: entidadeAtiva?.id || null })).select().single()
           if (error) { toast(error.message, 'error'); setSavingLanc(false); return }
+          novoOrigemTabela = 'obra_lancamentos'; novoOrigemId = novaAnotacao?.id
         }
       }
+
+      // Sincroniza os itens estruturados (materiais) no lançamento recém salvo
+      await gravaItensNovos(novoOrigemTabela, novoOrigemId)
 
       toast('Lançamento salvo!', 'success')
       setModalLanc(false)
@@ -459,6 +557,18 @@ export default function Obras() {
 
   async function destroyLanc() {
     const lanc = deletingLanc
+
+    // Remove os itens estruturados vinculados e devolve o estoque descontado
+    const origemTabelaItens = lanc._origem || 'obra_lancamentos'
+    const { data: itensLigados } = await supabase.from('obra_lancamento_itens').select('*')
+      .eq('origem_tabela', origemTabelaItens).eq('origem_id', lanc.id)
+    for (const it of (itensLigados || [])) {
+      if (it.desconta_estoque && it.produto_id) {
+        const { data: p } = await supabase.from('produtos').select('estoque').eq('id', it.produto_id).single()
+        if (p) await supabase.from('produtos').update({ estoque: Number(p.estoque || 0) + Number(it.quantidade) }).eq('id', it.produto_id)
+      }
+    }
+    await supabase.from('obra_lancamento_itens').delete().eq('origem_tabela', origemTabelaItens).eq('origem_id', lanc.id)
 
     if (lanc._origem === 'caixa') {
       // ── É uma linha real de Caixa — reverte o saldo antes de excluir ──────
@@ -698,14 +808,75 @@ export default function Obras() {
             </div>
             <div className="form-group">
               <label className="form-label">Valor (R$) *</label>
-              <input className="form-input" type="number" step="0.01" value={formLanc.valor}
-                onChange={e => fl('valor', e.target.value)} placeholder="0,00" />
+              <input className="form-input" type="number" step="0.01"
+                value={usarItens ? totalItens.toFixed(2) : formLanc.valor}
+                readOnly={usarItens}
+                onChange={e => fl('valor', e.target.value)} placeholder="0,00"
+                style={usarItens ? { background: 'var(--bg3)', color: 'var(--text2)' } : {}} />
+              {usarItens && <div style={{ marginTop: 4, fontSize: 11, color: 'var(--text3)' }}>Soma automática dos itens abaixo</div>}
             </div>
             <div className="form-group" style={{ gridColumn: '1/-1' }}>
               <label className="form-label">Descrição *</label>
               <input className="form-input" value={formLanc.descricao} onChange={e => fl('descricao', e.target.value)}
                 placeholder="Ex: Material elétrico, Mão de obra..." autoFocus />
             </div>
+
+            {formLanc.tipo === 'despesa' && (
+              <div className="form-group" style={{ gridColumn: '1/-1' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
+                  <input type="checkbox" checked={usarItens}
+                    onChange={e => { setUsarItens(e.target.checked); if (e.target.checked && formItens.length === 0) addItem() }}
+                    style={{ width: 15, height: 15 }} />
+                  Detalhar itens (materiais comprados)
+                </label>
+              </div>
+            )}
+
+            {usarItens && (
+              <div className="form-group" style={{ gridColumn: '1/-1' }}>
+                <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+                  {formItens.map((it, idx) => (
+                    <div key={idx} style={{ padding: 10, borderBottom: idx < formItens.length - 1 ? '1px solid var(--border)' : 'none', background: 'var(--bg2)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, flex: 1 }}>
+                          <input type="checkbox" checked={it.desconta_estoque}
+                            onChange={e => updateItem(idx, { desconta_estoque: e.target.checked, produto_id: e.target.checked ? it.produto_id : '', descricao: e.target.checked ? it.descricao : '' })}
+                            style={{ width: 14, height: 14 }} />
+                          Descontar do estoque
+                        </label>
+                        <button type="button" className="icon-btn del" onClick={() => removeItem(idx)}><Trash2 size={13} /></button>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: it.desconta_estoque ? '2fr 1fr 1fr 1fr' : '2fr 1fr 1fr 1fr', gap: 8 }}>
+                        {it.desconta_estoque ? (
+                          <select className="form-select" style={{ fontSize: 12 }} value={it.produto_id}
+                            onChange={e => onProdutoItemChange(idx, e.target.value)}>
+                            <option value="">Selecionar produto...</option>
+                            {produtos.map(p => <option key={p.id} value={p.id}>{p.nome} ({p.estoque || 0} {p.unidade})</option>)}
+                          </select>
+                        ) : (
+                          <input className="form-input" style={{ fontSize: 12 }} value={it.descricao}
+                            onChange={e => updateItem(idx, { descricao: e.target.value })}
+                            placeholder="Descrição (compra avulsa)" />
+                        )}
+                        <input className="form-input" style={{ fontSize: 12 }} type="number" step="0.01" min="0" value={it.quantidade}
+                          onChange={e => updateItem(idx, { quantidade: e.target.value })} placeholder="Qtde" />
+                        <input className="form-input" style={{ fontSize: 12 }} type="number" step="0.01" min="0" value={it.valor_unitario}
+                          onChange={e => updateItem(idx, { valor_unitario: e.target.value })} placeholder="Unit." />
+                        <div style={{ display: 'flex', alignItems: 'center', fontSize: 12, fontWeight: 600, fontFamily: 'monospace' }}>
+                          {fmt(Number(it.quantidade || 0) * Number(it.valor_unitario || 0))}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 8 }} onClick={addItem}>
+                  <Plus size={13} /> Adicionar item
+                </button>
+                <div style={{ marginTop: 8, textAlign: 'right', fontSize: 13, fontWeight: 700 }}>
+                  Total: <span style={{ fontFamily: 'monospace' }}>{fmt(totalItens)}</span>
+                </div>
+              </div>
+            )}
             <div className="form-group">
               <label className="form-label">Fonte de Pagamento</label>
               <select className="form-select" value={formLanc.fonte_id} onChange={e => onFonteChange(e.target.value)}>
@@ -945,7 +1116,18 @@ function PainelDetalhe({ obra, lancs, etapas, fontes, empresa, tab, onTab, onNew
           )}
           <button
             className="btn btn-secondary btn-sm"
-            onClick={() => imprimirRelatorioObra({ obra, lancamentos: lancs, etapas, empresa })}
+            onClick={async () => {
+              const ids = lancs.map(l => l.id)
+              const { data: itens } = ids.length > 0
+                ? await supabase.from('obra_lancamento_itens').select('*').in('origem_id', ids)
+                : { data: [] }
+              const itensPorLancamento = {}
+              for (const it of (itens || [])) {
+                if (!itensPorLancamento[it.origem_id]) itensPorLancamento[it.origem_id] = []
+                itensPorLancamento[it.origem_id].push(it)
+              }
+              imprimirRelatorioObra({ obra, lancamentos: lancs, etapas, empresa, itensPorLancamento })
+            }}
             title="Imprimir / Salvar PDF"
             style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             🖨️ Imprimir
