@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useToast } from '../contexts/ToastContext'
 import { useEntidade } from '../contexts/EntidadeContext'
 import ConfirmDialog from '../components/ConfirmDialog'
-import { Plus, Search, Pencil, Trash2, ArrowUpCircle, ArrowDownCircle, ArrowLeftRight, X, Landmark } from 'lucide-react'
+import { Plus, Search, Pencil, Trash2, ArrowUpCircle, ArrowDownCircle, ArrowLeftRight, X, Landmark, Lock } from 'lucide-react'
 import { today } from '../lib/utils.js'
 
 const fmt = v => 'R$ ' + Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2})
@@ -52,7 +52,18 @@ export default function Caixa() {
     setLoading(false)
   }
 
+  const ORIGEM_LABELS = {
+    receitas:          'Receitas',
+    despesas:          'Despesas',
+    contas_receber:    'Contas a Receber',
+    contas_pagar:      'Contas a Pagar',
+    obra_lancamentos:  'Obras',
+    faturas_cartao:    'Cartões (fatura)',
+    servico_lancamento:'Serviço Recorrente',
+  }
   const isTransferencia = r => r.categoria === 'Transferência' || r.origem_tabela === 'transferencia'
+  const isVinculado      = r => !!r.origem_tabela && r.origem_tabela !== 'transferencia'
+  const isManual         = r => !r.origem_tabela
 
   const filtered = rows.filter(r => {
     const q = search.toLowerCase()
@@ -92,17 +103,19 @@ export default function Caixa() {
     const saldoOrig = Number(origData.saldo_atual||0)
     if (saldoOrig < v) return toast(`Saldo insuficiente em "${origData.nome}". Disponível: ${fmt(saldoOrig)}`,'error')
 
+    const parId = crypto.randomUUID() // une as duas pernas — permite estornar as duas juntas com segurança
+
     const { error: e1 } = await supabase.from('caixa').insert({entidade_id: entidadeAtiva?.id || null,
       data, tipo:'saida', valor:v, categoria:'Transferência',
       descricao:`${descricao} → ${destData.nome}`,
-      conta_id:contaOrigem, obs:obs||null, origem_tabela:'transferencia',
+      conta_id:contaOrigem, obs:obs||null, origem_tabela:'transferencia', transferencia_par_id: parId,
     })
     if (e1) return toast('Erro ao lançar saída: '+e1.message,'error')
 
     const { error: e2 } = await supabase.from('caixa').insert({entidade_id: entidadeAtiva?.id || null,
       data, tipo:'entrada', valor:v, categoria:'Transferência',
       descricao:`${descricao} ← ${origData.nome}`,
-      conta_id:contaDestino, obs:obs||null, origem_tabela:'transferencia',
+      conta_id:contaDestino, obs:obs||null, origem_tabela:'transferencia', transferencia_par_id: parId,
     })
     if (e2) return toast('Erro ao lançar entrada: '+e2.message,'error')
 
@@ -138,7 +151,32 @@ export default function Caixa() {
 
     let error
     if (editingLanc) {
-      ({ error } = await supabase.from('caixa').update(payload).eq('id',editingLanc))
+      const anterior = rows.find(r => r.id === editingLanc)
+      // Defesa extra: mesmo que o botão de editar tenha sido burlado, nunca edita vinculado/transferência
+      if (anterior && (isVinculado(anterior) || isTransferencia(anterior))) {
+        toast('Este lançamento não pode ser editado diretamente aqui.', 'error')
+        return
+      }
+
+      ;({ error } = await supabase.from('caixa').update(payload).eq('id',editingLanc))
+      if (error) { toast(error.message,'error'); return }
+
+      // Reconcilia o saldo: reverte o efeito antigo e aplica o novo
+      // (cobre também troca de conta, de tipo, ou de valor)
+      if (anterior?.conta_id) {
+        const { data: ctAnt } = await supabase.from('contas').select('saldo_atual').eq('id', anterior.conta_id).single()
+        if (ctAnt) {
+          const deltaReverso = anterior.tipo === 'entrada' ? -Number(anterior.valor) : Number(anterior.valor)
+          await supabase.from('contas').update({ saldo_atual: Number(ctAnt.saldo_atual || 0) + deltaReverso }).eq('id', anterior.conta_id)
+        }
+      }
+      if (formLanc.conta_id) {
+        const { data: ctNovo } = await supabase.from('contas').select('saldo_atual').eq('id', formLanc.conta_id).single()
+        if (ctNovo) {
+          const deltaNovo = formLanc.tipo === 'entrada' ? Number(formLanc.valor) : -Number(formLanc.valor)
+          await supabase.from('contas').update({ saldo_atual: Number(ctNovo.saldo_atual || 0) + deltaNovo }).eq('id', formLanc.conta_id)
+        }
+      }
     } else {
       const { error: eIns } = await supabase.from('caixa').insert(sanitize({...payload, entidade_id: entidadeAtiva?.id || null}))
       error = eIns
@@ -158,8 +196,60 @@ export default function Caixa() {
   }
 
   async function destroy() {
-    await supabase.from('caixa').delete().eq('id',deleting.id)
-    toast('Excluído','success'); setDeleting(null); load()
+    const r = deleting
+
+    if (isTransferencia(r)) {
+      // Estorna as DUAS pernas juntas — nunca mexe em só um lado
+      if (!r.transferencia_par_id) {
+        toast('Esta transferência é antiga e não tem par identificado — não pode ser estornada automaticamente com segurança. Ajuste os saldos manualmente se necessário.', 'error')
+        setDeleting(null); return
+      }
+      const { data: pares } = await supabase.from('caixa').select('*').eq('transferencia_par_id', r.transferencia_par_id)
+      for (const perna of (pares || [])) {
+        if (!perna.conta_id) continue
+        const { data: ct } = await supabase.from('contas').select('saldo_atual').eq('id', perna.conta_id).single()
+        if (ct) {
+          const delta = perna.tipo === 'entrada' ? -Number(perna.valor) : Number(perna.valor)
+          await supabase.from('contas').update({ saldo_atual: Number(ct.saldo_atual || 0) + delta }).eq('id', perna.conta_id)
+        }
+      }
+      await supabase.from('caixa').delete().eq('transferencia_par_id', r.transferencia_par_id)
+      toast('Transferência estornada — as duas contas foram ajustadas', 'success')
+      setDeleting(null); load(); return
+    }
+
+    // Lançamento manual (nascido no Caixa) — reverte o saldo antes de excluir
+    if (r.conta_id) {
+      const { data: ct } = await supabase.from('contas').select('saldo_atual').eq('id', r.conta_id).single()
+      if (ct) {
+        const delta = r.tipo === 'entrada' ? -Number(r.valor) : Number(r.valor)
+        await supabase.from('contas').update({ saldo_atual: Number(ct.saldo_atual || 0) + delta }).eq('id', r.conta_id)
+      }
+    }
+    await supabase.from('caixa').delete().eq('id', r.id)
+    toast('Excluído — saldo ajustado', 'success'); setDeleting(null); load()
+  }
+
+  // Intercepta o clique de excluir: vinculados a outro módulo nunca chegam a abrir a confirmação
+  function tentarExcluir(r) {
+    if (isVinculado(r)) {
+      toast(`Este lançamento foi criado a partir de ${ORIGEM_LABELS[r.origem_tabela] || r.origem_tabela}. Exclua por lá para manter os saldos corretos.`, 'error')
+      return
+    }
+    setDeleting(r)
+  }
+
+  // Intercepta o clique de editar: vinculados e transferências não editam aqui
+  function tentarEditar(r) {
+    if (isTransferencia(r)) {
+      toast('Transferências não podem ser editadas — exclua (estorna as duas contas) e lance novamente se precisar corrigir.', 'error')
+      return
+    }
+    if (isVinculado(r)) {
+      toast(`Este lançamento veio de ${ORIGEM_LABELS[r.origem_tabela] || r.origem_tabela}. Edite por lá para manter tudo sincronizado.`, 'error')
+      return
+    }
+    openEditLanc(r)
   }
 
   const tipoConfig = {
@@ -281,8 +371,25 @@ export default function Caixa() {
                         </td>
                         <td>
                           <div className="action-btns">
-                            <button className="icon-btn edit" onClick={()=>openEditLanc(r)}><Pencil size={14}/></button>
-                            <button className="icon-btn del"  onClick={()=>setDeleting(r)}><Trash2 size={14}/></button>
+                            {isVinculado(r) ? (
+                              <span title={`Editar/excluir em: ${ORIGEM_LABELS[r.origem_tabela] || r.origem_tabela}`}
+                                style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11, color:'var(--text3)' }}>
+                                <Lock size={11}/> {ORIGEM_LABELS[r.origem_tabela] || r.origem_tabela}
+                              </span>
+                            ) : isTransferencia(r) ? (
+                              <>
+                                <span title="Transferências não podem ser editadas — exclua para estornar as duas contas"
+                                  style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11, color:'var(--text3)', marginRight:4 }}>
+                                  <Lock size={11}/> Transferência
+                                </span>
+                                <button className="icon-btn del" title="Estornar transferência (ajusta as duas contas)" onClick={()=>tentarExcluir(r)}><Trash2 size={14}/></button>
+                              </>
+                            ) : (
+                              <>
+                                <button className="icon-btn edit" onClick={()=>tentarEditar(r)}><Pencil size={14}/></button>
+                                <button className="icon-btn del"  onClick={()=>tentarExcluir(r)}><Trash2 size={14}/></button>
+                              </>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -422,7 +529,13 @@ export default function Caixa() {
         </div>
       )}
 
-      {deleting && <ConfirmDialog message={`Excluir "${deleting.descricao}"?`} onConfirm={destroy} onCancel={()=>setDeleting(null)}/>}
+      {deleting && <ConfirmDialog
+        message={isTransferencia(deleting)
+          ? `Estornar a transferência "${deleting.descricao}"? As DUAS contas envolvidas serão ajustadas de volta.`
+          : `Excluir "${deleting.descricao}"? O saldo da conta será ajustado automaticamente.`}
+        confirmLabel={isTransferencia(deleting) ? 'Estornar' : 'Excluir'}
+        onConfirm={destroy}
+        onCancel={()=>setDeleting(null)}/>}
     </div>
   )
 }
