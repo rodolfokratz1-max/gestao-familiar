@@ -186,7 +186,8 @@ export default function Cartoes() {
 
     // Se veio de rotativo, encerra contabilmente a fatura antiga e liga as duas
     if (rotativoInfo) {
-      await rolarFaturaAnterior(rotativoInfo, fat.id)
+      const { error: eRol } = await rolarFaturaAnterior(rotativoInfo, fat.id, entidadeAtiva?.id || null)
+      if (eRol) { toast('Erro ao rolar fatura anterior: ' + eRol.message, 'error') }
     }
 
     const descricaoRotativo = rotativoInfo

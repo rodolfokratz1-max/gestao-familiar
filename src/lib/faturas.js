@@ -188,8 +188,9 @@ export async function verificarRotativo(cartaoId) {
 // da fatura antiga passa a ser zero nos cálculos existentes (que já são baseados
 // em valor - totalPagoRow, conforme FinanceiroContas.jsx), sem duplicar valor
 // quando somado junto com a fatura nova.
-export async function rolarFaturaAnterior({ faturaAnterior, contaPagar, saldo }, novaFaturaId) {
-  await supabase.from('pagamentos_parciais').insert({
+export async function rolarFaturaAnterior({ faturaAnterior, contaPagar, saldo }, novaFaturaId, entidadeId = null) {
+  const { error: e1 } = await supabase.from('pagamentos_parciais').insert({
+    entidade_id: entidadeId,
     tabela_origem: 'contas_pagar',
     origem_id: contaPagar.id,
     valor: saldo,
@@ -200,15 +201,20 @@ export async function rolarFaturaAnterior({ faturaAnterior, contaPagar, saldo },
     forma_pgto: 'Rolagem para próxima fatura',
     obs: 'Saldo não pago no vencimento — incorporado à fatura seguinte com juros do rotativo. Não representa saída de caixa.',
   })
+  if (e1) return { error: e1 }
 
   // Marca a conta a pagar como 'rolada' (não é vencida — foi incorporada na próxima fatura)
-  await supabase
+  const { error: e2 } = await supabase
     .from('contas_pagar')
     .update({ status: 'rolada' })
     .eq('id', contaPagar.id)
+  if (e2) return { error: e2 }
 
-  await supabase
+  const { error: e3 } = await supabase
     .from('faturas_cartao')
     .update({ status: 'rolada', rolada_para_fatura_id: novaFaturaId })
     .eq('id', faturaAnterior.id)
+  if (e3) return { error: e3 }
+
+  return { error: null }
 }

@@ -57,7 +57,7 @@ export default function FinanceiroContas({ module }) {
   const [filterStatus, setFilterStatus] = useState('')
   const [modal, setModal] = useState(false)
   const [modalPgto, setModalPgto] = useState(null) // row para pagamento parcial
-  const [pgtoForm, setPgtoForm] = useState({ valor: '', data: today(), forma_pgto: '', conta_id: '', obs: '', juros: '', multa: '', desconto: '' })
+  const [pgtoForm, setPgtoForm] = useState({ valor: '', data: today(), forma_pgto: '', conta_id: '', obs: '', juros: '', multa: '', desconto: '', parcial: false })
   const [form, setForm] = useState(emptyForm())
   const [editing, setEditing] = useState(null)
   const [deleting, setDeleting] = useState(null)
@@ -159,12 +159,19 @@ export default function FinanceiroContas({ module }) {
     const encargos = juros + multa - desconto
     const esperado = saldo + encargos
 
-    // Valor pago deve fechar com original + encargos (tolerância de 0.01 centavo)
-    if (Math.abs(valor - esperado) > 0.01) {
-      return toast(
-        `Valor não fecha: ${fmt(saldo)} + encargos (${fmt(encargos)}) = ${fmt(esperado)} esperado, mas foi informado ${fmt(valor)}`,
-        'error'
-      )
+    if (pgtoForm.parcial) {
+      // Pagamento parcial — aceita qualquer valor até o saldo + encargos
+      if (valor > esperado + 0.01) {
+        return toast(`Valor informado (${fmt(valor)}) é maior que o saldo (${fmt(esperado)})`, 'error')
+      }
+    } else {
+      // Pagamento total — valor deve fechar com original + encargos (tolerância de 0.01)
+      if (Math.abs(valor - esperado) > 0.01) {
+        return toast(
+          `Valor não fecha: ${fmt(saldo)} + encargos (${fmt(encargos)}) = ${fmt(esperado)} esperado, mas foi informado ${fmt(valor)}. Se for pagamento parcial, marque a opção.`,
+          'error'
+        )
+      }
     }
 
     const valorTotal = valor
@@ -362,12 +369,14 @@ export default function FinanceiroContas({ module }) {
                             {r.vencimento ? r.vencimento.split('-').reverse().join('/') : '—'}
                             {vencido && <span className="badge badge-red" style={{ marginLeft: 4 }}>Vencido</span>}
                           </td>
-                          <td><span className={`badge ${quitado ? 'badge-green' : pago > 0 ? 'badge-orange' : 'badge-yellow'}`}>
-                            {quitado ? cfg.pagoLabel : pago > 0 ? 'Parcial' : 'Pendente'}
-                          </span></td>
+                          <td>{r.status === 'rolada'
+                            ? <span className="badge badge-blue">🔁 Rolada</span>
+                            : <span className={`badge ${quitado ? 'badge-green' : pago > 0 ? 'badge-orange' : 'badge-yellow'}`}>
+                                {quitado ? cfg.pagoLabel : pago > 0 ? 'Parcial' : 'Pendente'}
+                              </span>}</td>
                           <td><div className="action-btns">
                             <button className="icon-btn edit" title="Editar" onClick={() => openEdit(r)}><Pencil size={14} /></button>
-                            {!quitado && <button className="icon-btn" style={{ color: 'var(--green)' }} title="Registrar pagamento" onClick={() => { setModalPgto(r); setPgtoForm({ valor: String(saldo.toFixed(2)), data: today(), forma_pgto: '', conta_id: '', obs: '', juros: '', multa: '', desconto: '' }) }}><CreditCard size={14} /></button>}
+                            {!quitado && r.status !== 'rolada' && <button className="icon-btn" style={{ color: 'var(--green)' }} title="Registrar pagamento" onClick={() => { setModalPgto(r); setPgtoForm({ valor: String(saldo.toFixed(2)), data: today(), forma_pgto: '', conta_id: '', obs: '', juros: '', multa: '', desconto: '' }) }}><CreditCard size={14} /></button>}
                             {quitado && cfg.tipo === 'receber' && <button className="icon-btn" style={{ color: 'var(--accent)' }} title="Gerar Recibo" onClick={() => handleRecibo(r)}><Receipt size={14} /></button>}
                             <button className="icon-btn toggle" onClick={() => toggleAtivo(r)}><Power size={14} /></button>
                             <button className="icon-btn del" onClick={() => setDeleting(r)}><Trash2 size={14} /></button>
@@ -517,10 +526,23 @@ export default function FinanceiroContas({ module }) {
                     style={{ background: 'var(--bg3)', color: 'var(--text2)', cursor: 'default' }} />
                 </div>
                 <div className="form-group">
+                  <label style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer', fontSize:13, marginBottom:8 }}>
+                    <input type="checkbox" checked={pgtoForm.parcial || false}
+                      onChange={e => {
+                        const parcial = e.target.checked
+                        setPgtoForm(p => parcial
+                          ? { ...p, parcial, juros: '', multa: '', desconto: '' }
+                          : { ...p, parcial })
+                      }}
+                      style={{ width:15, height:15 }} />
+                    <span style={{ fontWeight:600 }}>Pagamento parcial</span>
+                    <span style={{ fontSize:11, color:'var(--text3)' }}>(o saldo restante fica em aberto)</span>
+                  </label>
                   <label className="form-label">Valor pago *</label>
                   <input className="form-input" type="number" step="0.01" value={pgtoForm.valor}
                     onChange={e => setPgtoForm(p => ({ ...p, valor: e.target.value }))}
                     onBlur={e => {
+                      if (pgtoForm.parcial) return  // parcial: não auto-preenche encargos
                       const valorPago = Number(e.target.value) || 0
                       const saldo = saldoRow(modalPgto)
                       const diff = Number((valorPago - saldo).toFixed(2))
