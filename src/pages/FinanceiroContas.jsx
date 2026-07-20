@@ -61,6 +61,7 @@ export default function FinanceiroContas({ module }) {
   const [form, setForm] = useState(emptyForm())
   const [editing, setEditing] = useState(null)
   const [deleting, setDeleting] = useState(null)
+  const [estornando, setEstornando] = useState(null) // { pg, row } para estorno de pagamento
   const [expanded, setExpanded] = useState({})
 
   useEffect(() => {
@@ -327,6 +328,75 @@ export default function FinanceiroContas({ module }) {
     toast('Excluído', 'success'); setDeleting(null); load()
   }
 
+  // ── Estorno de pagamento ──────────────────────────────────────────────────
+  // Caminho inverso completo: contra-lançamento no caixa (não apaga o original),
+  // devolve o saldo na conta bancária e remove o pagamento. Deixa rastro contábil.
+  async function estornarPagamento() {
+    const { pg, row } = estornando
+    const juros    = Number(pg.juros    || 0)
+    const multa    = Number(pg.multa    || 0)
+    const desconto = Number(pg.desconto || 0)
+    const valorPg  = Number(pg.valor    || 0)
+    const principal = Number((valorPg - juros - multa + desconto).toFixed(2))
+    const tipoOriginal = cfg.table === 'contas_receber' ? 'entrada' : 'saida'
+    const tipoEstorno  = tipoOriginal === 'entrada' ? 'saida' : 'entrada'
+
+    // 1. Contra-lançamento do principal no caixa
+    const { error: eCx } = await supabase.from('caixa').insert({
+      entidade_id: entidadeAtiva?.id || null,
+      data: today(),
+      tipo: tipoEstorno,
+      descricao: `Estorno de pagamento: ${row.descricao}`,
+      valor: principal,
+      categoria: 'Estorno',
+      obs: `Estorno do pagamento de ${pg.data?.split('-').reverse().join('/')} (${fmt(valorPg)})${pg.forma_pgto ? ' — ' + pg.forma_pgto : ''}`,
+      origem_id: row.id,
+      origem_tabela: cfg.table,
+      ...(pg.conta_id ? { conta_id: pg.conta_id } : {}),
+    })
+    if (eCx) { toast('Erro ao lançar estorno no Caixa: ' + eCx.message, 'error'); setEstornando(null); return }
+
+    // 2. Contra-lançamento dos encargos (se houve juros/multa, foram lançados como saída)
+    if (juros > 0 || multa > 0) {
+      await supabase.from('caixa').insert({
+        entidade_id: entidadeAtiva?.id || null,
+        data: today(),
+        tipo: 'entrada',
+        descricao: `Estorno de encargos: ${row.descricao}`,
+        valor: juros + multa,
+        categoria: 'Estorno',
+        obs: 'Estorno de juros/multa do pagamento estornado',
+        origem_id: row.id,
+        origem_tabela: cfg.table,
+        ...(pg.conta_id ? { conta_id: pg.conta_id } : {}),
+      })
+    }
+
+    // 3. Devolve o saldo na conta bancária (inverso do débito original)
+    if (pg.conta_id) {
+      const { data: contaData } = await supabase.from('contas').select('saldo_atual').eq('id', pg.conta_id).single()
+      if (contaData) {
+        const ajuste = tipoOriginal === 'entrada' ? -principal : valorPg
+        await supabase.from('contas').update({ saldo_atual: Number(contaData.saldo_atual || 0) + ajuste }).eq('id', pg.conta_id)
+      }
+    }
+
+    // 4. Remove o pagamento parcial
+    const { error: eDel } = await supabase.from('pagamentos_parciais').delete().eq('id', pg.id)
+    if (eDel) { toast('Erro ao remover pagamento: ' + eDel.message, 'error'); setEstornando(null); return }
+
+    // 5. Se a conta estava quitada, reabre
+    if (row[cfg.pagoField]) {
+      const upd = { [cfg.pagoField]: false }
+      if (cfg.table === 'contas_pagar') upd.status = 'pendente'  // coluna status só existe em contas_pagar
+      await supabase.from(cfg.table).update(upd).eq('id', row.id)
+    }
+
+    toast('Pagamento estornado com sucesso', 'success')
+    setEstornando(null)
+    load()
+  }
+
   const f = (k, v) => setForm(p => ({ ...p, [k]: v }))
   const isVencido = r => saldoRow(r) > 0 && r.vencimento && r.vencimento < today()
   const toggleExpand = id => setExpanded(p => ({ ...p, [id]: !p[id] }))
@@ -424,7 +494,16 @@ export default function FinanceiroContas({ module }) {
                                 {pg.obs && <span style={{ marginLeft: 8, color: 'var(--text3)', fontSize: 11 }}>• {pg.obs}</span>}
                               </td>
                               <td colSpan={2} className="text-mono text-green" style={{ fontSize: 12 }}>{fmt(pg.valor)}</td>
-                              <td colSpan={4} className="text-muted" style={{ fontSize: 12 }}>{pg.forma_pgto || '—'}</td>
+                              <td colSpan={4} style={{ fontSize: 12 }}>
+                                <span className="text-muted">{pg.forma_pgto || '—'}</span>
+                                {pg.forma_pgto !== 'Rolagem para próxima fatura' && (
+                                  <button className="icon-btn del" title="Estornar este pagamento"
+                                    style={{ marginLeft: 8, fontSize: 10 }}
+                                    onClick={() => setEstornando({ pg, row: r })}>
+                                    ↩ Estornar
+                                  </button>
+                                )}
+                              </td>
                             </tr>
                           )
                         })}
@@ -682,6 +761,11 @@ export default function FinanceiroContas({ module }) {
         </div>
       )}
 
+      {estornando && <ConfirmDialog
+        message={`Estornar o pagamento de ${fmt(estornando.pg.valor)} de "${estornando.row.descricao}"?\n\nSerá lançado um contra-movimento no Caixa, o saldo da conta bancária será devolvido e a conta voltará a ficar em aberto. O lançamento original permanece no histórico.`}
+        confirmLabel="Estornar"
+        onConfirm={estornarPagamento}
+        onCancel={() => setEstornando(null)} />}
       {deleting && <ConfirmDialog message={`Excluir "${deleting.descricao}"? Os pagamentos parciais também serão excluídos.`} onConfirm={destroy} onCancel={() => setDeleting(null)} />}
     </div>
   )
