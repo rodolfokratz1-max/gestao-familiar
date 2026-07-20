@@ -44,7 +44,7 @@ export default function Cartoes() {
   const [modalRotativo, setModalRotativo]    = useState(false)
   const [jurosRotativo, setJurosRotativo]    = useState('')
 
-  useEffect(() => { if (entidadeAtiva?.id) loadAll() }, [entidadeAtiva?.id])
+  useEffect(() => { setCartaoSel(null); if (entidadeAtiva?.id) loadAll() }, [entidadeAtiva?.id])  // troca de entidade: volta para a listagem
   useEffect(() => { if (cartaoSel) loadLancamentos() }, [cartaoSel, mesRef])
 
   async function loadAll() {
