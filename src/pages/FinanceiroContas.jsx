@@ -219,6 +219,9 @@ export default function FinanceiroContas({ module }) {
     if (pgtoForm.conta_id) caixaPayload.conta_id = pgtoForm.conta_id
     if (row.id) caixaPayload.origem_id = row.id
     if (cfg.table) caixaPayload.origem_tabela = cfg.table
+    // Se a conta pertence a uma obra (lançamento "a prazo"), o pagamento também fica marcado
+    if (row.obra_id) caixaPayload.obra_id = row.obra_id
+    if (row.obra_etapa_id) caixaPayload.obra_etapa_id = row.obra_etapa_id
 
     const { error: eCaixa } = await supabase.from('caixa').insert({...caixaPayload, entidade_id: entidadeAtiva?.id || null})
     if (eCaixa) {
@@ -244,6 +247,8 @@ export default function FinanceiroContas({ module }) {
         origem_tabela: cfg.table,
       }
       if (pgtoForm.conta_id) encargosPayload.conta_id = pgtoForm.conta_id
+      if (row.obra_id) encargosPayload.obra_id = row.obra_id
+      if (row.obra_etapa_id) encargosPayload.obra_etapa_id = row.obra_etapa_id
       const { error: eEnc } = await supabase.from('caixa').insert({...encargosPayload, entidade_id: entidadeAtiva?.id || null})
       if (eEnc) {
         toast('Aviso: encargos não lançados no Caixa: ' + eEnc.message, 'error')
@@ -265,6 +270,11 @@ export default function FinanceiroContas({ module }) {
     const parcelaQuitada = novoTotalOriginalPago >= Number(row.valor) - 0.01
     if (parcelaQuitada) {
       await supabase.from(cfg.table).update({ [cfg.pagoField]: true }).eq('id', row.id)
+      // Se esta conta a pagar é a fatura de um cartão, sincroniza o campo pago lá também —
+      // senão a tela de Cartões nunca sabe que a fatura foi quitada
+      if (cfg.table === 'contas_pagar' && row.origem_tabela === 'faturas_cartao' && row.origem_id) {
+        await supabase.from('faturas_cartao').update({ pago: true }).eq('id', row.origem_id)
+      }
     }
 
     // Sincroniza status da Compra vinculada (se existir) com base nas parcelas pagas
@@ -353,6 +363,7 @@ export default function FinanceiroContas({ module }) {
       origem_id: row.id,
       origem_tabela: cfg.table,
       ...(pg.conta_id ? { conta_id: pg.conta_id } : {}),
+      ...(row.obra_id ? { obra_id: row.obra_id, obra_etapa_id: row.obra_etapa_id || null } : {}),
     })
     if (eCx) { toast('Erro ao lançar estorno no Caixa: ' + eCx.message, 'error'); setEstornando(null); return }
 
@@ -388,6 +399,10 @@ export default function FinanceiroContas({ module }) {
     // 5. Se a conta estava quitada, reabre
     if (row[cfg.pagoField]) {
       await supabase.from(cfg.table).update({ [cfg.pagoField]: false, status: 'pendente' }).eq('id', row.id)
+      // Mesma sincronização — se era fatura de cartão, reabre lá também
+      if (cfg.table === 'contas_pagar' && row.origem_tabela === 'faturas_cartao' && row.origem_id) {
+        await supabase.from('faturas_cartao').update({ pago: false }).eq('id', row.origem_id)
+      }
     }
 
     toast('Pagamento estornado com sucesso', 'success')

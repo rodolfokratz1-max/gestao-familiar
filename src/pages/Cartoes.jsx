@@ -5,7 +5,7 @@ import { useEntidade } from '../contexts/EntidadeContext'
 import { mesReferencia, dataVencimento, periodoFatura, verificarRotativo, rolarFaturaAnterior } from '../lib/faturas'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
-import { Plus, Search, Pencil, Trash2, Power, CreditCard, Receipt, ChevronLeft, ChevronRight, Lock, Clock, CheckCircle } from 'lucide-react'
+import { Plus, Search, Pencil, Trash2, Power, CreditCard, Receipt, ChevronLeft, ChevronRight, Lock, Clock, CheckCircle, RefreshCw } from 'lucide-react'
 import { today, toYMD } from '../lib/utils.js'
 
 const fmt = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
@@ -47,7 +47,7 @@ export default function Cartoes() {
 
   useEffect(() => { setCartaoSel(null); setView('cartoes'); if (entidadeAtiva?.id) loadAll() }, [entidadeAtiva?.id])  // troca de entidade: volta para a listagem
   useEffect(() => { if (cartaoSel) loadLancamentos() }, [cartaoSel, mesRef])
-  useEffect(() => { if (cartaoSel) calcularDividaCartao() }, [cartaoSel, faturas])
+  useEffect(() => { if (cartaoSel) calcularDividaCartao() }, [cartaoSel, faturas, lancamentos])
 
   // ── Dívida total real do cartão (como a operadora calcula o limite) ──────
   // = faturas fechadas não pagas (excluindo roladas — o saldo já está na seguinte)
@@ -556,7 +556,12 @@ export default function Cartoes() {
       {/* Barra de limite */}
       <div className="card" style={{ marginBottom:16, padding:'14px 20px' }}>
         <div style={{ display:'flex', justifyContent:'space-between', fontSize:12, color:'var(--text2)', marginBottom:6 }}>
-          <span>Uso do limite — Fecha dia {cartaoSel?.dia_fechamento}</span>
+          <span style={{ display:'flex', alignItems:'center', gap:8 }}>
+            Uso do limite — Fecha dia {cartaoSel?.dia_fechamento}
+            <button onClick={() => loadAll()} title="Atualizar" style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text3)', display:'flex', padding:2 }}>
+              <RefreshCw size={13} />
+            </button>
+          </span>
           <span>{percLimite.toFixed(1)}%</span>
         </div>
         <div style={{ background:'var(--bg3)', borderRadius:4, height:8, overflow:'hidden' }}>
