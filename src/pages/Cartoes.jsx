@@ -100,6 +100,30 @@ export default function Cartoes() {
       return
     }
 
+    // Bloqueia reabertura se a conta a pagar da fatura tem pagamentos REAIS
+    // (dinheiro que saiu do caixa — rolagem de rotativo não conta, pois é desfeita automaticamente)
+    const { data: cpFatura } = await supabase
+      .from('contas_pagar')
+      .select('id')
+      .eq('origem_id', faturaAtual.id)
+      .eq('origem_tabela', 'faturas_cartao')
+      .maybeSingle()
+    if (cpFatura) {
+      const { data: pgtos } = await supabase
+        .from('pagamentos_parciais')
+        .select('valor, forma_pgto')
+        .eq('tabela_origem', 'contas_pagar')
+        .eq('origem_id', cpFatura.id)
+      const pagoReal = (pgtos || [])
+        .filter(p => p.forma_pgto !== 'Rolagem para próxima fatura')
+        .reduce((s, p) => s + Number(p.valor || 0), 0)
+      if (pagoReal > 0) {
+        toast(`Esta fatura tem R$ ${pagoReal.toFixed(2)} em pagamentos registrados no Caixa. Estorne os pagamentos antes de reabrir.`, 'error')
+        setConfirmReabrir(false)
+        return
+      }
+    }
+
     // Se esta fatura recebeu uma rolagem, desfaz a rolagem primeiro (evita violação de FK)
     if (Number(faturaAtual.saldo_rotativo_anterior || 0) > 0) {
       const { data: fatAnterior } = await supabase

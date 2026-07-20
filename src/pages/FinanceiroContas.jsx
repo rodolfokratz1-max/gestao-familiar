@@ -92,6 +92,10 @@ export default function FinanceiroContas({ module }) {
     return s + Number(p.valor || 0) - enc
   }, 0)
   const saldoRow = (row) => Number(row.valor || 0) - totalPagoRow(row.id)
+  // Pagamentos reais (dinheiro que se movimentou) — exclui rolagem de rotativo
+  const totalPagoReal = (rowId) => getPagamentosRow(rowId)
+    .filter(p => p.forma_pgto !== 'Rolagem para próxima fatura')
+    .reduce((s, p) => s + Number(p.valor || 0), 0)
 
   const filtered = rows.filter(r => {
     const q = search.toLowerCase()
@@ -113,6 +117,13 @@ export default function FinanceiroContas({ module }) {
     if (!entidadeAtiva?.id) return toast('Selecione uma entidade antes de salvar', 'error')
     if (!form.descricao?.trim()) return toast('Descrição é obrigatória', 'error')
     if (!form.valor) return toast('Valor é obrigatório', 'error')
+    // Se editando conta com pagamentos reais, valor não pode ser menor que o já pago
+    if (editing) {
+      const pagoReal = totalPagoReal(editing)
+      if (pagoReal > 0 && Number(form.valor) < pagoReal - 0.01) {
+        return toast(`Valor não pode ser menor que ${fmt(pagoReal)} (já pago). Estorne os pagamentos antes de reduzir o valor.`, 'error')
+      }
+    }
 
     // Se parcelado, cria N registros
     if (!editing && form.parcelado && Number(form.num_parcelas) > 1) {
@@ -298,6 +309,13 @@ export default function FinanceiroContas({ module }) {
   }
 
   async function destroy() {
+    // Bloqueia exclusão se há pagamentos reais registrados (dinheiro movimentado)
+    const pagoReal = totalPagoReal(deleting.id)
+    if (pagoReal > 0) {
+      toast(`Não é possível excluir: esta conta tem ${fmt(pagoReal)} em pagamentos registrados no Caixa. Estorne os pagamentos antes.`, 'error')
+      setDeleting(null)
+      return
+    }
     const { pode, motivos } = await verificarExclusao(cfg.table, deleting)
     if (!pode) {
       toast(`Não é possível excluir: ${motivos.join('; ')}.`, 'error')
@@ -438,6 +456,11 @@ export default function FinanceiroContas({ module }) {
             <div className="form-group">
               <label className="form-label">Valor *</label>
               <input className="form-input" type="number" step="0.01" value={form.valor} onChange={e => f('valor', e.target.value)} placeholder="0,00" />
+              {editing && totalPagoReal(editing) > 0 && (
+                <div style={{ fontSize:11, color:'var(--yellow)', marginTop:4 }}>
+                  ⚠️ {fmt(totalPagoReal(editing))} já pago — o valor não pode ficar abaixo disso
+                </div>
+              )}
             </div>
             <div className="form-group">
               <label className="form-label">Categoria</label>
