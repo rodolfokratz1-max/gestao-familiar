@@ -22,6 +22,7 @@ export default function Cartoes() {
   const [membros, setMembros] = useState([])
   const [lancamentos, setLancamentos] = useState([])
   const [faturas, setFaturas] = useState([])
+  const [dividaCartao, setDividaCartao] = useState(0) // dívida total real do cartão (faturas em aberto + não faturado)
   const [loading, setLoading] = useState(true)
   const [cartaoSel, setCartaoSel] = useState(null)
   const [mesRef, setMesRef] = useState(() => {
@@ -46,6 +47,55 @@ export default function Cartoes() {
 
   useEffect(() => { setCartaoSel(null); setView('cartoes'); if (entidadeAtiva?.id) loadAll() }, [entidadeAtiva?.id])  // troca de entidade: volta para a listagem
   useEffect(() => { if (cartaoSel) loadLancamentos() }, [cartaoSel, mesRef])
+  useEffect(() => { if (cartaoSel) calcularDividaCartao() }, [cartaoSel, faturas])
+
+  // ── Dívida total real do cartão (como a operadora calcula o limite) ──────
+  // = faturas fechadas não pagas (excluindo roladas — o saldo já está na seguinte)
+  // + lançamentos de meses que ainda não têm fatura fechada
+  async function calcularDividaCartao() {
+    // Todos os lançamentos do cartão (da entidade)
+    const { data: todosLancs } = await supabase
+      .from('cartao_lancamentos')
+      .select('data_compra, valor_total')
+      .eq('cartao_id', cartaoSel.id)
+      .eq('entidade_id', entidadeAtiva?.id)
+
+    // Faturas do cartão
+    const fatsCartao = faturas.filter(f => f.cartao_id === cartaoSel.id)
+    const mesesComFatura = new Set(fatsCartao.map(f => f.mes_ref))
+
+    // Lançamentos ainda não faturados (mês sem fatura)
+    const naoFaturado = (todosLancs || [])
+      .filter(l => !mesesComFatura.has((l.data_compra || '').slice(0, 7)))
+      .reduce((s, l) => s + Number(l.valor_total || 0), 0)
+
+    // Faturas fechadas, não pagas e não roladas → saldo devedor (valor − pagos reais)
+    const fatsAbertas = fatsCartao.filter(f => !f.pago && f.status !== 'rolada')
+    let dividaFaturas = 0
+    if (fatsAbertas.length > 0) {
+      const { data: cps } = await supabase
+        .from('contas_pagar')
+        .select('id, origem_id, valor')
+        .eq('origem_tabela', 'faturas_cartao')
+        .in('origem_id', fatsAbertas.map(f => f.id))
+      const cpIds = (cps || []).map(c => c.id)
+      let pagosPorCp = {}
+      if (cpIds.length > 0) {
+        const { data: pgs } = await supabase
+          .from('pagamentos_parciais')
+          .select('origem_id, valor, forma_pgto')
+          .eq('tabela_origem', 'contas_pagar')
+          .in('origem_id', cpIds)
+        for (const p of (pgs || [])) {
+          if (p.forma_pgto === 'Rolagem para próxima fatura') continue
+          pagosPorCp[p.origem_id] = (pagosPorCp[p.origem_id] || 0) + Number(p.valor || 0)
+        }
+      }
+      dividaFaturas = (cps || []).reduce((s, c) => s + Math.max(0, Number(c.valor || 0) - (pagosPorCp[c.id] || 0)), 0)
+    }
+
+    setDividaCartao(Number((dividaFaturas + naoFaturado).toFixed(2)))
+  }
 
   async function loadAll() {
     if (!entidadeAtiva?.id) { setLoading(false); return }
@@ -80,7 +130,7 @@ export default function Cartoes() {
   const faturaAtual = faturas.find(f => f.cartao_id === cartaoSel?.id && f.mes_ref === mesRef)
   const faturaFechada = !!faturaAtual
   const totalFatura = lancamentos.reduce((s, r) => s + Number(r.valor_total || 0), 0)
-  const percLimite = cartaoSel ? Math.min(100, (totalFatura / Number(cartaoSel.limite || 1)) * 100) : 0
+  const percLimite = cartaoSel ? Math.min(100, (dividaCartao / Number(cartaoSel.limite || 1)) * 100) : 0
 
   function mudaMes(delta) {
     const [ano, mes] = mesRef.split('-').map(Number)
@@ -490,7 +540,8 @@ export default function Cartoes() {
         </div>
         <div className="stat-card blue">
           <div className="stat-label">Limite Disponível</div>
-          <div className="stat-value blue text-mono">{fmt(Number(cartaoSel?.limite || 0) - totalFatura)}</div>
+          <div className="stat-value blue text-mono">{fmt(Number(cartaoSel?.limite || 0) - dividaCartao)}</div>
+          <div className="stat-sub">Dívida total: {fmt(dividaCartao)}</div>
         </div>
         <div className="stat-card yellow">
           <div className="stat-label">Vence dia {cartaoSel?.dia_vencimento}</div>
