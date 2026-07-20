@@ -299,6 +299,7 @@ export default function Cartoes() {
     }
 
     const payload = {
+      entidade_id: entidadeAtiva?.id || null,
       cartao_id: cartaoSel.id,
       data_compra: formLanc.data,
       descricao: formLanc.descricao,
