@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useToast } from '../contexts/ToastContext'
 import { useEntidade } from '../contexts/EntidadeContext'
-import { mesReferencia, dataVencimento, verificarRotativo, rolarFaturaAnterior } from '../lib/faturas'
+import { mesReferencia, dataVencimento, periodoFatura, verificarRotativo, rolarFaturaAnterior } from '../lib/faturas'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { Plus, Search, Pencil, Trash2, Power, CreditCard, Receipt, ChevronLeft, ChevronRight, Lock, Clock, CheckCircle } from 'lucide-react'
@@ -64,9 +64,10 @@ export default function Cartoes() {
     const fatsCartao = faturas.filter(f => f.cartao_id === cartaoSel.id)
     const mesesComFatura = new Set(fatsCartao.map(f => f.mes_ref))
 
-    // Lançamentos ainda não faturados (mês sem fatura)
+    // Lançamentos ainda não faturados — usa o mês de referência REAL
+    // (respeitando o dia de fechamento), não o mês do calendário da data_compra
     const naoFaturado = (todosLancs || [])
-      .filter(l => !mesesComFatura.has((l.data_compra || '').slice(0, 7)))
+      .filter(l => !mesesComFatura.has(mesReferencia(l.data_compra, cartaoSel.dia_fechamento)))
       .reduce((s, l) => s + Number(l.valor_total || 0), 0)
 
     // Faturas fechadas, não pagas e não roladas → saldo devedor (valor − pagos reais)
@@ -113,15 +114,17 @@ export default function Cartoes() {
 
   async function loadLancamentos() {
     if (!entidadeAtiva?.id) { setLoading(false); return }
-    const [ano, mes] = mesRef.split('-')
-    const ultimoDia = new Date(Number(ano), Number(mes), 0).getDate()
+    // Período real da fatura — respeita o dia de fechamento do cartão
+    // (uma fatura NÃO é o mês do calendário; ex: fecha dia 13 → período vai de 14 do mês
+    // anterior até 13 deste mês)
+    const { inicio, fim } = periodoFatura(mesRef, cartaoSel.dia_fechamento)
     const { data } = await supabase
       .from('cartao_lancamentos')
       .select('*')
       .eq('cartao_id', cartaoSel.id)
       .eq('entidade_id', entidadeAtiva?.id)
-      .gte('data_compra', `${ano}-${mes}-01`)
-      .lte('data_compra', `${ano}-${mes}-${ultimoDia}`)
+      .gte('data_compra', inicio)
+      .lte('data_compra', fim)
       .order('data_compra', { ascending: false })
     setLancamentos(data || [])
   }

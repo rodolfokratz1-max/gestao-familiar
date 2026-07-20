@@ -24,13 +24,33 @@ export function mesReferencia(dataCompra, diaFechamento) {
 }
 
 // Calcula a data de vencimento da fatura
+// Calcula o período real (início e fim) de uma fatura, dado o mês de referência
+// e o dia de fechamento do cartão. É a função inversa de mesReferencia().
+// Ex: mesRef='2026-09', diaFechamento=13 → { inicio: '2026-08-14', fim: '2026-09-13' }
+export function periodoFatura(mesRef, diaFechamento) {
+  const [ano, mes] = mesRef.split('-').map(Number) // mes: 1-12
+  const diaFecha = Number(diaFechamento || 1)
+
+  const ultimoDiaAtual = ultimoDiaMes(ano, mes)
+  const diaFechaAtual = Math.min(diaFecha, ultimoDiaAtual)
+  const fim = new Date(ano, mes - 1, diaFechaAtual, 12, 0, 0) // fechamento deste mês (meio-dia evita cruzar fuso)
+
+  const ultimoDiaAnterior = ultimoDiaMes(ano, mes - 1)
+  const diaFechaAnterior = Math.min(diaFecha, ultimoDiaAnterior)
+  // Dia seguinte ao fechamento anterior — se estourar o mês, o JS avança sozinho
+  // (mesmo padrão já usado para o bug das parcelas no dia 30/31)
+  const inicio = new Date(ano, mes - 2, diaFechaAnterior + 1, 12, 0, 0)
+
+  return { inicio: toYMD(inicio), fim: toYMD(fim) }
+}
+
 export function dataVencimento(mesRef, diaVencimento) {
   const [ano, mes] = mesRef.split('-').map(Number)
   // Vencimento é no mês seguinte ao de referência
   // Ajusta para o último dia do mês se necessário (ex: dia 31 em fevereiro → dia 28)
   const ultimoDia = ultimoDiaMes(ano, mes + 1)
   const diaEfetivo = Math.min(Number(diaVencimento || 10), ultimoDia)
-  const d = new Date(ano, mes, diaEfetivo)
+  const d = new Date(ano, mes, diaEfetivo, 12, 0, 0) // meio-dia evita cruzar fuso
   return toYMD(d)
 }
 
