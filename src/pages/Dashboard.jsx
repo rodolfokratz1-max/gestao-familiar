@@ -25,6 +25,18 @@ export default function Dashboard({ onNavigate }) {
   const [vencendoHoje, setVencendoHoje]   = useState({ pagar:0, receber:0 })
   const [vencendo7d, setVencendo7d]       = useState({ pagar:0, receber:0 })
 
+  // Troca da entidade global: reseta a seleção local do consolidado para a nova entidade
+  useEffect(() => {
+    if (!entidadeAtiva?.id) return
+    setEntidadesSelecionadas(prev => {
+      if (prev && (prev.length !== 1 || prev[0] !== entidadeAtiva.id)) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify([entidadeAtiva.id]))
+        return [entidadeAtiva.id]
+      }
+      return prev
+    })
+  }, [entidadeAtiva?.id])
+
   useEffect(() => { if (entidadeAtiva?.id) load() }, [entidadeAtiva?.id, entidadesSelecionadas])
 
   async function load() {
