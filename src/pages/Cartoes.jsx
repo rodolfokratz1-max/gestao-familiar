@@ -6,7 +6,7 @@ import { mesReferencia, dataVencimento, verificarRotativo, rolarFaturaAnterior }
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { Plus, Search, Pencil, Trash2, Power, CreditCard, Receipt, ChevronLeft, ChevronRight, Lock, Clock, CheckCircle } from 'lucide-react'
-import { today } from '../lib/utils.js'
+import { today, toYMD } from '../lib/utils.js'
 
 const fmt = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
 
@@ -284,7 +284,7 @@ export default function Cartoes() {
           entidade_id: entidadeAtiva?.id || null,
           grupo_parcela: grupoId,
           cartao_id: cartaoSel.id,
-          data_compra: dataParc.toISOString().split('T')[0],
+          data_compra: toYMD(dataParc),
           descricao: `${formLanc.descricao} (${i+1}/${n})`,
           categoria: formLanc.categoria,
           valor_total: valorParcela,

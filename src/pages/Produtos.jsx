@@ -310,7 +310,7 @@ export default function Produtos() {
                 style={{ padding:'7px 16px', fontSize:13, fontWeight: abaModal===ab.id ? 700 : 400,
                   borderBottom: abaModal===ab.id ? '2px solid var(--accent)' : '2px solid transparent',
                   color: abaModal===ab.id ? 'var(--accent)' : 'var(--text2)',
-                  background:'transparent', border:'none', borderBottom: abaModal===ab.id ? '2px solid var(--accent)' : '2px solid transparent',
+                  background:'transparent', border:'none',
                   cursor:'pointer' }}>
                 {ab.label}
               </button>

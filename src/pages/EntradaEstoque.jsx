@@ -10,7 +10,7 @@ import {
   History, Eye
 } from 'lucide-react'
 import { bloquear, verificarExclusao } from '../lib/integridade'
-import { today, fmtDate } from '../lib/utils.js'
+import { today, fmtDate, toYMD } from '../lib/utils.js'
 
 const fmt = v => 'R$ ' + Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2})
 const FORMAS = ['Boleto','PIX','Cartão Crédito','Cartão Débito','Transferência','Dinheiro','Cheque','Outro']
@@ -552,7 +552,7 @@ export default function EntradaEstoque() {
           for (let p=0; p<nParcelas; p++) {
             const venc = new Date(fin.vencimento1+'T12:00:00')
             venc.setDate(venc.getDate()+p*Number(fin.intervalo_dias))
-            const vencStr = venc.toISOString().split('T')[0]
+            const vencStr = toYMD(venc)
             const valorParcela = ((parcelaCentavos + (p === nParcelas - 1 ? restoCentavos : 0)) / 100).toFixed(2)
             await supabase.from('contas_pagar').insert({entidade_id: entidadeAtiva?.id || null,
               data_emissao: today(),

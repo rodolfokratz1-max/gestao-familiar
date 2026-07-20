@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { today, toYMD } from './utils'
 
 // Retorna o último dia do mês
 function ultimoDiaMes(ano, mes) {
@@ -30,7 +31,7 @@ export function dataVencimento(mesRef, diaVencimento) {
   const ultimoDia = ultimoDiaMes(ano, mes + 1)
   const diaEfetivo = Math.min(Number(diaVencimento || 10), ultimoDia)
   const d = new Date(ano, mes, diaEfetivo)
-  return d.toISOString().split('T')[0]
+  return toYMD(d)
 }
 
 // Verifica e fecha faturas automaticamente ao abrir o sistema
@@ -107,7 +108,7 @@ export async function verificarFaturas() {
 
     // Gera UMA conta a pagar para a fatura inteira
     await supabase.from('contas_pagar').insert({
-      data_emissao: hoje.toISOString().split('T')[0],
+      data_emissao: today(),
       status: 'pendente',
       descricao: `Fatura ${cartao.nome} — ${nomeMes}`,
       valor: totalFatura,
@@ -149,7 +150,7 @@ async function totalPagoLiquido(origemId) {
 // - ainda tem saldo em aberto (não foi paga, nem total nem parcialmente até quitar)
 // Retorna null se não houver nada pendente — comportamento normal do dia a dia.
 export async function verificarRotativo(cartaoId) {
-  const hoje = new Date().toISOString().split('T')[0]
+  const hoje = today()
   const { data: anteriores } = await supabase
     .from('faturas_cartao')
     .select('*')
@@ -197,7 +198,7 @@ export async function rolarFaturaAnterior({ faturaAnterior, contaPagar, saldo },
     juros: 0,
     multa: 0,
     desconto: 0,
-    data: new Date().toISOString().split('T')[0],
+    data: today(),
     forma_pgto: 'Rolagem para próxima fatura',
     obs: 'Saldo não pago no vencimento — incorporado à fatura seguinte com juros do rotativo. Não representa saída de caixa.',
   })

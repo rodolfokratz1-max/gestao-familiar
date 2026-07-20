@@ -7,7 +7,7 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import { Plus, Search, Pencil, Trash2, Power, CheckCircle, CreditCard, ChevronDown, ChevronUp, Receipt } from 'lucide-react'
 import { SelectCategoria } from '../lib/planoContas'
 import { bloquear, tentarDesbloquear, verificarExclusao } from '../lib/integridade'
-import { today, fmtDate } from '../lib/utils.js'
+import { today, fmtDate, toYMD } from '../lib/utils.js'
 import { gerarRecibo } from '../lib/recibo'
 
 const fmt = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
@@ -132,7 +132,7 @@ export default function FinanceiroContas({ module }) {
       const valorParcela = (Number(form.valor) / n).toFixed(2)
       const inserts = []
       for (let i = 0; i < n; i++) {
-        const venc = form.vencimento ? new Date(form.vencimento) : new Date()
+        const venc = form.vencimento ? new Date(form.vencimento + 'T12:00:00') : new Date()
         venc.setMonth(venc.getMonth() + i)
         inserts.push({
           ...form,
@@ -140,7 +140,7 @@ export default function FinanceiroContas({ module }) {
           num_parcelas: null,
           valor: valorParcela,
           descricao: `${form.descricao} (${i + 1}/${n})`,
-          vencimento: venc.toISOString().split('T')[0],
+          vencimento: toYMD(venc),
           [cfg.pagoField]: false,
         })
       }
@@ -387,9 +387,7 @@ export default function FinanceiroContas({ module }) {
 
     // 5. Se a conta estava quitada, reabre
     if (row[cfg.pagoField]) {
-      const upd = { [cfg.pagoField]: false }
-      if (cfg.table === 'contas_pagar') upd.status = 'pendente'  // coluna status só existe em contas_pagar
-      await supabase.from(cfg.table).update(upd).eq('id', row.id)
+      await supabase.from(cfg.table).update({ [cfg.pagoField]: false, status: 'pendente' }).eq('id', row.id)
     }
 
     toast('Pagamento estornado com sucesso', 'success')

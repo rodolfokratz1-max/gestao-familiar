@@ -3,7 +3,7 @@ import { useEntidade } from '../contexts/EntidadeContext'
 import { supabase } from '../lib/supabase'
 import { TrendingUp, TrendingDown, Wallet, HandCoins, CreditCard, AlertCircle, ChevronRight, Target, BarChart2, RefreshCw } from 'lucide-react'
 import { BarChartSVG, PieChartSVG, CHART_COLORS } from '../lib/charts'
-import { today } from '../lib/utils.js'
+import { today, toYMD } from '../lib/utils.js'
 
 const fmt = v => 'R$ ' + Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2})
 const fmtK = v => { const n=Number(v||0); return Math.abs(n)>=1000 ? 'R$'+(n/1000).toFixed(0)+'k' : 'R$'+n.toFixed(0) }
@@ -40,7 +40,7 @@ export default function Dashboard({ onNavigate }) {
     const ini = `${ano}-${mes}-01`
     const fim = `${ano}-${mes}-${new Date(ano, mesAtual.getMonth()+1, 0).getDate()}`
     const td  = today()
-    const d7  = new Date(); d7.setDate(d7.getDate()+7); const d7s = d7.toISOString().split('T')[0]
+    const d7  = new Date(); d7.setDate(d7.getDate()+7); const d7s = toYMD(d7)
 
     const [caixa, apagar, areceber, cartR, fatR, ccR] = await Promise.allSettled([
       supabase.from('caixa').select('tipo,valor,data,categoria,origem_tabela').in('entidade_id', idsConsultar).gte('data',`${ano}-01-01`).lte('data',`${ano}-12-31`),
