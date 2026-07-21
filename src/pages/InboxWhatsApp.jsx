@@ -45,7 +45,7 @@ function badgeStyle(status) {
 
 export default function InboxWhatsApp() {
   const toast = useToast()
-  const { entidadeAtiva } = useEntidade()
+  const { entidadeAtiva, entidades } = useEntidade()
   const [rows, setRows]           = useState([])
   const [anotacoes, setAnotacoes] = useState([])
   const [contas, setContas]       = useState([])
@@ -58,6 +58,8 @@ export default function InboxWhatsApp() {
   const [form, setForm]           = useState({})
   const [editingId, setEditingId] = useState(null)
   const [confirmando, setConfirmando] = useState(null)
+  const [escolhendoEntidade, setEscolhendoEntidade] = useState(null) // row pendente de entidade
+  const [entidadeEscolhida, setEntidadeEscolhida] = useState('')
 
   useEffect(() => { if (entidadeAtiva?.id) load() }, [entidadeAtiva?.id])
 
@@ -65,7 +67,7 @@ export default function InboxWhatsApp() {
     if (!entidadeAtiva?.id) { setLoading(false); return }
     setLoading(true)
     const [{ data: inbox }, { data: anot }, { data: conts }, { data: carts }] = await Promise.all([
-      supabase.from('lancamentos_inbox').select('*').eq('entidade_id', entidadeAtiva?.id).order('created_at', { ascending: false }),
+      supabase.from('lancamentos_inbox').select('*').or(`entidade_id.eq.${entidadeAtiva?.id},entidade_id.is.null`).order('created_at', { ascending: false }),
       supabase.from('whatsapp_anotacoes').select('*').or(`entidade_id.eq.${entidadeAtiva?.id},entidade_id.is.null`).order('created_at', { ascending: false }),
       supabase.from('contas').select('id,nome').eq('ativo', true).eq('entidade_id', entidadeAtiva?.id).order('nome'),
       supabase.from('cartoes').select('id,nome').eq('ativo', true).eq('entidade_id', entidadeAtiva?.id).order('nome'),
@@ -112,9 +114,20 @@ export default function InboxWhatsApp() {
 
   const totalValor = filtrados.filter(r => r._source === 'inbox').reduce((s, r) => s + Number(r.valor || 0), 0)
 
-  async function aprovar(row) {
+  // Ponto de entrada — se o lançamento não tem entidade definida, pede antes de aprovar
+  function aprovar(row) {
+    if (row._source !== 'anotacao' && !row.entidade_id) {
+      setEntidadeEscolhida(entidadeAtiva?.id || '')
+      setEscolhendoEntidade(row)
+      return
+    }
+    executarAprovacao(row, row.entidade_id || entidadeAtiva?.id)
+  }
+
+  // Faz a gravação de verdade, já com a entidade resolvida
+  async function executarAprovacao(row, entidadeId) {
     if (row._source === 'anotacao') {
-      await supabase.from('whatsapp_anotacoes').update({ arquivada: true, entidade_id: entidadeAtiva?.id || null }).eq('id', row.id)
+      await supabase.from('whatsapp_anotacoes').update({ arquivada: true, entidade_id: entidadeId || null }).eq('id', row.id)
       toast('Anotação arquivada!', 'success')
     } else {
       // Grava no destino correto
@@ -123,7 +136,7 @@ export default function InboxWhatsApp() {
         // Cartão de crédito não é dinheiro imediato — vai para a fatura, não para o Caixa.
         // Respeita parcelamento de verdade (mesma lógica usada em Cartões).
         const inserts = gerarParcelasCartao({
-          cartaoId: row.cartao_id, entidadeId: entidadeAtiva?.id,
+          cartaoId: row.cartao_id, entidadeId,
           dataCompra: data, descricao: row.descricao, categoria: row.categoria,
           valorTotal: row.valor, numParcelas: row.num_parcelas || 1,
           obs: `Via WhatsApp por ${row.nome_remetente}`,
@@ -132,7 +145,7 @@ export default function InboxWhatsApp() {
         const { error } = await supabase.from('cartao_lancamentos').insert(inserts)
         if (error) { toast(error.message, 'error'); return }
       } else if (row.categoria === 'Compras' || row.tipo === 'saida') {
-        await supabase.from('caixa').insert({entidade_id: entidadeAtiva?.id || null,
+        await supabase.from('caixa').insert({entidade_id: entidadeId || null,
           data, tipo: 'saida', descricao: row.descricao,
           valor: row.valor, categoria: row.categoria,
           forma_pgto: row.forma_pgto, conta_id: row.conta_id,
@@ -140,22 +153,24 @@ export default function InboxWhatsApp() {
           obra_id: row.obra_id || null, obra_etapa_id: row.obra_etapa_id || null,
         })
       } else if (row.categoria === 'Pagamentos') {
-        await supabase.from('contas_pagar').insert({entidade_id: entidadeAtiva?.id || null,
+        await supabase.from('contas_pagar').insert({entidade_id: entidadeId || null,
           data_emissao: data, descricao: row.descricao,
           valor: row.valor, vencimento: row.data_ref,
           obs: `Via WhatsApp por ${row.nome_remetente}`
         })
       } else if (row.tipo === 'entrada') {
-        await supabase.from('caixa').insert({entidade_id: entidadeAtiva?.id || null,
+        await supabase.from('caixa').insert({entidade_id: entidadeId || null,
           data, tipo: 'entrada', descricao: row.descricao,
           valor: row.valor, categoria: row.categoria,
           forma_pgto: row.forma_pgto, conta_id: row.conta_id,
           origem_id: row.id, origem_tabela: 'lancamentos_inbox'
         })
       }
-      await supabase.from('lancamentos_inbox').update({ status: 'aprovado' }).eq('id', row.id)
+      // Grava também a entidade no próprio lançamento — se ela estava faltando, fica corrigida daqui pra frente
+      await supabase.from('lancamentos_inbox').update({ status: 'aprovado', entidade_id: entidadeId || null }).eq('id', row.id)
       toast('Lançamento aprovado e gravado!', 'success')
     }
+    setEscolhendoEntidade(null)
     load()
   }
 
@@ -320,6 +335,11 @@ export default function InboxWhatsApp() {
                       {row.descricao || 'Sem descrição'}
                     </div>
                     <div style={{ display: 'flex', gap: 10, marginTop: 3, flexWrap: 'wrap' }}>
+                      {row._source !== 'anotacao' && !row.entidade_id && (
+                        <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--yellow)', display: 'flex', alignItems: 'center', gap: 3 }}>
+                          ⚠️ Sem entidade
+                        </span>
+                      )}
                       {row.nome_remetente && (
                         <span style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: 3 }}>
                           <User size={10} /> {row.nome_remetente}
@@ -473,6 +493,32 @@ export default function InboxWhatsApp() {
                 Salvar
               </button>
             </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Escolher entidade antes de aprovar (lançamento chegou sem entidade definida) */}
+      {escolhendoEntidade && (
+        <Modal title="Para qual entidade é este lançamento?" onClose={() => setEscolhendoEntidade(null)}>
+          <div style={{ padding: '4px 0 16px' }}>
+            <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 14 }}>
+              Este lançamento chegou pelo WhatsApp sem uma entidade vinculada. Escolha antes de aprovar:
+            </p>
+            <div style={{ background: 'var(--bg3)', borderRadius: 8, padding: '10px 12px', marginBottom: 14, fontSize: 13 }}>
+              <strong>{escolhendoEntidade.descricao}</strong>
+              <div style={{ color: 'var(--text2)', fontSize: 12, marginTop: 2 }}>{fmt(escolhendoEntidade.valor)}</div>
+            </div>
+            <Field label="Entidade">
+              <select className="input" value={entidadeEscolhida} onChange={e => setEntidadeEscolhida(e.target.value)}>
+                <option value="">Selecione...</option>
+                {entidades.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
+              </select>
+            </Field>
+            <button className="btn btn-primary" style={{ marginTop: 16, width: '100%' }}
+              disabled={!entidadeEscolhida}
+              onClick={() => executarAprovacao(escolhendoEntidade, entidadeEscolhida)}>
+              Confirmar e aprovar
+            </button>
           </div>
         </Modal>
       )}
