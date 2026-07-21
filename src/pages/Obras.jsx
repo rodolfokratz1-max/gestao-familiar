@@ -12,6 +12,7 @@ import {
 import { today, fmtDate } from '../lib/utils.js'
 import UploadComprovante from '../components/UploadComprovante'
 import { imprimirRelatorioObra } from '../lib/relatorioObra'
+import { imprimirRelatorioObraAnual } from '../lib/relatorioObraAnual'
 
 const fmt = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })
 
@@ -36,7 +37,7 @@ const EMPTY_OBRA = {
 }
 const EMPTY_LANC = {
   tipo: 'despesa', descricao: '', valor: '', fonte_id: '', pago_por: '',
-  conta_id: '', etapa_id: '', reembolsavel: false, data_ref: today(), obs: '', imagens_url: []
+  conta_id: '', etapa_id: '', reembolsavel: false, data_ref: today(), vencimento: '', obs: '', imagens_url: []
 }
 
 export default function Obras() {
@@ -79,6 +80,7 @@ export default function Obras() {
   const [deletingLanc, setDeletingLanc] = useState(null)
   const [savingLanc, setSavingLanc]   = useState(false)
   const [usarItens, setUsarItens]     = useState(false)
+  const [aPrazo, setAPrazo]           = useState(false)
   const [formItens, setFormItens]     = useState([]) // [{id, produto_id, descricao, quantidade, valor_unitario, desconta_estoque}]
   const [fotoModal, setFotoModal]     = useState(null)  // string | string[]
   const [fotoIdx, setFotoIdx]           = useState(0)
@@ -128,6 +130,12 @@ export default function Obras() {
         .in('obra_id', ids)
         .order('data', { ascending: false })
 
+      // Fonte 3: lançamentos "a prazo" — ainda pendentes ou já pagos em Contas a Pagar/Receber
+      const [{ data: aPagarLancs }, { data: aReceberLancs }] = await Promise.all([
+        supabase.from('contas_pagar').select('*').in('obra_id', ids).order('data_emissao', { ascending: false }),
+        supabase.from('contas_receber').select('*').in('obra_id', ids).order('data_emissao', { ascending: false }),
+      ])
+
       const mapa = {}
       for (const l of (lancs || [])) {
         const norm = { ...l, _origem: 'obra_lancamentos' }
@@ -154,6 +162,26 @@ export default function Obras() {
         }
         if (!mapa[cx.obra_id]) mapa[cx.obra_id] = []
         mapa[cx.obra_id].push(norm)
+      }
+      for (const cp of (aPagarLancs || [])) {
+        const norm = {
+          id: cp.id, _origem: 'contas_pagar', obra_id: cp.obra_id, etapa_id: cp.obra_etapa_id || null,
+          tipo: 'despesa', descricao: cp.descricao, valor: cp.valor, data_ref: cp.data_emissao, obs: cp.obs,
+          pago_por: cp.forma_pgto || '', conta_id: cp.conta_id || null, reembolsavel: false, imagens_url: [],
+          _aPrazo: true, _pago: !!cp.pago, _vencimento: cp.vencimento,
+        }
+        if (!mapa[cp.obra_id]) mapa[cp.obra_id] = []
+        mapa[cp.obra_id].push(norm)
+      }
+      for (const cr of (aReceberLancs || [])) {
+        const norm = {
+          id: cr.id, _origem: 'contas_receber', obra_id: cr.obra_id, etapa_id: cr.obra_etapa_id || null,
+          tipo: 'receita', descricao: cr.descricao, valor: cr.valor, data_ref: cr.data_emissao, obs: cr.obs,
+          pago_por: cr.forma_pgto || '', conta_id: cr.conta_id || null, reembolsavel: false, imagens_url: [],
+          _aPrazo: true, _pago: !!cr.recebido, _vencimento: cr.vencimento,
+        }
+        if (!mapa[cr.obra_id]) mapa[cr.obra_id] = []
+        mapa[cr.obra_id].push(norm)
       }
       for (const k of Object.keys(mapa)) {
         mapa[k].sort((a, b) => (b.data_ref || '').localeCompare(a.data_ref || ''))
@@ -296,7 +324,7 @@ export default function Obras() {
 
   // ── LANÇAMENTOS ─────────────────────────────────────────────────────────────
 
-  function openNewLanc()   { setFormLanc({ ...EMPTY_LANC }); setEditingLanc(null); setUsarItens(false); setFormItens([]); setModalLanc(true) }
+  function openNewLanc()   { setFormLanc({ ...EMPTY_LANC }); setEditingLanc(null); setUsarItens(false); setFormItens([]); setAPrazo(false); setModalLanc(true) }
   // Quando fonte muda no formulário, pré-preenche conta sugerida
   function onFonteChange(fonteId) {
     const fonte = fontes.find(f => f.id === fonteId)
@@ -331,6 +359,10 @@ export default function Obras() {
     })
   }
   async function openEditLanc(l) {
+    if (l._aPrazo) {
+      toast(`Este lançamento está em ${l.tipo === 'despesa' ? 'Contas a Pagar' : 'Contas a Receber'} — edite/pague por lá.`, 'error')
+      return
+    }
     setFormLanc({ ...l, imagens_url: Array.isArray(l.imagens_url) ? l.imagens_url : (l.imagens_url ? [l.imagens_url] : []) })
     setEditingLanc(l.id)
     setModalLanc(true)
@@ -396,14 +428,20 @@ export default function Obras() {
       const valor = usarItens ? Number(totalItens.toFixed(2)) : Number(String(formLanc.valor).replace(',', '.'))
       const fonte = fontes.find(f => f.id === formLanc.fonte_id)
 
-      // Fecha o buraco antigo: fonte que movimenta caixa exige conta selecionada,
-      // senão o lançamento sumia silenciosamente sem ir para lugar nenhum
-      if (fonte && FONTES_MOVEM_CAIXA.includes(fonte.tipo) && !formLanc.conta_id) {
+      const fonteMovimenta = !!(fonte && FONTES_MOVEM_CAIXA.includes(fonte.tipo))
+      const vaiAPrazo = fonteMovimenta && aPrazo && !editingLanc
+
+      // Fecha o buraco antigo: fonte que movimenta caixa exige conta (à vista) OU vencimento (a prazo)
+      if (fonteMovimenta && !vaiAPrazo && !formLanc.conta_id) {
         setSavingLanc(false)
         return toast('Selecione a conta para este lançamento (ou escolha uma fonte que não movimenta o caixa, como Cartão do Cliente/Outro).', 'error')
       }
+      if (vaiAPrazo && !formLanc.vencimento) {
+        setSavingLanc(false)
+        return toast('Informe o vencimento para lançamento a prazo.', 'error')
+      }
 
-      const moveCaixa = !!(fonte && FONTES_MOVEM_CAIXA.includes(fonte.tipo) && formLanc.conta_id)
+      const moveCaixa = !!(fonteMovimenta && formLanc.conta_id && !vaiAPrazo)
       const tipoCaixa = formLanc.tipo === 'despesa' ? 'saida' : 'entrada'
 
       // Payload comum para a anotação informativa (Cartão do Cliente / Outro)
@@ -420,6 +458,25 @@ export default function Obras() {
         obs:          formLanc.obs || null,
         etapa_id:     formLanc.etapa_id || null,
         imagens_url:  formLanc.imagens_url || [],
+      }
+
+      // Payload para lançamento "a prazo" (Contas a Pagar/Receber) — dinheiro ainda não moveu
+      const payloadAPrazo = {
+        entidade_id:   entidadeAtiva?.id || null,
+        descricao:     `[Obra: ${obraSel.nome}] ${formLanc.descricao}`,
+        valor,
+        data_emissao:  formLanc.data_ref || today(),
+        vencimento:    formLanc.vencimento || formLanc.data_ref || today(),
+        obs:           formLanc.obs || null,
+        categoria:     'Obras',
+        forma_pgto:    fonte?.nome || null,
+        obra_id:       obraSel.id,
+        obra_etapa_id: formLanc.etapa_id || null,
+        ativo:         true,
+        status:        'pendente',
+        ...(formLanc.tipo === 'despesa'
+          ? { pago: false, bloqueado: false }
+          : { recebido: false, bloqueado: false, pessoa_id: obraSel.cliente_id || null }),
       }
 
       // Payload comum para a linha real de Caixa (modelo unificado)
@@ -530,7 +587,12 @@ export default function Obras() {
 
       } else {
         // ── Novo lançamento ──────────────────────────────────────────────────
-        if (moveCaixa) {
+        if (vaiAPrazo) {
+          const tabelaAlvo = formLanc.tipo === 'despesa' ? 'contas_pagar' : 'contas_receber'
+          const { data: novoRow, error } = await supabase.from(tabelaAlvo).insert(payloadAPrazo).select().single()
+          if (error) { toast(error.message, 'error'); setSavingLanc(false); return }
+          novoOrigemTabela = tabelaAlvo; novoOrigemId = novoRow?.id
+        } else if (moveCaixa) {
           const { data: caixaRow, error } = await supabase.from('caixa').insert(payloadCaixa).select().single()
           if (error) { toast(error.message, 'error'); setSavingLanc(false); return }
           if (caixaRow) await ajustaSaldo(formLanc.conta_id, tipoCaixa === 'entrada' ? valor : -valor)
@@ -557,6 +619,12 @@ export default function Obras() {
 
   async function destroyLanc() {
     const lanc = deletingLanc
+
+    if (lanc._aPrazo) {
+      toast(`Este lançamento está em ${lanc.tipo === 'despesa' ? 'Contas a Pagar' : 'Contas a Receber'} — exclua por lá.`, 'error')
+      setDeletingLanc(null)
+      return
+    }
 
     // Remove os itens estruturados vinculados e devolve o estoque descontado
     const origemTabelaItens = lanc._origem || 'obra_lancamentos'
@@ -896,8 +964,19 @@ export default function Obras() {
                 </div>
               )}
             </div>
-            {/* Conta — só aparece quando a fonte movimenta caixa */}
-            {fonteAtual && FONTES_MOVEM_CAIXA.includes(fonteAtual.tipo) && (
+            {/* À vista / A prazo — só aparece quando a fonte movimenta caixa */}
+            {fonteAtual && FONTES_MOVEM_CAIXA.includes(fonteAtual.tipo) && !editingLanc && (
+              <div className="form-group" style={{ gridColumn: '1/-1' }}>
+                <label className="form-label">Pagamento</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button type="button" className={`btn btn-sm ${!aPrazo ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setAPrazo(false)}>À vista</button>
+                  <button type="button" className={`btn btn-sm ${aPrazo ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setAPrazo(true)}>A prazo</button>
+                </div>
+              </div>
+            )}
+
+            {/* Conta — só quando à vista */}
+            {fonteAtual && FONTES_MOVEM_CAIXA.includes(fonteAtual.tipo) && !aPrazo && (
               <div className="form-group">
                 <label className="form-label">Conta *</label>
                 <select className="form-select" value={formLanc.conta_id} onChange={e => fl('conta_id', e.target.value)}>
@@ -914,6 +993,18 @@ export default function Obras() {
                 }
               </div>
             )}
+
+            {/* Vencimento — só quando a prazo */}
+            {fonteAtual && FONTES_MOVEM_CAIXA.includes(fonteAtual.tipo) && aPrazo && (
+              <div className="form-group">
+                <label className="form-label">Vencimento *</label>
+                <input className="form-input" type="date" value={formLanc.vencimento} onChange={e => fl('vencimento', e.target.value)} />
+                <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--yellow)' }}>
+                  <AlertCircle size={12} /> Vai para {formLanc.tipo === 'despesa' ? 'Contas a Pagar' : 'Contas a Receber'} — pague/receba por lá quando acontecer
+                </div>
+              </div>
+            )}
+
             <div className="form-group">
               <label className="form-label">Data</label>
               <input className="form-input" type="date" value={formLanc.data_ref} onChange={e => fl('data_ref', e.target.value)} />
@@ -1132,6 +1223,18 @@ function PainelDetalhe({ obra, lancs, etapas, fontes, empresa, tab, onTab, onNew
             style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             🖨️ Imprimir
           </button>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => {
+              const anoAtual = new Date().getFullYear()
+              const ano = window.prompt('Informe o ano do resumo:', anoAtual)
+              if (!ano || !/^\d{4}$/.test(ano)) return
+              imprimirRelatorioObraAnual({ obra, lancamentos: lancs, ano, empresa })
+            }}
+            title="Resumo Anual"
+            style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            📅 Resumo Anual
+          </button>
         </div>
       </div>
 
@@ -1180,16 +1283,27 @@ function PainelDetalhe({ obra, lancs, etapas, fontes, empresa, tab, onTab, onNew
                         })()}
                       </td>
                       <td style={{ padding: '7px 10px', textAlign: 'center' }}>
-                        {l.caixa_id
+                        {l._aPrazo
+                          ? (l._pago
+                              ? <span title={`Vencimento: ${fmtDate(l._vencimento)}`} style={{ color: 'var(--green)', fontSize: 10, fontWeight: 700 }}>✅ Pago</span>
+                              : <span title={`Vencimento: ${fmtDate(l._vencimento)}`} style={{ color: 'var(--yellow)', fontSize: 10, fontWeight: 700 }}>⏳ A Prazo</span>)
+                          : l.caixa_id
                           ? <span title="Lançado no caixa" style={{ color: 'var(--green)', fontSize: 10, fontWeight: 700 }}>✓ Caixa</span>
                           : <span style={{ color: 'var(--text3)', fontSize: 10 }}>—</span>}
                       </td>
                       <td style={{ padding: '7px 10px', fontSize: 12, color: 'var(--text2)' }}>{fmtDate(l.data_ref)}</td>
                       <td style={{ padding: '4px 10px' }}>
-                        <div className="action-btns">
-                          <button className="icon-btn edit" onClick={() => onEditLanc(l)}><Pencil size={13} /></button>
-                          <button className="icon-btn del"  onClick={() => onDeleteLanc(l)}><Trash2 size={13} /></button>
-                        </div>
+                        {l._aPrazo ? (
+                          <span title={`Gerencie o pagamento em ${l.tipo === 'despesa' ? 'Contas a Pagar' : 'Contas a Receber'}`}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--text3)' }}>
+                            🔒 {l.tipo === 'despesa' ? 'Contas a Pagar' : 'Contas a Receber'}
+                          </span>
+                        ) : (
+                          <div className="action-btns">
+                            <button className="icon-btn edit" onClick={() => onEditLanc(l)}><Pencil size={13} /></button>
+                            <button className="icon-btn del"  onClick={() => onDeleteLanc(l)}><Trash2 size={13} /></button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ))}
