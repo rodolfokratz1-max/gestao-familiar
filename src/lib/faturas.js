@@ -27,6 +27,45 @@ export function mesReferencia(dataCompra, diaFechamento) {
 // Calcula o período real (início e fim) de uma fatura, dado o mês de referência
 // e o dia de fechamento do cartão. É a função inversa de mesReferencia().
 // Ex: mesRef='2026-09', diaFechamento=13 → { inicio: '2026-08-14', fim: '2026-09-13' }
+// Gera as linhas de cartao_lancamentos para uma compra (parcelada ou não).
+// Fonte única de verdade — usada tanto por Cartões (lançamento manual)
+// quanto pelo Inbox WhatsApp (aprovação de compra no cartão).
+// Corrige o dia da parcela quando o mês não tem esse dia (ex: 30 em fevereiro).
+export function gerarParcelasCartao({
+  cartaoId, entidadeId, dataCompra, descricao, categoria, valorTotal,
+  numParcelas = 1, obs = null, obraId = null, obraEtapaId = null,
+}) {
+  const n = Math.max(1, Number(numParcelas) || 1)
+  const valorParcela = (Number(valorTotal) / n).toFixed(2)
+  const grupoId = n > 1 ? crypto.randomUUID() : null
+  const base = new Date(dataCompra + 'T12:00:00')
+  const diaBase = base.getDate()
+
+  const inserts = []
+  for (let i = 0; i < n; i++) {
+    const anoParc = base.getFullYear() + Math.floor((base.getMonth() + i) / 12)
+    const mesParc = (base.getMonth() + i) % 12
+    const ultimoDia = new Date(anoParc, mesParc + 1, 0).getDate()
+    const diaParc = Math.min(diaBase, ultimoDia)
+    const dataParc = new Date(anoParc, mesParc, diaParc)
+    inserts.push({
+      entidade_id:    entidadeId || null,
+      grupo_parcela:  grupoId,
+      cartao_id:      cartaoId,
+      data_compra:    toYMD(dataParc),
+      descricao:      n > 1 ? `${descricao} (${i + 1}/${n})` : descricao,
+      categoria:      categoria || null,
+      valor_total:    valorParcela,
+      num_parcela:    i + 1,
+      total_parcelas: n,
+      obs:            obs || null,
+      obra_id:        obraId || null,
+      obra_etapa_id:  obraEtapaId || null,
+    })
+  }
+  return inserts
+}
+
 export function periodoFatura(mesRef, diaFechamento) {
   const [ano, mes] = mesRef.split('-').map(Number) // mes: 1-12
   const diaFecha = Number(diaFechamento || 1)

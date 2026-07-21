@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useToast } from '../contexts/ToastContext'
 import { useEntidade } from '../contexts/EntidadeContext'
-import { mesReferencia, dataVencimento, periodoFatura, verificarRotativo, rolarFaturaAnterior } from '../lib/faturas'
+import { mesReferencia, dataVencimento, periodoFatura, verificarRotativo, rolarFaturaAnterior, gerarParcelasCartao } from '../lib/faturas'
 import Modal from '../components/Modal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { Plus, Search, Pencil, Trash2, Power, CreditCard, Receipt, ChevronLeft, ChevronRight, Lock, Clock, CheckCircle, RefreshCw } from 'lucide-react'
@@ -320,31 +320,11 @@ export default function Cartoes() {
 
     if (!editingLanc && formLanc.parcelado && Number(formLanc.num_parcelas) > 1) {
       const n = Number(formLanc.num_parcelas)
-      const valorParcela = (Number(formLanc.valor) / n).toFixed(2)
-      const inserts = []
-      const grupoId = crypto.randomUUID()
-      const base = new Date(formLanc.data + 'T12:00:00')
-      const diaBase = base.getDate()
-      for (let i = 0; i < n; i++) {
-        // Calcula ano e mes da parcela
-        const anoParc = base.getFullYear() + Math.floor((base.getMonth() + i) / 12)
-        const mesParc = (base.getMonth() + i) % 12
-        // Usa o ultimo dia do mes se o dia nao existir (ex: 30/fev → 28/fev)
-        const ultimoDia = new Date(anoParc, mesParc + 1, 0).getDate()
-        const diaParc = Math.min(diaBase, ultimoDia)
-        const dataParc = new Date(anoParc, mesParc, diaParc)
-        inserts.push({
-          entidade_id: entidadeAtiva?.id || null,
-          grupo_parcela: grupoId,
-          cartao_id: cartaoSel.id,
-          data_compra: toYMD(dataParc),
-          descricao: `${formLanc.descricao} (${i+1}/${n})`,
-          categoria: formLanc.categoria,
-          valor_total: valorParcela,
-          num_parcela: i+1, total_parcelas: n,
-          obs: formLanc.obs,
-        })
-      }
+      const inserts = gerarParcelasCartao({
+        cartaoId: cartaoSel.id, entidadeId: entidadeAtiva?.id,
+        dataCompra: formLanc.data, descricao: formLanc.descricao, categoria: formLanc.categoria,
+        valorTotal: formLanc.valor, numParcelas: n, obs: formLanc.obs,
+      })
       const { error } = await supabase.from('cartao_lancamentos').insert(inserts)
       if (error) { toast(error.message, 'error'); return }
       toast(`${n} parcelas lançadas! A fatura será gerada automaticamente no fechamento.`, 'success')

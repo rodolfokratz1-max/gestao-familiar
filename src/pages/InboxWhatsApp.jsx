@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import { gerarParcelasCartao } from '../lib/faturas'
 import { useToast } from '../contexts/ToastContext'
 import { useEntidade } from '../contexts/EntidadeContext'
 import Modal from '../components/Modal'
@@ -118,12 +119,25 @@ export default function InboxWhatsApp() {
     } else {
       // Grava no destino correto
       const data = row.data_ref || today()
-      if (row.categoria === 'Compras' || row.tipo === 'saida') {
+      if (row.cartao_id) {
+        // Cartão de crédito não é dinheiro imediato — vai para a fatura, não para o Caixa.
+        // Respeita parcelamento de verdade (mesma lógica usada em Cartões).
+        const inserts = gerarParcelasCartao({
+          cartaoId: row.cartao_id, entidadeId: entidadeAtiva?.id,
+          dataCompra: data, descricao: row.descricao, categoria: row.categoria,
+          valorTotal: row.valor, numParcelas: row.num_parcelas || 1,
+          obs: `Via WhatsApp por ${row.nome_remetente}`,
+          obraId: row.obra_id || null, obraEtapaId: row.obra_etapa_id || null,
+        })
+        const { error } = await supabase.from('cartao_lancamentos').insert(inserts)
+        if (error) { toast(error.message, 'error'); return }
+      } else if (row.categoria === 'Compras' || row.tipo === 'saida') {
         await supabase.from('caixa').insert({entidade_id: entidadeAtiva?.id || null,
           data, tipo: 'saida', descricao: row.descricao,
           valor: row.valor, categoria: row.categoria,
           forma_pgto: row.forma_pgto, conta_id: row.conta_id,
-          origem_id: row.id, origem_tabela: 'lancamentos_inbox'
+          origem_id: row.id, origem_tabela: 'lancamentos_inbox',
+          obra_id: row.obra_id || null, obra_etapa_id: row.obra_etapa_id || null,
         })
       } else if (row.categoria === 'Pagamentos') {
         await supabase.from('contas_pagar').insert({entidade_id: entidadeAtiva?.id || null,
@@ -165,6 +179,7 @@ export default function InboxWhatsApp() {
       forma_pgto: row.forma_pgto || '',
       data_ref: row.data_ref || today(),
       conta_id: row.conta_id || '',
+      cartao_id: row.cartao_id || '',
       num_parcelas: row.num_parcelas || 1,
     })
     setEditingId(row.id)
@@ -182,6 +197,7 @@ export default function InboxWhatsApp() {
       forma_pgto: form.forma_pgto,
       data_ref: form.data_ref,
       conta_id: form.conta_id || null,
+      cartao_id: form.cartao_id || null,
       num_parcelas: form.num_parcelas || 1,
     }).eq('id', editingId)
     toast('Lançamento atualizado!', 'success')
@@ -349,6 +365,10 @@ export default function InboxWhatsApp() {
                       {row.forma_pgto && row.forma_pgto !== '-' && (
                         <Detail icon={<CreditCard size={12} />} label="Forma" value={row.forma_pgto} />
                       )}
+                      {row.cartao_id && (
+                        <Detail icon={<CreditCard size={12} />} label="Cartão"
+                          value={cartoes.find(c => c.id === row.cartao_id)?.nome || '—'} />
+                      )}
                       {row.num_parcelas > 1 && (
                         <Detail icon={<Hash size={12} />} label="Parcelas" value={`${row.num_parcelas}x de ${fmt(row.valor / row.num_parcelas)}`} />
                       )}
@@ -419,12 +439,23 @@ export default function InboxWhatsApp() {
                 </select>
               </Field>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
               <Field label="Conta">
                 <select value={form.conta_id} onChange={e => setForm(f => ({ ...f, conta_id: e.target.value }))} className="input">
                   <option value="">Sem conta</option>
                   {contas.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
                 </select>
+              </Field>
+              <Field label="Cartão (se crédito)">
+                <select value={form.cartao_id} onChange={e => setForm(f => ({ ...f, cartao_id: e.target.value }))} className="input">
+                  <option value="">Nenhum — não é cartão</option>
+                  {cartoes.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                </select>
+                {form.cartao_id && (
+                  <div style={{ marginTop: 4, fontSize: 11, color: 'var(--yellow)' }}>
+                    Vai direto para a fatura deste cartão, não para o Caixa
+                  </div>
+                )}
               </Field>
               <Field label="Parcelas">
                 <input type="number" min="1" max="48" value={form.num_parcelas}
