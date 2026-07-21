@@ -83,13 +83,26 @@ export function periodoFatura(mesRef, diaFechamento) {
   return { inicio: toYMD(inicio), fim: toYMD(fim) }
 }
 
-export function dataVencimento(mesRef, diaVencimento) {
-  const [ano, mes] = mesRef.split('-').map(Number)
-  // Vencimento é no mês seguinte ao de referência
+// Calcula o vencimento real da fatura, considerando o dia de fechamento.
+// Se o dia de vencimento vem DEPOIS do dia de fechamento no calendário
+// (ex: fecha 13, vence 20), o vencimento cai no MESMO mês do fechamento.
+// Se vem ANTES ou igual (ex: fecha 25, vence 5), cai no mês seguinte.
+export function dataVencimento(mesRef, diaVencimento, diaFechamento) {
+  const [ano, mes] = mesRef.split('-').map(Number) // mes: 1-12 — mesmo mês do fechamento desta fatura
+  const diaFecha = Number(diaFechamento ?? 1)
+  const diaVenc  = Number(diaVencimento || 10)
+
+  const mesmoMes = diaVenc > diaFecha
+  let anoAlvo = ano, mesAlvo = mes
+  if (!mesmoMes) {
+    mesAlvo = mes === 12 ? 1 : mes + 1
+    anoAlvo = mes === 12 ? ano + 1 : ano
+  }
+
   // Ajusta para o último dia do mês se necessário (ex: dia 31 em fevereiro → dia 28)
-  const ultimoDia = ultimoDiaMes(ano, mes + 1)
-  const diaEfetivo = Math.min(Number(diaVencimento || 10), ultimoDia)
-  const d = new Date(ano, mes, diaEfetivo, 12, 0, 0) // meio-dia evita cruzar fuso
+  const ultimoDia = ultimoDiaMes(anoAlvo, mesAlvo)
+  const diaEfetivo = Math.min(diaVenc, ultimoDia)
+  const d = new Date(anoAlvo, mesAlvo - 1, diaEfetivo, 12, 0, 0) // meio-dia evita cruzar fuso
   return toYMD(d)
 }
 
@@ -146,7 +159,7 @@ export async function verificarFaturas() {
     const totalFatura = lancamentos.reduce((s, l) => s + Number(l.valor_total || 0), 0)
     if (totalFatura <= 0) continue
 
-    const vencimento = dataVencimento(mesRef, cartao.dia_vencimento)
+    const vencimento = dataVencimento(mesRef, cartao.dia_vencimento, cartao.dia_fechamento)
     const [anoRef, mesNum] = mesRef.split('-')
     const nomeMes = new Date(Number(anoRef), Number(mesNum) - 1, 1)
       .toLocaleString('pt-BR', { month: 'long', year: 'numeric' })

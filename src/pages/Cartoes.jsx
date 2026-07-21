@@ -243,7 +243,7 @@ export default function Cartoes() {
   // informado ao total da nova fatura, e encerra contabilmente a fatura antiga.
   async function fecharFatura() {
     const cartao = cartaoSel
-    const venc = dataVencimento(mesRef, cartao.dia_vencimento)
+    const venc = dataVencimento(mesRef, cartao.dia_vencimento, cartao.dia_fechamento)
     const [anoRef, mesNum] = mesRef.split('-')
     const nomeM = new Date(Number(anoRef), Number(mesNum)-1, 1).toLocaleString('pt-BR', { month: 'long', year: 'numeric' })
 
@@ -555,7 +555,9 @@ export default function Cartoes() {
         {faturaFechada && (
           <div style={{ marginTop:10, fontSize:12, color:'var(--red)', display:'flex', alignItems:'center', gap:6 }}>
             <Lock size={12} />
-            Fatura fechada em {faturaAtual?.vencimento?.split('-').reverse().join('/')} · Gerado em Contas a Pagar automaticamente
+            Fechada em {periodoFatura(mesRef, cartaoSel?.dia_fechamento).fim?.split('-').reverse().join('/')}
+            {' · '}Vencimento {faturaAtual?.vencimento?.split('-').reverse().join('/')}
+            {' · '}Gerado em Contas a Pagar automaticamente
           </div>
         )}
         {faturaFechada && Number(faturaAtual?.saldo_rotativo_anterior) > 0 && (
