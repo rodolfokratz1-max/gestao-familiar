@@ -24,6 +24,8 @@ export default function PortalCliente({ token, clienteToken }) {
   // Modo cliente: lista de obras do cliente (via token do cliente)
   const [listaObras, setListaObras]   = useState(null)  // null = modo obra única
   const [clienteNome, setClienteNome] = useState('')
+  const [empresaNomeLista, setEmpresaNomeLista] = useState('')
+  const [empresaLogoLista, setEmpresaLogoLista] = useState('')
 
   useEffect(() => {
     if (clienteToken) loadCliente()
@@ -38,6 +40,8 @@ export default function PortalCliente({ token, clienteToken }) {
       setErro('Link inválido ou expirado.'); setLoading(false); return
     }
     setClienteNome(data[0].cliente_nome || '')
+    setEmpresaNomeLista(data[0].empresa_nome || '')
+    setEmpresaLogoLista(data[0].empresa_logo || '')
     setListaObras(data)
     setLoading(false)
   }
@@ -47,7 +51,7 @@ export default function PortalCliente({ token, clienteToken }) {
     setLoading(true)
     const { data, error } = await supabase.rpc('get_portal_obra', { p_token: clienteToken, p_obra_id: obraId })
     if (error || !data) { setErro('Não foi possível abrir esta obra.'); setLoading(false); return }
-    setObra(data.obra)
+    setObra({ ...data.obra, empresa_nome: data.empresa?.nome, empresa_logo: data.empresa?.logo })
     setEtapas(data.etapas || [])
     setLancs(data.lancamentos || [])
     setLoading(false)
@@ -57,21 +61,15 @@ export default function PortalCliente({ token, clienteToken }) {
     setObra(null); setEtapas([]); setLancs([])
   }
 
-  // ── Modo obra única (link antigo ?obra=) ──
+  // ── Modo obra única (link antigo ?obra=) — agora via RPC segura,
+  // trazendo os mesmos dados unificados (Caixa/Contas/Itens) do link por cliente
   async function load() {
     setLoading(true)
-    const { data: obraData, error } = await supabase
-      .from('obras').select('*').eq('token_publico', token).maybeSingle()
-
-    if (error || !obraData) { setErro('Link inválido ou expirado.'); setLoading(false); return }
-    setObra(obraData)
-
-    const [{ data: et }, { data: la }] = await Promise.all([
-      supabase.from('obra_etapas').select('*').eq('obra_id', obraData.id).order('ordem'),
-      supabase.from('obra_lancamentos').select('*').eq('obra_id', obraData.id).order('data_ref', { ascending: false }),
-    ])
-    setEtapas(et || [])
-    setLancs(la || [])
+    const { data, error } = await supabase.rpc('get_portal_obra_direto', { p_token: token })
+    if (error || !data) { setErro('Link inválido ou expirado.'); setLoading(false); return }
+    setObra({ ...data.obra, empresa_nome: data.empresa?.nome, empresa_logo: data.empresa?.logo })
+    setEtapas(data.etapas || [])
+    setLancs(data.lancamentos || [])
     setLoading(false)
   }
 
@@ -100,6 +98,14 @@ export default function PortalCliente({ token, clienteToken }) {
         <style>{`*{box-sizing:border-box;margin:0;padding:0}`}</style>
         <div style={{ maxWidth:680, margin:'0 auto', padding:'0 0 40px' }}>
           <div style={{ background:'#1a2744', padding:'20px 20px 26px' }}>
+            {(empresaNomeLista || empresaLogoLista) && (
+              <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:14 }}>
+                {empresaLogoLista
+                  ? <img src={empresaLogoLista} style={{ height:32, maxWidth:90, objectFit:'contain' }} alt="Logo" />
+                  : <div style={{ width:32, height:32, background:'#e8a030', borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center', fontWeight:700, fontSize:15, color:'#1a2744' }}>{empresaNomeLista.charAt(0)}</div>}
+                <div style={{ fontSize:13, fontWeight:700, color:'#fff' }}>{empresaNomeLista}</div>
+              </div>
+            )}
             <div style={{ fontSize:9, color:'#e8a030', textTransform:'uppercase', letterSpacing:'.8px', fontWeight:700, marginBottom:6 }}>Portal do Cliente</div>
             <h1 style={{ fontSize:22, fontWeight:700, color:'#fff', letterSpacing:'-.3px' }}>{clienteNome}</h1>
             <p style={{ fontSize:12, color:'rgba(255,255,255,.55)', marginTop:4 }}>
