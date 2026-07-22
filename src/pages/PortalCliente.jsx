@@ -155,7 +155,18 @@ export default function PortalCliente({ token, clienteToken }) {
         .bar-bg{height:6px;background:#f0ede6;border-radius:3px;overflow:hidden}
         .bar-fill{height:100%;border-radius:3px;transition:width .4s}
         @media(min-width:600px){.portal-wrap{padding:20px 0 60px}.sec{margin:16px 0 0}.cards-grid{grid-template-columns:repeat(4,1fr)!important}}
+        .btn-print-portal{position:fixed;top:14px;right:14px;z-index:999;background:#1a2744;color:#fff;border:none;border-radius:24px;padding:10px 18px;font-size:12px;font-weight:600;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.2);display:flex;align-items:center;gap:6px}
+        @media print{
+          .btn-print-portal{display:none}
+          .btn-voltar-obras{display:none}
+          body{background:#fff}
+          .sec{box-shadow:none;border:1px solid #eee}
+        }
       `}</style>
+
+      <button className="btn-print-portal" onClick={() => window.print()}>
+        🖨️ Salvar PDF
+      </button>
 
       <div className="portal-wrap">
 
@@ -184,7 +195,7 @@ export default function PortalCliente({ token, clienteToken }) {
 
           {/* Título da obra */}
           {listaObras && (
-            <button onClick={voltarLista}
+            <button onClick={voltarLista} className="btn-voltar-obras"
               style={{ background:'rgba(255,255,255,.12)', border:'none', color:'#fff', fontSize:12, padding:'6px 14px', borderRadius:20, cursor:'pointer', marginBottom:12 }}>
               ← Minhas obras
             </button>
@@ -303,8 +314,14 @@ export default function PortalCliente({ token, clienteToken }) {
                     <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:12 }}>
                       <div style={{ flex:1, minWidth:0 }}>
                         <div style={{ fontSize:13, fontWeight:500, color:'#1a2744' }}>{l.descricao}</div>
-                        <div style={{ fontSize:11, color:'#888', marginTop:2 }}>
-                          {fmtD(l.data_ref)}{l.fonte_nome ? ` · ${l.fonte_nome}` : ''}
+                        <div style={{ fontSize:11, color:'#888', marginTop:2, display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
+                          <span>{fmtD(l.data_ref)}{l.fonte_nome ? ` · ${l.fonte_nome}` : ''}</span>
+                          {l.status_prazo === 'pendente' && (
+                            <span style={{ fontSize:9, fontWeight:700, padding:'1px 7px', borderRadius:20, background:'#fef3c7', color:'#b45309' }}>Pendente</span>
+                          )}
+                          {l.status_prazo === 'pago' && (
+                            <span style={{ fontSize:9, fontWeight:700, padding:'1px 7px', borderRadius:20, background:'#dcfce7', color:'#15803d' }}>Pago</span>
+                          )}
                         </div>
                         {l.obs && (
                           <div style={{ fontSize:12, color:'#555', marginTop:5, padding:'6px 10px', background:'#f8f7f4', borderRadius:6, borderLeft:'2px solid #e8e8e8', lineHeight:1.5 }}>
